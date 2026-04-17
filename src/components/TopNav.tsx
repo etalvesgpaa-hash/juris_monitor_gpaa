@@ -1,5 +1,8 @@
 import type { User } from "@supabase/supabase-js";
 import type { PageId } from "./AppLayout";
+import { RefreshCw, Bell } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 const tabs: { id: PageId; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
@@ -20,9 +23,22 @@ interface TopNavProps {
 }
 
 export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProps) {
+  const [syncing, setSyncing] = useState(false);
+  
   const initials = user?.user_metadata?.full_name
     ? user.user_metadata.full_name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
     : "?";
+
+  const handleSync = async () => {
+    setSyncing(true);
+    toast.info("🔄 Sincronizando com DataJud CNJ...");
+    
+    // Simular sincronização (substituir por chamada real à API)
+    setTimeout(() => {
+      setSyncing(false);
+      toast.success("✅ Sincronização concluída!");
+    }, 2000);
+  };
 
   return (
     <nav className="sticky top-0 z-50 bg-primary border-b border-accent/20 px-4 md:px-8 flex items-center justify-between h-16">
@@ -34,8 +50,8 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
           <div className="font-display font-semibold text-primary-foreground text-[1.05rem] tracking-wide">
             JurisMonitor
           </div>
-          <div className="text-[0.58rem] text-accent/50 tracking-widest">
-            Gestão Processual
+          <div className="text-[0.58rem] text-accent/50 tracking-widest uppercase">
+            EDSON TEODORO · Advocacia
           </div>
         </div>
       </div>
@@ -56,11 +72,33 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
         ))}
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-2 text-xs bg-accent/10 border border-accent/25 px-3 py-1 rounded-full text-accent font-semibold">
-          <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          Datajud Online
+      <div className="flex items-center gap-2">
+        {/* Badge Online */}
+        <div className="hidden md:flex items-center gap-2 text-xs bg-green-ok/10 border border-green-ok/25 px-3 py-1 rounded-full text-green-ok font-semibold">
+          <div className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse" />
+          Datajud CNJ Online
         </div>
+
+        {/* Botão Sincronizar */}
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="hidden md:flex items-center gap-1.5 bg-accent/90 hover:bg-accent text-primary px-3 py-1.5 rounded-md text-xs font-semibold transition-all disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+          Sincronizar
+        </button>
+
+        {/* Botão Intimações */}
+        <button
+          onClick={() => onPageChange("intimacoes")}
+          className="hidden md:flex items-center gap-1.5 bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground px-3 py-1.5 rounded-md text-xs font-semibold transition-all border border-primary-foreground/20"
+        >
+          <Bell className="h-3.5 w-3.5" />
+          Intimações
+        </button>
+
+        {/* Avatar e Sair */}
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-accent/85 rounded-full flex items-center justify-center text-xs font-bold text-primary">
             {initials}
