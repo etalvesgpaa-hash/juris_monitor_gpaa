@@ -217,24 +217,34 @@ export function ConfigPage() {
 
     setTestingAasp(true);
     try {
-      // Usar proxy CORS para contornar restrições do navegador
-      const aaspUrl = `https://api.intimacao.aasp.org.br/api/Associado/intimacao/json?chave=${apiKeys.aasp_chave}&diferencial=false`;
-      
-      const response = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: aaspUrl })
+      // Domínio correto da AASP (intimacaoapi.aasp.org.br)
+      // O proxy recebe a URL via query string (?url=...), não via body
+      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(apiKeys.aasp_chave)}&diferencial=false`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
       });
-      
+
+      // O proxy repassa o status HTTP original da AASP
+      const upstreamStatus = response.headers.get('X-Upstream-Status') || String(response.status);
+
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+        if (upstreamStatus === '401' || upstreamStatus === '403' || response.status === 403) {
           throw new Error("Chave AASP inválida ou expirada. Verifique em https://minha.aasp.org.br");
         }
-        throw new Error(`Erro HTTP: ${response.status}`);
+        if (response.status === 500) {
+          const errBody = await response.text().catch(() => '');
+          throw new Error(`Erro no proxy: ${errBody || 'Falha ao contatar a API da AASP'}`);
+        }
+        throw new Error(`Erro HTTP ${upstreamStatus}: verifique sua chave AASP`);
       }
 
-      const data = await response.json();
-      const count = Array.isArray(data) ? data.length : (data?.quantidade || 0);
+      const data = await response.json().catch(() => null);
+      const count = Array.isArray(data) ? data.length : (data?.quantidade ?? 0);
       
       toast({ 
         title: "✅ AASP conectada!", 
@@ -245,7 +255,7 @@ export function ConfigPage() {
       toast({ 
         title: "❌ Erro ao conectar com AASP", 
         description: message.includes("Failed to fetch") 
-          ? "Problema de conexão. Verifique sua chave e tente novamente." 
+          ? "Problema de rede. Verifique sua conexão e tente novamente." 
           : message, 
         variant: "destructive" 
       });
