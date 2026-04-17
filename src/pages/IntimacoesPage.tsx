@@ -22,7 +22,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Bell, Plus, Search, Filter, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Bell, Plus, Search, Filter, CheckCircle, Clock, AlertCircle, Eye, Trash2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -45,6 +45,7 @@ export function IntimacoesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("todas");
   const [filterOrigem, setFilterOrigem] = useState<string>("todas");
+  const [selectedIntimacao, setSelectedIntimacao] = useState<Intimacao | null>(null);
 
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -111,6 +112,23 @@ export function IntimacoesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["intimacoes"] });
       toast.success("Status atualizado!");
+      setSelectedIntimacao(null);
+    },
+  });
+
+  // Mutation para deletar
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("intimacoes")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["intimacoes"] });
+      toast.success("Intimação excluída!");
+      setSelectedIntimacao(null);
     },
   });
 
@@ -182,9 +200,9 @@ export function IntimacoesPage() {
   return (
     <div>
       <div className="mb-7">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Intimações</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Gerencie suas intimações e prazos processuais
+          Publicações do Diário de Justiça Eletrônico — atualizadas automaticamente
         </p>
       </div>
 
@@ -192,28 +210,28 @@ export function IntimacoesPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold">{stats.total}</div>
-          <div className="text-sm text-muted-foreground">Total</div>
+          <div className="text-xs text-muted-foreground">Total</div>
         </div>
         <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold text-accent">{stats.ativas}</div>
-          <div className="text-sm text-muted-foreground">Ativas</div>
+          <div className="text-xs text-muted-foreground">Ativas</div>
         </div>
         <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold text-yellow-600">{stats.urgentes}</div>
-          <div className="text-sm text-muted-foreground">Urgentes</div>
+          <div className="text-xs text-muted-foreground">Urgentes</div>
         </div>
         <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold text-red-alert">{stats.vencidas}</div>
-          <div className="text-sm text-muted-foreground">Vencidas</div>
+          <div className="text-xs text-muted-foreground">Vencidas</div>
         </div>
       </div>
 
       {/* Filtros e Ações */}
-      <div className="flex flex-col md:flex-row gap-3 mb-5">
-        <div className="relative flex-1">
+      <div className="flex flex-col md:flex-row gap-3 mb-5 items-start md:items-center">
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por número do processo ou tipo..."
+            placeholder="Buscar número, parte, assunto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -221,11 +239,11 @@ export function IntimacoesPage() {
         </div>
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-full md:w-[180px]">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-full md:w-48">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todas</SelectItem>
+            <SelectItem value="todas">Todos os status</SelectItem>
             <SelectItem value="ativa">Ativas</SelectItem>
             <SelectItem value="cumprida">Cumpridas</SelectItem>
             <SelectItem value="arquivada">Arquivadas</SelectItem>
@@ -233,11 +251,11 @@ export function IntimacoesPage() {
         </Select>
 
         <Select value={filterOrigem} onValueChange={setFilterOrigem}>
-          <SelectTrigger className="w-full md:w-[180px]">
-            <SelectValue placeholder="Origem" />
+          <SelectTrigger className="w-full md:w-48">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todas</SelectItem>
+            <SelectItem value="todas">Todas as origens</SelectItem>
             <SelectItem value="aasp">AASP</SelectItem>
             <SelectItem value="diario_oficial">Diário Oficial</SelectItem>
             <SelectItem value="email">E-mail</SelectItem>
@@ -356,108 +374,140 @@ export function IntimacoesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredIntimacoes.map((intimacao) => {
-            const diasRestantes = getDiasRestantes(intimacao.prazo);
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/30 border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">DATA</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PROCESSO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">TIPO / ÓRGÃO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PUBLICAÇÃO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PARTES</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">STATUS</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredIntimacoes.map((intimacao) => {
+                  const diasRestantes = getDiasRestantes(intimacao.prazo);
 
-            return (
-              <div
-                key={intimacao.id}
-                className="bg-card rounded-xl p-5 border border-border hover:border-accent/50 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-lg">
-                        {intimacao.tipo || "Intimação"}
-                      </h3>
-                      {getStatusBadge(intimacao)}
-                      <Badge variant="outline" className="text-xs">
-                        {intimacao.origem.toUpperCase()}
-                      </Badge>
-                    </div>
-                    {intimacao.numero_processo && (
-                      <p className="text-sm text-muted-foreground font-mono">
-                        {intimacao.numero_processo}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    {intimacao.status === "ativa" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          updateStatusMutation.mutate({
-                            id: intimacao.id,
-                            status: "cumprida",
-                          })
-                        }
-                      >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Cumprir
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {intimacao.conteudo && (
-                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                    {intimacao.conteudo}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap gap-4 text-sm">
-                  {intimacao.data_publicacao && (
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Publicado:</span>
-                      <span className="font-medium">
-                        {format(new Date(intimacao.data_publicacao), "dd/MM/yyyy", {
-                          locale: ptBR,
-                        })}
-                      </span>
-                    </div>
-                  )}
-
-                  {intimacao.prazo && (
-                    <div className="flex items-center gap-1.5">
-                      <AlertCircle
-                        className={`h-4 w-4 ${
-                          diasRestantes !== null && diasRestantes <= 3
-                            ? "text-red-alert"
-                            : "text-muted-foreground"
-                        }`}
-                      />
-                      <span className="text-muted-foreground">Prazo:</span>
-                      <span
-                        className={`font-medium ${
-                          diasRestantes !== null && diasRestantes <= 3
-                            ? "text-red-alert"
-                            : ""
-                        }`}
-                      >
-                        {format(new Date(intimacao.prazo), "dd/MM/yyyy", {
-                          locale: ptBR,
-                        })}
-                        {diasRestantes !== null && diasRestantes >= 0 && (
-                          <span className="ml-1">({diasRestantes} dias)</span>
-                        )}
-                        {diasRestantes !== null && diasRestantes < 0 && (
-                          <span className="ml-1 text-red-alert">
-                            (Vencido há {Math.abs(diasRestantes)} dias)
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                  return (
+                    <tr key={intimacao.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                        {intimacao.created_at ? new Date(intimacao.created_at).toLocaleDateString("pt-BR") : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-mono text-sm font-bold text-accent">{intimacao.numero_processo || "—"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{intimacao.tipo || "Intimação"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className="text-xs font-mono">
+                          {intimacao.origem.toUpperCase()}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {intimacao.data_publicacao ? format(new Date(intimacao.data_publicacao), "dd/MM/yyyy", { locale: ptBR }) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-xs text-muted-foreground max-w-xs truncate">
+                          {intimacao.conteudo ? intimacao.conteudo.substring(0, 40) + "..." : "—"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {getStatusBadge(intimacao)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedIntimacao(intimacao)}
+                            className="p-1.5 hover:bg-accent/10 rounded transition-colors"
+                            title="Visualizar"
+                          >
+                            <Eye className="h-4 w-4 text-accent" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm("Deseja excluir esta intimação?")) {
+                                deleteMutation.mutate(intimacao.id);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-red-alert/10 rounded transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-alert" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
+
+      {/* Detail Dialog */}
+      {selectedIntimacao && (
+        <Dialog open={!!selectedIntimacao} onOpenChange={(open) => !open && setSelectedIntimacao(null)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Intimação #{selectedIntimacao.numero_processo || "—"}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <DetailItem label="Tipo" value={selectedIntimacao.tipo || "—"} />
+                <DetailItem label="Origem" value={selectedIntimacao.origem} />
+                <DetailItem label="Data Publicação" value={selectedIntimacao.data_publicacao ? format(new Date(selectedIntimacao.data_publicacao), "dd/MM/yyyy", { locale: ptBR }) : "—"} />
+                <DetailItem label="Prazo" value={selectedIntimacao.prazo ? format(new Date(selectedIntimacao.prazo), "dd/MM/yyyy", { locale: ptBR }) : "—"} />
+              </div>
+
+              {selectedIntimacao.conteudo && (
+                <div className="bg-muted/50 border border-border rounded-lg p-4">
+                  <div className="text-[0.72rem] font-bold uppercase tracking-widest text-muted-foreground mb-2">Conteúdo</div>
+                  <p className="text-sm leading-relaxed">{selectedIntimacao.conteudo}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setSelectedIntimacao(null)}>Fechar</Button>
+                {selectedIntimacao.status === "ativa" && (
+                  <Button 
+                    variant="gold" 
+                    size="sm"
+                    onClick={() => updateStatusMutation.mutate({ id: selectedIntimacao.id, status: "cumprida" })}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Marcar Cumprida
+                  </Button>
+                )}
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("Deseja excluir esta intimação?")) {
+                      deleteMutation.mutate(selectedIntimacao.id);
+                    }
+                  }}
+                >
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-0.5">{value}</div>
     </div>
   );
 }

@@ -107,17 +107,28 @@ export function ConfigPage() {
     if (!user) return;
     setLoadingKeys(true);
     try {
-      const { error: updateError } = await supabase
+      // Verificar se já existe registro
+      const { data: existingRecord } = await supabase
         .from("api_keys")
-        .update({
-          datajud_token: apiKeys.datajud_token || null,
-          aasp_chave: apiKeys.aasp_chave || null,
-          groq_api_key: apiKeys.groq_api_key || null,
-          whatsapp_token: apiKeys.whatsapp_token || null,
-        })
-        .eq("user_id", user.id);
+        .select("id")
+        .eq("user_id", user.id)
+        .single();
 
-      if (updateError?.code === "PGRST116") {
+      if (existingRecord) {
+        // Atualizar registro existente
+        const { error: updateError } = await supabase
+          .from("api_keys")
+          .update({
+            datajud_token: apiKeys.datajud_token || null,
+            aasp_chave: apiKeys.aasp_chave || null,
+            groq_api_key: apiKeys.groq_api_key || null,
+            whatsapp_token: apiKeys.whatsapp_token || null,
+          })
+          .eq("user_id", user.id);
+        
+        if (updateError) throw updateError;
+      } else {
+        // Inserir novo registro
         const { error: insertError } = await supabase
           .from("api_keys")
           .insert({
@@ -127,9 +138,8 @@ export function ConfigPage() {
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
           });
+        
         if (insertError) throw insertError;
-      } else if (updateError) {
-        throw updateError;
       }
 
       toast({ title: "✅ API Keys salvas com sucesso!" });

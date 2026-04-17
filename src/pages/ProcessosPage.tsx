@@ -4,6 +4,7 @@ import { useProcessos, useCreateProcesso, useDeleteProcesso, useMovimentacoes } 
 import { useClientes } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ChevronDown, MoreVertical, Eye, Trash2 } from "lucide-react";
 import type { Processo } from "@/hooks/useProcessos";
 
 export function ProcessosPage() {
@@ -16,6 +17,7 @@ export function ProcessosPage() {
   const [showForm, setShowForm] = useState(false);
   const [selectedProcesso, setSelectedProcesso] = useState<Processo | null>(null);
   const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("todos");
   const [form, setForm] = useState({
     numero_cnj: "",
     classe: "",
@@ -74,29 +76,43 @@ export function ProcessosPage() {
 
   const filtered = processos.filter(
     (p) =>
-      p.numero_cnj.toLowerCase().includes(search.toLowerCase()) ||
-      (p.assunto || "").toLowerCase().includes(search.toLowerCase()) ||
-      (p.partes || "").toLowerCase().includes(search.toLowerCase())
+      (p.numero_cnj.toLowerCase().includes(search.toLowerCase()) ||
+        (p.assunto || "").toLowerCase().includes(search.toLowerCase()) ||
+        (p.partes || "").toLowerCase().includes(search.toLowerCase())) &&
+      (filterStatus === "todos" || p.status === filterStatus)
   );
 
   return (
     <div>
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Processos</h1>
-          <p className="text-sm text-muted-foreground mt-1">Gerencie seus processos judiciais</p>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Processos Cadastrados</h1>
+          <p className="text-sm text-muted-foreground mt-1">Gerenciar e monitore processos via API DataJud CNJ</p>
         </div>
         <Button variant="gold" onClick={() => setShowForm(true)}>+ Cadastrar Processo</Button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
+      {/* Filtros */}
+      <div className="flex flex-col md:flex-row gap-3 mb-6">
         <input
-          className="w-full max-w-lg border border-border rounded-lg px-4 py-3 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
-          placeholder="Buscar por número CNJ, assunto ou parte..."
+          className="flex-1 border border-border rounded-lg px-4 py-3 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+          placeholder="Buscar número, parte, assunto..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <div className="flex gap-3">
+          <select
+            className="border border-border rounded-lg px-4 py-3 text-sm bg-card focus:border-accent outline-none"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="todos">Todos os status</option>
+            <option value="ativo">Ativos</option>
+            <option value="inativo">Inativos</option>
+            <option value="arquivado">Arquivados</option>
+          </select>
+          <Button variant="outline">⚙️ Atualizar</Button>
+        </div>
       </div>
 
       {/* Create Form */}
@@ -136,7 +152,7 @@ export function ProcessosPage() {
         </div>
       )}
 
-      {/* List */}
+      {/* Table */}
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
       ) : filtered.length === 0 ? (
@@ -145,31 +161,71 @@ export function ProcessosPage() {
           <p className="text-muted-foreground text-xs mt-1">Cadastre um processo para começar.</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((p) => (
-            <div
-              key={p.id}
-              onClick={() => setSelectedProcesso(p)}
-              className="bg-card border border-border rounded-xl p-4 hover:border-accent/40 hover:shadow-sm cursor-pointer transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-mono text-sm font-bold text-accent">{p.numero_cnj}</div>
-                  <div className="text-sm mt-0.5">{p.assunto || p.classe || "Sem assunto"}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {[p.tribunal, p.vara, p.comarca].filter(Boolean).join(" · ") || "Sem localização"}
-                  </div>
-                </div>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                  p.status === "ativo" ? "bg-green-ok/10 text-green-ok" :
-                  p.status === "arquivado" ? "bg-muted text-muted-foreground" :
-                  "bg-accent/10 text-accent"
-                }`}>
-                  {p.status}
-                </span>
-              </div>
-            </div>
-          ))}
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/30 border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">DATA</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PROCESSO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">TIPO / ÓRGÃO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PUBLICAÇÃO</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">PARTES</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">STATUS</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[0.75rem] uppercase tracking-wide text-muted-foreground">AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p) => (
+                  <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                      {p.created_at ? new Date(p.created_at).toLocaleDateString("pt-BR") : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-mono text-sm font-bold text-accent">{p.numero_cnj}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{p.assunto || p.classe || "Sem assunto"}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm">{p.vara || p.tribunal || "—"}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {p.created_at ? new Date(p.created_at).toLocaleDateString("pt-BR") : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs text-muted-foreground max-w-xs truncate">{p.partes || p.advogados || "—"}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                        p.status === "ativo" ? "bg-green-ok/10 text-green-ok" :
+                        p.status === "arquivado" ? "bg-muted text-muted-foreground" :
+                        "bg-accent/10 text-accent"
+                      }`}>
+                        {p.status === "ativo" ? "Ativo" : p.status === "arquivado" ? "Arquivado" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedProcesso(p)}
+                          className="p-1.5 hover:bg-accent/10 rounded transition-colors"
+                          title="Visualizar"
+                        >
+                          <Eye className="h-4 w-4 text-accent" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          className="p-1.5 hover:bg-red-alert/10 rounded transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-alert" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
