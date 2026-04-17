@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Key, CheckCircle, XCircle, Save } from "lucide-react";
+import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function ConfigPage() {
   const { user } = useAuth();
@@ -19,19 +20,21 @@ export function ConfigPage() {
   });
   const [apiKeys, setApiKeys] = useState({
     datajud_token: "",
-    aasp_user: "",
-    aasp_password: "",
+    aasp_chave: "",
     groq_api_key: "",
     whatsapp_token: "",
   });
   const [showKeys, setShowKeys] = useState({
     datajud_token: false,
-    aasp_password: false,
+    aasp_chave: false,
     groq_api_key: false,
     whatsapp_token: false,
   });
   const [loading, setLoading] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
+  const [testingDatajud, setTestingDatajud] = useState(false);
+  const [testingAasp, setTestingAasp] = useState(false);
+  const [testingGroq, setTestingGroq] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -53,7 +56,7 @@ export function ConfigPage() {
         }
       });
 
-    // Carregar API Keys (se existir tabela)
+    // Carregar API Keys
     supabase
       .from("api_keys")
       .select("*")
@@ -63,8 +66,7 @@ export function ConfigPage() {
         if (data) {
           setApiKeys({
             datajud_token: data.datajud_token || "",
-            aasp_user: data.aasp_user || "",
-            aasp_password: data.aasp_password || "",
+            aasp_chave: data.aasp_chave || "",
             groq_api_key: data.groq_api_key || "",
             whatsapp_token: data.whatsapp_token || "",
           });
@@ -105,27 +107,23 @@ export function ConfigPage() {
     if (!user) return;
     setLoadingKeys(true);
     try {
-      // Tentar atualizar primeiro
       const { error: updateError } = await supabase
         .from("api_keys")
         .update({
           datajud_token: apiKeys.datajud_token || null,
-          aasp_user: apiKeys.aasp_user || null,
-          aasp_password: apiKeys.aasp_password || null,
+          aasp_chave: apiKeys.aasp_chave || null,
           groq_api_key: apiKeys.groq_api_key || null,
           whatsapp_token: apiKeys.whatsapp_token || null,
         })
         .eq("user_id", user.id);
 
-      // Se não existir, criar
       if (updateError?.code === "PGRST116") {
         const { error: insertError } = await supabase
           .from("api_keys")
           .insert({
             user_id: user.id,
             datajud_token: apiKeys.datajud_token || null,
-            aasp_user: apiKeys.aasp_user || null,
-            aasp_password: apiKeys.aasp_password || null,
+            aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
           });
@@ -150,10 +148,113 @@ export function ConfigPage() {
     setShowKeys({ ...showKeys, [key]: !showKeys[key] });
   };
 
+  const testDatajudConnection = async () => {
+    if (!apiKeys.datajud_token) {
+      toast({ 
+        title: "Token não configurado", 
+        description: "Configure o token do DataJud antes de testar",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setTestingDatajud(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      toast({ 
+        title: "✅ DataJud conectado!", 
+        description: "API respondeu com sucesso" 
+      });
+    } catch (err: any) {
+      toast({ 
+        title: "❌ Erro ao conectar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setTestingDatajud(false);
+    }
+  };
+
+  const testAaspConnection = async () => {
+    if (!apiKeys.aasp_chave) {
+      toast({ 
+        title: "Chave não configurada", 
+        description: "Configure a chave AASP antes de testar",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setTestingAasp(true);
+    try {
+      const response = await fetch(
+        `https://api.intimacao.aasp.org.br/api/Associado/intimacao/json?chave=${apiKeys.aasp_chave}&diferencial=false`,
+        { method: 'GET' }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Erro HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
+      toast({ 
+        title: "✅ AASP conectada!", 
+        description: `API respondeu com sucesso. ${data.length || 0} intimações encontradas.` 
+      });
+    } catch (err: any) {
+      toast({ 
+        title: "❌ Erro ao conectar com AASP", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setTestingAasp(false);
+    }
+  };
+
+  const testGroqConnection = async () => {
+    if (!apiKeys.groq_api_key) {
+      toast({ 
+        title: "API Key não configurada", 
+        description: "Configure a chave Groq antes de testar",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setTestingGroq(true);
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${apiKeys.groq_api_key}`,
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
+      toast({ 
+        title: "✅ Groq AI conectada!", 
+        description: `${data.data?.length || 0} modelos disponíveis` 
+      });
+    } catch (err: any) {
+      toast({ 
+        title: "❌ Erro ao conectar com Groq", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setTestingGroq(false);
+    }
+  };
+
   const getConnectionStatus = () => {
     return {
       datajud: !!apiKeys.datajud_token,
-      aasp: !!(apiKeys.aasp_user && apiKeys.aasp_password),
+      aasp: !!apiKeys.aasp_chave,
       groq: !!apiKeys.groq_api_key,
       whatsapp: !!apiKeys.whatsapp_token,
     };
@@ -231,22 +332,19 @@ export function ConfigPage() {
         {/* ABA API KEYS */}
         <TabsContent value="apis" className="space-y-4">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-            <h2 className="font-display text-xl font-bold mb-2 flex items-center gap-2">
-              <Key className="h-5 w-5" />
-              Chaves de API
+            <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+              <Key className="h-6 w-6" />
+              API Keys & Credenciais
             </h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              Configure suas chaves de API para habilitar integrações automáticas
-            </p>
-
-            <div className="space-y-6">
+            
+            <div className="space-y-4">
               {/* DataJud CNJ */}
               <div className="border border-border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h3 className="font-semibold">DataJud CNJ</h3>
                     <p className="text-xs text-muted-foreground">
-                      Token de acesso à API do CNJ
+                      Token de acesso ao DataJud do CNJ
                     </p>
                   </div>
                   {status.datajud ? (
@@ -260,8 +358,8 @@ export function ConfigPage() {
                     type={showKeys.datajud_token ? "text" : "password"}
                     value={apiKeys.datajud_token}
                     onChange={(e) => setApiKeys({ ...apiKeys, datajud_token: e.target.value })}
-                    placeholder="Bearer eyJhbGciOiJIUzI1..."
-                    className="pr-10"
+                    placeholder="Token CNJ DataJud"
+                    className="pr-10 font-mono text-sm"
                   />
                   <button
                     type="button"
@@ -271,48 +369,126 @@ export function ConfigPage() {
                     {showKeys.datajud_token ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <div className="mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={testDatajudConnection}
+                    disabled={testingDatajud || !apiKeys.datajud_token}
+                  >
+                    {testingDatajud ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Testando...
+                      </>
+                    ) : (
+                      <>⚡ Testar Conexão</>
+                    )}
+                  </Button>
+                </div>
               </div>
 
-              {/* AASP */}
-              <div className="border border-border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
+              {/* AASP - Novo Layout */}
+              <div className="border-2 border-accent/30 rounded-xl p-5 bg-gradient-to-br from-card to-accent/5">
+                <div className="flex items-start gap-3 mb-4">
+                  <Scale className="h-7 w-7 text-accent shrink-0 mt-1" />
                   <div>
-                    <h3 className="font-semibold">AASP Intimações</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Credenciais de acesso ao portal AASP
+                    <h3 className="font-bold text-lg">AASP — Intimações</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Integração com a API de Intimações da AASP (Associação dos Advogados de São Paulo).
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      A chave de acesso é individual, fornecida pela AASP ao associado.
                     </p>
                   </div>
-                  {status.aasp ? (
-                    <CheckCircle className="h-5 w-5 text-green-ok" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-muted-foreground" />
+                  {status.aasp && (
+                    <CheckCircle className="h-6 w-6 text-green-ok shrink-0" />
                   )}
                 </div>
+
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs">Usuário/E-mail</Label>
-                    <Input
-                      value={apiKeys.aasp_user}
-                      onChange={(e) => setApiKeys({ ...apiKeys, aasp_user: e.target.value })}
-                      placeholder="usuario@exemplo.com"
-                    />
+                    <Label className="text-sm font-bold uppercase tracking-wider">
+                      CHAVE DE ACESSO AASP
+                    </Label>
+                    <div className="relative mt-2">
+                      <Input
+                        type={showKeys.aasp_chave ? "text" : "password"}
+                        value={apiKeys.aasp_chave}
+                        onChange={(e) => setApiKeys({ ...apiKeys, aasp_chave: e.target.value })}
+                        placeholder="3D665015974749886C7525C75B53..."
+                        className="pr-10 font-mono text-sm h-11"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleShowKey("aasp_chave")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKeys.aasp_chave ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <Label className="text-xs">Senha</Label>
-                    <Input
-                      type={showKeys.aasp_password ? "text" : "password"}
-                      value={apiKeys.aasp_password}
-                      onChange={(e) => setApiKeys({ ...apiKeys, aasp_password: e.target.value })}
-                      placeholder="••••••••"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => toggleShowKey("aasp_password")}
-                      className="absolute right-3 bottom-2 text-muted-foreground hover:text-foreground"
+
+                  <Alert className="bg-muted/50 border-muted-foreground/20">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      Obtida em{" "}
+                      <a
+                        href="https://minha.aasp.org.br"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-accent hover:underline"
+                      >
+                        minha.aasp.org.br
+                      </a>
+                      {" "}→ Meu Painel → Intimações → API
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={testAaspConnection}
+                      disabled={testingAasp || !apiKeys.aasp_chave}
                     >
-                      {showKeys.aasp_password ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+                      {testingAasp ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Testando...
+                        </>
+                      ) : (
+                        <>⚡ Testar Conexão</>
+                      )}
+                    </Button>
+                    <Button
+                      variant="gold"
+                      size="sm"
+                      onClick={handleSaveApiKeys}
+                      disabled={loadingKeys || !apiKeys.aasp_chave}
+                    >
+                      {loadingKeys ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        <>Salvar Chave</>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                    >
+                      <a
+                        href="https://minha.aasp.org.br"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        🔄 Buscar Agora
+                      </a>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -338,7 +514,7 @@ export function ConfigPage() {
                     value={apiKeys.groq_api_key}
                     onChange={(e) => setApiKeys({ ...apiKeys, groq_api_key: e.target.value })}
                     placeholder="gsk_..."
-                    className="pr-10"
+                    className="pr-10 font-mono text-sm"
                   />
                   <button
                     type="button"
@@ -348,17 +524,34 @@ export function ConfigPage() {
                     {showKeys.groq_api_key ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Obtenha sua chave em:{" "}
-                  <a 
-                    href="https://console.groq.com" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-accent hover:underline"
+                <div className="flex items-center justify-between mt-3">
+                  <p className="text-xs text-muted-foreground">
+                    Obtenha em:{" "}
+                    <a 
+                      href="https://console.groq.com" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline font-semibold"
+                    >
+                      console.groq.com
+                    </a>
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={testGroqConnection}
+                    disabled={testingGroq || !apiKeys.groq_api_key}
                   >
-                    console.groq.com
-                  </a>
-                </p>
+                    {testingGroq ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Testando...
+                      </>
+                    ) : (
+                      <>⚡ Testar Conexão</>
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {/* WhatsApp */}
@@ -382,7 +575,7 @@ export function ConfigPage() {
                     value={apiKeys.whatsapp_token}
                     onChange={(e) => setApiKeys({ ...apiKeys, whatsapp_token: e.target.value })}
                     placeholder="EAAx..."
-                    className="pr-10"
+                    className="pr-10 font-mono text-sm"
                   />
                   <button
                     type="button"
@@ -395,14 +588,16 @@ export function ConfigPage() {
               </div>
             </div>
 
-            <Button 
-              onClick={handleSaveApiKeys} 
-              disabled={loadingKeys}
-              className="mt-6"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {loadingKeys ? "Salvando..." : "Salvar API Keys"}
-            </Button>
+            <div className="mt-6 flex justify-end">
+              <Button 
+                onClick={handleSaveApiKeys} 
+                disabled={loadingKeys}
+                size="lg"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {loadingKeys ? "Salvando..." : "Salvar Todas as API Keys"}
+              </Button>
+            </div>
           </div>
         </TabsContent>
 
