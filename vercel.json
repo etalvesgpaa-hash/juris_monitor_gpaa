@@ -1,0 +1,27 @@
+{
+  "functions": {
+    "api/proxy.js": {
+      "memory": 256,
+      "maxDuration": 60
+    },
+    "api/send-email.js": {
+      "memory": 256,
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    { "source": "/api/proxy", "destination": "/api/proxy" },
+    { "source": "/api/send-email", "destination": "/api/send-email" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api-publica.datajud.cnj.jus.br https://datajud.cnj.jus.br https://intimacaoapi.aasp.org.br https://api.groq.com https://api.escavador.com; img-src 'self' data: blob:;"
+        }
+      ]
+    }
+  ]
+}
