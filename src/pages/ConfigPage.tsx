@@ -217,62 +217,102 @@ export function ConfigPage() {
 
     setTestingAasp(true);
     try {
-      // Domínio correto: intimacaoapi.aasp.org.br
-      // IMPORTANTE: a AASP exige o parâmetro "data" (data do dia no formato YYYY-MM-DD)
-      // e NÃO aceita diferencial=false — omitir o parâmetro é o comportamento correto
-      const hoje = new Date().toISOString().split('T')[0];
-      const params = new URLSearchParams({
-        chave: apiKeys.aasp_chave,
-        data: hoje,
-        // diferencial: omitido intencionalmente — AASP retorna 500 com valor false em string
-      });
-      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params.toString()}`;
-
-      // O proxy.js lê a URL do query string (?url=...), nunca do body
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
-
-      const response = await fetch(proxyUrl, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-      });
-
-      // X-Upstream-Status = status HTTP real retornado pela AASP (repassado pelo proxy)
-      const upstreamStatus = parseInt(response.headers.get('X-Upstream-Status') || String(response.status), 10);
-
-      const bodyText = await response.text().catch(() => '');
-
-      if (upstreamStatus === 401 || upstreamStatus === 403) {
-        throw new Error("Chave AASP inválida ou expirada. Verifique em https://minha.aasp.org.br");
-      }
-      if (upstreamStatus === 500) {
-        // Erro interno da AASP — geralmente parâmetro errado ou data sem publicação
-        throw new Error("A API da AASP retornou erro interno (500). Verifique se sua chave é válida. Se for fora do horário de publicação, tente novamente mais tarde.");
-      }
-      if (!response.ok) {
-        throw new Error(`Erro HTTP ${upstreamStatus}. Verifique sua chave AASP.`);
+      // Gera os últimos 5 dias úteis para tentar (AASP retorna 500 em dias sem publicação)
+      const diasUteis: string[] = [];
+      const d = new Date();
+      while (diasUteis.length < 5) {
+        const diaSemana = d.getDay();
+        if (diaSemana !== 0 && diaSemana !== 6) {
+          diasUteis.push(d.toISOString().split('T')[0]);
+        }
+        d.setDate(d.getDate() - 1);
       }
 
-      let data: any = null;
-      try { data = JSON.parse(bodyText); } catch { /* resposta não é JSON */ }
+      let sucesso = false;
+      let ultimoErro = '';
+      let ultimoBody = '';
 
-      const count = Array.isArray(data) ? data.length : (data?.quantidade ?? 0);
-      
-      toast({ 
-        title: "✅ AASP conectada!", 
-        description: `Conexão estabelecida com sucesso. ${count} intimação(ões) encontrada(s) hoje.`,
-      });
+      for (const dataStr of diasUteis) {
+        // A AASP só aceita: chave + data. "diferencial" deve ser OMITIDO quando false.
+        const aaspUrl =
+          `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json` +
+          `?chave=${encodeURIComponent(apiKeys.aasp_chave)}&data=${dataStr}`;
+
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+
+        let response: Response;
+        try {
+          response = await fetch(proxyUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+          });
+        } catch (networkErr: any) {
+          ultimoErro = `Erro de rede: ${networkErr.message}`;
+          continue;
+        }
+
+        const bodyText = await response.text().catch(() => '');
+        ultimoBody = bodyText;
+
+        // X-Upstream-Status presente = AASP foi alcançada com sucesso pelo proxy
+        const hasUpstream = response.headers.has('X-Upstream-Status');
+        const upstreamStatus = hasUpstream
+          ? parseInt(response.headers.get('X-Upstream-Status')!, 10)
+          : response.status;
+
+        if (!hasUpstream && response.status === 500) {
+          // Erro INTERNO do proxy (timeout, DNS, etc) — não é erro da AASP
+          ultimoErro = `Erro no proxy (não chegou à AASP): ${bodyText.slice(0, 200)}`;
+          continue;
+        }
+
+        if (upstreamStatus === 401 || upstreamStatus === 403) {
+          throw new Error('Chave AASP inválida ou sem permissão. Verifique em minha.aasp.org.br');
+        }
+
+        if (upstreamStatus === 500) {
+          // AASP retorna 500 em dias sem publicação — tenta o dia anterior
+          ultimoErro = `AASP erro ${upstreamStatus} em ${dataStr}: ${bodyText.slice(0, 200)}`;
+          continue;
+        }
+
+        if (upstreamStatus >= 200 && upstreamStatus < 300) {
+          let data: any = null;
+          try { data = JSON.parse(bodyText); } catch { /* ok */ }
+          const count = Array.isArray(data) ? data.length : (data?.quantidade ?? 0);
+          toast({
+            title: '✅ AASP conectada!',
+            description: `Conexão OK para ${dataStr}. ${count} intimação(ões) encontrada(s).`,
+          });
+          sucesso = true;
+          break;
+        }
+
+        ultimoErro = `HTTP ${upstreamStatus} em ${dataStr}`;
+      }
+
+      if (!sucesso) {
+        // Todos os dias falharam — chave provavelmente inválida
+        const bodyPreview = ultimoBody.slice(0, 300);
+        throw new Error(
+          `Não foi possível conectar à AASP nos últimos 5 dias úteis.\n\n` +
+          `Provável causa: chave inválida ou expirada.\n` +
+          `Verifique em: minha.aasp.org.br → Meu Painel → Intimações → API\n\n` +
+          `Último erro: ${ultimoErro}` +
+          (bodyPreview ? `\nResposta AASP: ${bodyPreview}` : '')
+        );
+      }
     } catch (err: any) {
-      const message = err.message || "Falha ao conectar com AASP";
-      toast({ 
-        title: "❌ Erro ao conectar com AASP", 
-        description: message.includes("Failed to fetch") 
-          ? "Problema de rede — verifique sua conexão e tente novamente." 
-          : message, 
-        variant: "destructive" 
+      toast({
+        title: '❌ Erro ao conectar com AASP',
+        description: err.message?.slice(0, 300) ?? 'Falha desconhecida',
+        variant: 'destructive',
       });
     } finally {
       setTestingAasp(false);
     }
+  };
+
   };
 
   const testGroqConnection = async () => {
