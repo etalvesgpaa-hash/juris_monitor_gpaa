@@ -189,25 +189,61 @@ export function DashboardPage() {
       </div>
 
       {/* Bottom Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3.5">
+      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3.5 mb-5">
         <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            Últimas Intimações
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5 justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="w-[18px] h-0.5 bg-accent" />
+              Últimas Intimações AASP
+            </div>
+            <div className="flex gap-1.5 text-[0.65rem]">
+              <span className="px-2 py-0.5 rounded bg-accent/10 text-accent font-bold">82 ATIVAS</span>
+              <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">72 NÃO LIDAS</span>
+            </div>
+          </div>
+          <div className="flex gap-2 mb-3 text-xs">
+            <button className="px-3 py-1 rounded-lg bg-accent text-primary font-semibold">Ativas</button>
+            <button className="px-3 py-1 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground">
+              Finalizadas
+            </button>
+            <button className="px-3 py-1 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground">
+              Pausadas
+            </button>
+            <button className="ml-auto px-3 py-1 rounded-lg border border-accent/30 text-accent hover:bg-accent/10 font-semibold">
+              🔄 Sincronizar
+            </button>
           </div>
           {intimacoes.length > 0 ? (
             <div className="space-y-2">
               {intimacoes.slice(0, 5).map((i) => (
-                <div key={i.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 text-sm">
-                  <div>
-                    <div className="font-medium">{i.tipo || "Intimação"}</div>
-                    <div className="text-xs text-muted-foreground">{i.numero_processo || "Sem nº"}</div>
+                <div key={i.id} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-border hover:border-accent/40 transition-all">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm truncate">
+                        {i.tipo || "Lista de distribuição Meio: Diário de Justiça Eletrônico Nacional"}
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span>{i.numero_processo || "1000805-36.2025.5.02.0241"}</span>
+                        <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-muted">
+                          {i.tribunal || "DJENT:RT2"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    i.status === "ativa" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"
-                  }`}>
-                    {i.status}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {new Date(i.created_at).toLocaleDateString("pt-BR")}
+                    </span>
+                    <div className="flex gap-1">
+                      <button className="w-6 h-6 rounded hover:bg-muted flex items-center justify-center text-muted-foreground">
+                        📄
+                      </button>
+                      <button className="w-6 h-6 rounded hover:bg-muted flex items-center justify-center text-accent">
+                        ✓
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -216,23 +252,54 @@ export function DashboardPage() {
               Nenhuma intimação encontrada.
             </div>
           )}
+          <div className="text-center mt-4">
+            <button className="text-xs text-accent hover:underline font-semibold">
+              VER TODAS AS INTIMAÇÕES →
+            </button>
+          </div>
         </div>
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
             <div className="w-[18px] h-0.5 bg-accent" />
-            Tarefas Urgentes
+            Tarefas & Agenda do Dia
           </div>
           {tarefasVencidas.length > 0 ? (
-            <div className="space-y-2">
-              {tarefasVencidas.slice(0, 5).map((t) => (
-                <div key={t.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-alert/5 text-sm">
-                  <div className="font-medium">{t.titulo}</div>
-                  <div className="text-xs font-mono text-red-alert">
-                    {t.data_vencimento ? new Date(t.data_vencimento).toLocaleDateString("pt-BR") : "—"}
-                  </div>
+            <>
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-red-alert" />
+                  <h3 className="text-xs font-bold uppercase text-red-alert">VENCIDAS</h3>
                 </div>
-              ))}
-            </div>
+                <div className="space-y-2">
+                  {tarefasVencidas.slice(0, 3).map((t) => (
+                    <div
+                      key={t.id}
+                      className="px-3 py-2 rounded-lg bg-red-alert/5 border border-red-alert/20"
+                    >
+                      <div className="font-semibold text-sm">{t.titulo}</div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-muted-foreground">
+                          {t.descricao || "Tarefa avulsa"}
+                        </span>
+                        <span className="font-mono text-red-alert font-bold">
+                          {t.data_vencimento
+                            ? `Venceu há ${Math.floor(
+                                (now.getTime() - new Date(t.data_vencimento).getTime()) /
+                                  (24 * 60 * 60 * 1000)
+                              )} dias`
+                            : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-center">
+                <button className="text-xs text-accent hover:underline font-semibold">
+                  VER AGENDA COMPLETA →
+                </button>
+              </div>
+            </>
           ) : (
             <div className="text-center py-6 text-muted-foreground text-sm">
               Nenhuma tarefa urgente no momento.

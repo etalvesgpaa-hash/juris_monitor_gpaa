@@ -3,6 +3,9 @@ import { Button } from "@/components/ui/button";
 import { useTarefas, useCreateTarefa, useUpdateTarefa, useDeleteTarefa } from "@/hooks/useTarefas";
 import { useProcessos } from "@/hooks/useProcessos";
 import { useToast } from "@/hooks/use-toast";
+import { Calendar } from "lucide-react";
+
+type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
 
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
@@ -13,7 +16,8 @@ export function TarefasPage() {
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
-  const [filter, setFilter] = useState<"todas" | "pendente" | "concluida">("todas");
+  const [filter, setFilter] = useState<FilterType>("todas");
+  const [viewMode, setViewMode] = useState<"lista" | "agenda">("lista");
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
@@ -71,12 +75,25 @@ export function TarefasPage() {
   };
 
   const filtered = tarefas.filter((t) => {
-    if (filter === "pendente") return t.status !== "concluida";
-    if (filter === "concluida") return t.status === "concluida";
+    if (filter === "pendente") return t.status === "pendente";
+    if (filter === "andamento") return t.status === "andamento";
+    if (filter === "ag_cliente") return t.status === "ag_cliente";
+    if (filter === "ag_tribunal") return t.status === "ag_tribunal";
+    if (filter === "concluidas") return t.status === "concluida";
+    if (filter === "canceladas") return t.status === "cancelada";
     return true;
   });
 
   const now = new Date();
+  
+  // Cálculos para os cards
+  const totalTarefas = tarefas.length;
+  const emAberto = tarefas.filter((t) => t.status !== "concluida" && t.status !== "cancelada").length;
+  const vencidas = tarefas.filter((t) => {
+    if (!t.data_vencimento || t.status === "concluida" || t.status === "cancelada") return false;
+    return new Date(t.data_vencimento) < now;
+  }).length;
+  const concluidas = tarefas.filter((t) => t.status === "concluida").length;
 
   const prioridadeColor = (p: string) => {
     if (p === "alta") return "text-red-alert bg-red-alert/10";
@@ -89,19 +106,85 @@ export function TarefasPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Tarefas</h1>
-          <p className="text-sm text-muted-foreground mt-1">Controle prazos e atividades</p>
+          <p className="text-sm text-muted-foreground mt-1">Gerencie tarefas com controle de prazo em dias úteis</p>
         </div>
-        <Button variant="gold" onClick={() => setShowForm(true)}>+ Nova Tarefa</Button>
+        <div className="flex gap-2">
+          <Button 
+            variant={viewMode === "lista" ? "default" : "outline"} 
+            size="sm"
+            onClick={() => setViewMode("lista")}
+          >
+            ☰ Lista
+          </Button>
+          <Button 
+            variant={viewMode === "agenda" ? "default" : "outline"} 
+            size="sm"
+            onClick={() => setViewMode("agenda")}
+          >
+            <Calendar className="w-4 h-4 mr-1" /> Agenda
+          </Button>
+          <Button variant="gold" onClick={() => setShowForm(true)}>+ Nova Tarefa</Button>
+        </div>
+      </div>
+
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="bg-card border-t-4 border-t-accent rounded-xl p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">TOTAL</div>
+          <div className="text-3xl font-bold text-foreground">{totalTarefas}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">tarefas</div>
+        </div>
+        <div className="bg-card border-t-4 border-t-yellow-500 rounded-xl p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">EM ABERTO</div>
+          <div className="text-3xl font-bold text-yellow-600">{emAberto}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">pendente/andamento</div>
+        </div>
+        <div className="bg-card border-t-4 border-t-red-500 rounded-xl p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">VENCIDAS</div>
+          <div className="text-3xl font-bold text-red-alert">{vencidas}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">prazo expirado</div>
+        </div>
+        <div className="bg-card border-t-4 border-t-green-500 rounded-xl p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">CONCLUÍDAS</div>
+          <div className="text-3xl font-bold text-green-ok">{concluidas}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">este mês</div>
+        </div>
+      </div>
+
+      {/* Feriados e Suspensões */}
+      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-5 h-5 text-primary" />
+          <h2 className="text-sm font-bold uppercase tracking-wider text-primary">
+            FERIADOS E SUSPENSÕES DE PRAZO
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground italic">
+          Cadastrados aqui, válidos para <strong>todas as tarefas</strong>. Os feriados nacionais já são automáticos.
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          <em>Nenhum feriado extra cadastrado.</em>
+        </p>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-5">
-        {([["todas", "Todas"], ["pendente", "Pendentes"], ["concluida", "Concluídas"]] as const).map(([key, label]) => (
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {([
+          ["todas", "Todas"],
+          ["pendente", "Pendente"],
+          ["andamento", "Andamento"],
+          ["ag_cliente", "Ag. Cliente"],
+          ["ag_tribunal", "Ag. Tribunal"],
+          ["concluidas", "Concluídas"],
+          ["canceladas", "Canceladas"],
+        ] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setFilter(key)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              filter === key ? "bg-accent text-primary" : "bg-card border border-border text-muted-foreground hover:text-foreground"
+              filter === key
+                ? "bg-accent text-primary"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
             }`}
           >
             {label}
