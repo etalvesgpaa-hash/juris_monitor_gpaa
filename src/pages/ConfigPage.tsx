@@ -107,12 +107,20 @@ export function ConfigPage() {
     if (!user) return;
     setLoadingKeys(true);
     try {
-      // Verificar se já existe registro
-      const { data: existingRecord } = await supabase
+      // Gerar UUID se não houver
+      const generateId = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+
+      // Verificar se já existe registro (maybeSingle para não gerar erro se não existir)
+      const { data: existingRecord, error: selectError } = await supabase
         .from("api_keys")
         .select("id")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (existingRecord) {
         // Atualizar registro existente
@@ -123,30 +131,41 @@ export function ConfigPage() {
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
+            updated_at: new Date().toISOString()
           })
           .eq("user_id", user.id);
         
         if (updateError) throw updateError;
       } else {
-        // Inserir novo registro
+        // Inserir novo registro com ID gerado automaticamente
         const { error: insertError } = await supabase
           .from("api_keys")
           .insert({
+            id: generateId(),
             user_id: user.id,
             datajud_token: apiKeys.datajud_token || null,
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           });
         
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error("Erro ao inserir:", insertError);
+          if (insertError.message.includes("api_keys")) {
+            throw new Error("Tabela 'api_keys' não existe. Crie a tabela no Supabase com as colunas: id, user_id, datajud_token, aasp_chave, groq_api_key, whatsapp_token");
+          }
+          throw insertError;
+        }
       }
 
       toast({ title: "✅ API Keys salvas com sucesso!" });
     } catch (err: any) {
+      console.error("Erro completo:", err);
       toast({ 
         title: "Erro ao salvar API Keys", 
-        description: err.message, 
+        description: err.message || "Erro desconhecido ao salvar", 
         variant: "destructive" 
       });
     } finally {
@@ -198,24 +217,36 @@ export function ConfigPage() {
 
     setTestingAasp(true);
     try {
-      const response = await fetch(
-        `https://api.intimacao.aasp.org.br/api/Associado/intimacao/json?chave=${apiKeys.aasp_chave}&diferencial=false`,
-        { method: 'GET' }
-      );
+      // Usar proxy CORS para contornar restrições do navegador
+      const aaspUrl = `https://api.intimacao.aasp.org.br/api/Associado/intimacao/json?chave=${apiKeys.aasp_chave}&diferencial=false`;
+      
+      const response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: aaspUrl })
+      });
       
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Chave AASP inválida ou expirada. Verifique em https://minha.aasp.org.br");
+        }
         throw new Error(`Erro HTTP: ${response.status}`);
       }
 
       const data = await response.json();
+      const count = Array.isArray(data) ? data.length : (data?.quantidade || 0);
+      
       toast({ 
         title: "✅ AASP conectada!", 
-        description: `API respondeu com sucesso. ${data.length || 0} intimações encontradas.` 
+        description: `API respondeu com sucesso. ${count} intimação(ões) encontrada(s).` 
       });
     } catch (err: any) {
+      const message = err.message || "Falha ao conectar com AASP";
       toast({ 
         title: "❌ Erro ao conectar com AASP", 
-        description: err.message, 
+        description: message.includes("Failed to fetch") 
+          ? "Problema de conexão. Verifique sua chave e tente novamente." 
+          : message, 
         variant: "destructive" 
       });
     } finally {
