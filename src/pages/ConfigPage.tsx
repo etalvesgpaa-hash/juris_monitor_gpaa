@@ -217,45 +217,56 @@ export function ConfigPage() {
 
     setTestingAasp(true);
     try {
-      // Domínio correto da AASP (intimacaoapi.aasp.org.br)
-      // O proxy recebe a URL via query string (?url=...), não via body
-      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(apiKeys.aasp_chave)}&diferencial=false`;
+      // Domínio correto: intimacaoapi.aasp.org.br
+      // IMPORTANTE: a AASP exige o parâmetro "data" (data do dia no formato YYYY-MM-DD)
+      // e NÃO aceita diferencial=false — omitir o parâmetro é o comportamento correto
+      const hoje = new Date().toISOString().split('T')[0];
+      const params = new URLSearchParams({
+        chave: apiKeys.aasp_chave,
+        data: hoje,
+        // diferencial: omitido intencionalmente — AASP retorna 500 com valor false em string
+      });
+      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params.toString()}`;
+
+      // O proxy.js lê a URL do query string (?url=...), nunca do body
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
 
       const response = await fetch(proxyUrl, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
       });
 
-      // O proxy repassa o status HTTP original da AASP
-      const upstreamStatus = response.headers.get('X-Upstream-Status') || String(response.status);
+      // X-Upstream-Status = status HTTP real retornado pela AASP (repassado pelo proxy)
+      const upstreamStatus = parseInt(response.headers.get('X-Upstream-Status') || String(response.status), 10);
 
+      const bodyText = await response.text().catch(() => '');
+
+      if (upstreamStatus === 401 || upstreamStatus === 403) {
+        throw new Error("Chave AASP inválida ou expirada. Verifique em https://minha.aasp.org.br");
+      }
+      if (upstreamStatus === 500) {
+        // Erro interno da AASP — geralmente parâmetro errado ou data sem publicação
+        throw new Error("A API da AASP retornou erro interno (500). Verifique se sua chave é válida. Se for fora do horário de publicação, tente novamente mais tarde.");
+      }
       if (!response.ok) {
-        if (upstreamStatus === '401' || upstreamStatus === '403' || response.status === 403) {
-          throw new Error("Chave AASP inválida ou expirada. Verifique em https://minha.aasp.org.br");
-        }
-        if (response.status === 500) {
-          const errBody = await response.text().catch(() => '');
-          throw new Error(`Erro no proxy: ${errBody || 'Falha ao contatar a API da AASP'}`);
-        }
-        throw new Error(`Erro HTTP ${upstreamStatus}: verifique sua chave AASP`);
+        throw new Error(`Erro HTTP ${upstreamStatus}. Verifique sua chave AASP.`);
       }
 
-      const data = await response.json().catch(() => null);
+      let data: any = null;
+      try { data = JSON.parse(bodyText); } catch { /* resposta não é JSON */ }
+
       const count = Array.isArray(data) ? data.length : (data?.quantidade ?? 0);
       
       toast({ 
         title: "✅ AASP conectada!", 
-        description: `API respondeu com sucesso. ${count} intimação(ões) encontrada(s).` 
+        description: `Conexão estabelecida com sucesso. ${count} intimação(ões) encontrada(s) hoje.`,
       });
     } catch (err: any) {
       const message = err.message || "Falha ao conectar com AASP";
       toast({ 
         title: "❌ Erro ao conectar com AASP", 
         description: message.includes("Failed to fetch") 
-          ? "Problema de rede. Verifique sua conexão e tente novamente." 
+          ? "Problema de rede — verifique sua conexão e tente novamente." 
           : message, 
         variant: "destructive" 
       });

@@ -45,16 +45,22 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // Monta headers sem Content-Type em requisições GET/HEAD.
+    // A API da AASP rejeita com erro 500 quando recebe Content-Type em GET.
+    const upstreamHeaders = {
+      'Accept': 'application/json',
+      'User-Agent': 'JurisMonitor/1.0',
+      ...(req.headers['authorization']
+        ? { 'Authorization': req.headers['authorization'] }
+        : {}),
+    };
+    if (isPost) {
+      upstreamHeaders['Content-Type'] = 'application/json';
+    }
+
     const upstream = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'JurisMonitor/1.0',
-        ...(req.headers['authorization']
-          ? { 'Authorization': req.headers['authorization'] }
-          : {}),
-      },
+      headers: upstreamHeaders,
       ...(bodyToSend ? { body: bodyToSend } : {}),
       signal: AbortSignal.timeout(55000),
     });
