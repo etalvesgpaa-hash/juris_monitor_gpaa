@@ -1,12 +1,97 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useClientes, useCreateCliente, useUpdateCliente, useDeleteCliente } from "@/hooks/useClientes";
+import {
+  useClientes,
+  useCreateCliente,
+  useUpdateCliente,
+  useDeleteCliente,
+} from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
-import { Edit2, Trash2, Mail, MailWarning, Pause, Play, Plus, Search, AlertCircle } from "lucide-react";import type { Cliente } from "../hooks/useClientes";
+import {
+  Edit2,
+  Trash2,
+  Mail,
+  MailOff,
+  Pause,
+  Play,
+  Plus,
+  Search,
+  AlertCircle,
+  RefreshCw,
+  Sparkles,
+  MessageCircle,
+  Send,
+  Clock,
+  Users,
+  CheckCircle2,
+  Bell,
+} from "lucide-react";
+import type { Cliente } from "../hooks/useClientes";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface NotificacaoEnviada {
+  id: string;
+  cliente_id: string;
+  numero_processo: string;
+  assunto: string;
+  resumo_ia: string | null;
+  email_destino: string;
+  status: string;
+  created_at: string;
+  intimacao_id: string | null;
+}
+
+interface IntimacaoLocal {
+  _id: string;
+  _data: string;
+  _numProc: string | null;
+  _titulo: string;
+  _resumoIA: string | null;
+  textoPublicacao?: string;
+  Texto?: string;
+  texto?: string;
+  Conteudo?: string;
+  conteudo?: string;
+  [key: string]: unknown;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtData(s: string) {
+  if (!s) return "";
+  const d = new Date(s);
+  return isNaN(d.getTime())
+    ? s
+    : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function fmtDateTime(s: string | null | undefined) {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime())
+    ? s
+    : d.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+function formatPhone(tel: string) {
+  return tel.replace(/\D/g, "");
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function ClientesPage() {
-  const { data: clientes = [], isLoading } = useClientes();
+  const { user } = useAuth();
+  const { data: clientes = [], isLoading, refetch } = useClientes();
   const createCliente = useCreateCliente();
   const updateCliente = useUpdateCliente();
   const deleteCliente = useDeleteCliente();
@@ -24,9 +109,57 @@ export function ClientesPage() {
     observacoes: "",
     numeros_processo: [] as string[],
     notificacoes_email: true,
+    notificacoes_whatsapp: false,
     status_monitoramento: "ativo" as "ativo" | "pausado" | "inativo",
   });
   const [processoInput, setProcessoInput] = useState("");
+
+  // Per-cliente state for actions in progress
+  const [sendingEmail, setSendingEmail] = useState<Record<string, boolean>>({});
+  const [reprocessing, setReprocessing] = useState<Record<string, boolean>>({});
+  const [updatingResumos, setUpdatingResumos] = useState<Record<string, boolean>>({});
+  const [lastNotificacoes, setLastNotificacoes] = useState<Record<string, NotificacaoEnviada>>({});
+
+  // Stats
+  const totalClientes = clientes.length;
+  const clientesAtivos = clientes.filter((c) => c.status_monitoramento === "ativo").length;
+  const notificacoesHoje = Object.values(lastNotificacoes).filter((n) => {
+    const d = new Date(n.created_at);
+    const hoje = new Date();
+    return (
+      d.getDate() === hoje.getDate() &&
+      d.getMonth() === hoje.getMonth() &&
+      d.getFullYear() === hoje.getFullYear()
+    );
+  }).length;
+
+  // Load last notifications for each client
+  useEffect(() => {
+    if (!user || clientes.length === 0) return;
+    loadLastNotificacoes();
+  }, [user, clientes]);
+
+  const loadLastNotificacoes = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("notificacoes_enviadas")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("status", "enviado")
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      const byCliente: Record<string, NotificacaoEnviada> = {};
+      for (const n of data as NotificacaoEnviada[]) {
+        if (!byCliente[n.cliente_id]) {
+          byCliente[n.cliente_id] = n;
+        }
+      }
+      setLastNotificacoes(byCliente);
+    }
+  };
+
+  // ── Form helpers ────────────────────────────────────────────────────────────
 
   const resetForm = () => {
     setForm({
@@ -38,6 +171,7 @@ export function ClientesPage() {
       observacoes: "",
       numeros_processo: [],
       notificacoes_email: true,
+      notificacoes_whatsapp: false,
       status_monitoramento: "ativo",
     });
     setProcessoInput("");
@@ -55,6 +189,7 @@ export function ClientesPage() {
       observacoes: c.observacoes || "",
       numeros_processo: c.numeros_processo || [],
       notificacoes_email: c.notificacoes_email ?? true,
+      notificacoes_whatsapp: (c as any).notificacoes_whatsapp ?? false,
       status_monitoramento: c.status_monitoramento || "ativo",
     });
     setEditing(c);
@@ -64,8 +199,6 @@ export function ClientesPage() {
   const adicionarProcesso = () => {
     const proc = processoInput.trim();
     if (!proc) return;
-    
-    // Remove duplicatas
     if (!form.numeros_processo.includes(proc)) {
       setForm({ ...form, numeros_processo: [...form.numeros_processo, proc] });
       setProcessoInput("");
@@ -75,10 +208,7 @@ export function ClientesPage() {
   };
 
   const removerProcesso = (proc: string) => {
-    setForm({
-      ...form,
-      numeros_processo: form.numeros_processo.filter((p) => p !== proc),
-    });
+    setForm({ ...form, numeros_processo: form.numeros_processo.filter((p) => p !== proc) });
   };
 
   const handleSave = async () => {
@@ -86,11 +216,18 @@ export function ClientesPage() {
       toast({ title: "Informe o nome do cliente", variant: "destructive" });
       return;
     }
-
     if (form.notificacoes_email && !form.email) {
       toast({
         title: "E-mail obrigatório",
-        description: "Para ativar notificações, informe o e-mail do cliente",
+        description: "Para ativar notificações por e-mail, informe o e-mail do cliente",
+        variant: "destructive",
+      });
+      return;
+    }
+    if ((form as any).notificacoes_whatsapp && !form.telefone) {
+      toast({
+        title: "Telefone obrigatório",
+        description: "Para ativar notificações por WhatsApp, informe o telefone do cliente",
         variant: "destructive",
       });
       return;
@@ -105,6 +242,7 @@ export function ClientesPage() {
       observacoes: form.observacoes || null,
       numeros_processo: form.numeros_processo.length > 0 ? form.numeros_processo : null,
       notificacoes_email: form.notificacoes_email,
+      notificacoes_whatsapp: (form as any).notificacoes_whatsapp,
       status_monitoramento: form.status_monitoramento,
     };
 
@@ -142,15 +280,9 @@ export function ClientesPage() {
       });
       return;
     }
-
     try {
-      await updateCliente.mutateAsync({
-        id: c.id,
-        notificacoes_email: !c.notificacoes_email,
-      });
-      toast({
-        title: c.notificacoes_email ? "Notificações desativadas" : "Notificações ativadas",
-      });
+      await updateCliente.mutateAsync({ id: c.id, notificacoes_email: !c.notificacoes_email });
+      toast({ title: c.notificacoes_email ? "Notificações por e-mail desativadas" : "Notificações por e-mail ativadas" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     }
@@ -159,20 +291,293 @@ export function ClientesPage() {
   const toggleStatus = async (c: Cliente) => {
     const novoStatus = c.status_monitoramento === "ativo" ? "pausado" : "ativo";
     try {
-      await updateCliente.mutateAsync({
-        id: c.id,
-        status_monitoramento: novoStatus,
-      });
-      toast({
-        title:
-          novoStatus === "ativo"
-            ? "Monitoramento reativado"
-            : "Monitoramento pausado",
-      });
+      await updateCliente.mutateAsync({ id: c.id, status_monitoramento: novoStatus });
+      toast({ title: novoStatus === "ativo" ? "Monitoramento reativado" : "Monitoramento pausado" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     }
   };
+
+  // ── WhatsApp ─────────────────────────────────────────────────────────────────
+
+  const enviarWhatsApp = (c: Cliente, resumo?: string | null) => {
+    if (!c.telefone) {
+      toast({ title: "Telefone não cadastrado", variant: "destructive" });
+      return;
+    }
+    const numero = formatPhone(c.telefone);
+    const processos = (c.numeros_processo || []).join(", ") || "não informado";
+    const texto = resumo
+      ? `*JurisMonitor — Nova Intimação*\n\nOlá ${c.nome},\n\nFoi detectada uma publicação relacionada ao seu processo: ${processos}\n\n*Resumo:*\n${resumo}\n\nEm caso de dúvidas, entre em contato com o escritório.`
+      : `*JurisMonitor — Aviso de Intimação*\n\nOlá ${c.nome},\n\nHá uma intimação relacionada ao seu processo: ${processos}.\nEntre em contato com o escritório para mais detalhes.`;
+
+    const url = `https://wa.me/55${numero}?text=${encodeURIComponent(texto)}`;
+    window.open(url, "_blank");
+  };
+
+  // ── AI Summary ───────────────────────────────────────────────────────────────
+
+  const buscarResumoIA = async (numProc: string): Promise<string | null> => {
+    try {
+      // Busca intimações do localStorage (mesma chave usada em IntimacoesPage)
+      const storeKey = `jurismonitor_intimacoes_${user?.id}`;
+      const stored = localStorage.getItem(storeKey);
+      if (!stored) return null;
+
+      const intimacoes: IntimacaoLocal[] = JSON.parse(stored);
+      const procLimpo = numProc.replace(/\D/g, "");
+      const match = intimacoes.find((i) => {
+        if (!i._numProc) return false;
+        const iLimpo = i._numProc.replace(/\D/g, "");
+        return iLimpo.includes(procLimpo) || procLimpo.includes(iLimpo);
+      });
+
+      if (!match) return null;
+      if (match._resumoIA) return match._resumoIA;
+
+      // Gera resumo via Groq se não existir
+      const texto = (match.textoPublicacao || match.Texto || match.texto || match.Conteudo || match.conteudo || "") as string;
+      if (!texto || texto.length < 50) return null;
+
+      const { data: apiKeys } = await supabase
+        .from("api_keys")
+        .select("groq_api_key")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+
+      const groqKey = apiKeys?.groq_api_key;
+      if (!groqKey) return null;
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+            },
+            {
+              role: "user",
+              content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 300,
+        }),
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      const resumo = data.choices?.[0]?.message?.content || null;
+
+      // Salva resumo de volta no localStorage
+      if (resumo) {
+        const updated = intimacoes.map((i) =>
+          i._id === match._id ? { ...i, _resumoIA: resumo } : i
+        );
+        localStorage.setItem(storeKey, JSON.stringify(updated));
+      }
+
+      return resumo;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── Send Email manually ───────────────────────────────────────────────────────
+
+  const enviarEmailManual = async (c: Cliente) => {
+    if (!c.email) {
+      toast({ title: "Cliente sem e-mail cadastrado", variant: "destructive" });
+      return;
+    }
+    if (!c.numeros_processo || c.numeros_processo.length === 0) {
+      toast({ title: "Nenhum processo vinculado a este cliente", variant: "destructive" });
+      return;
+    }
+
+    setSendingEmail((prev) => ({ ...prev, [c.id]: true }));
+    try {
+      const resumos: string[] = [];
+      for (const numProc of c.numeros_processo) {
+        const resumo = await buscarResumoIA(numProc);
+        if (resumo) resumos.push(`📂 Processo ${numProc}:\n${resumo}`);
+      }
+
+      const resumoFinal =
+        resumos.length > 0
+          ? resumos.join("\n\n---\n\n")
+          : "Nenhum resumo de IA disponível no momento. Acesse o portal para ver os detalhes das intimações.";
+
+      const emailData = {
+        destinatario: c.email,
+        nomeCliente: c.nome,
+        numeroProcesso: (c.numeros_processo || []).join(", "),
+        dataPublicacao: fmtData(new Date().toISOString()),
+        assunto: "Atualização de Intimações",
+        resumoIA: resumoFinal,
+        textoCompleto: "",
+      };
+
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emailData),
+      });
+
+      if (!response.ok) throw new Error("Falha ao enviar e-mail");
+
+      // Registra no banco
+      await supabase.from("notificacoes_enviadas").insert({
+        user_id: user!.id,
+        cliente_id: c.id,
+        intimacao_id: null,
+        numero_processo: (c.numeros_processo || []).join(", "),
+        assunto: "Envio manual — Resumo IA",
+        resumo_ia: resumoFinal,
+        email_destino: c.email,
+        status: "enviado",
+      });
+
+      await updateCliente.mutateAsync({
+        id: c.id,
+        ultima_notificacao: new Date().toISOString(),
+      });
+
+      await loadLastNotificacoes();
+      toast({ title: `✅ E-mail enviado para ${c.nome}` });
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar e-mail", description: err.message, variant: "destructive" });
+    } finally {
+      setSendingEmail((prev) => ({ ...prev, [c.id]: false }));
+    }
+  };
+
+  // ── Reprocessar Intimações ────────────────────────────────────────────────────
+
+  const reprocessarIntimacoes = async (c: Cliente) => {
+    if (!c.numeros_processo || c.numeros_processo.length === 0) {
+      toast({ title: "Nenhum processo vinculado", variant: "destructive" });
+      return;
+    }
+
+    setReprocessing((prev) => ({ ...prev, [c.id]: true }));
+    try {
+      // Busca todas notificações já enviadas para este cliente
+      const { data: jaEnviadas } = await supabase
+        .from("notificacoes_enviadas")
+        .select("intimacao_id")
+        .eq("cliente_id", c.id)
+        .eq("status", "enviado");
+
+      const idsEnviados = new Set((jaEnviadas || []).map((n: any) => n.intimacao_id).filter(Boolean));
+
+      // Busca intimações do localStorage
+      const storeKey = `jurismonitor_intimacoes_${user?.id}`;
+      const stored = localStorage.getItem(storeKey);
+      if (!stored) {
+        toast({ title: "Nenhuma intimação no cache local. Sincronize primeiro.", variant: "default" });
+        return;
+      }
+
+      const intimacoes: IntimacaoLocal[] = JSON.parse(stored);
+      const procLimpas = (c.numeros_processo || []).map((p) => p.replace(/\D/g, ""));
+
+      const matchs = intimacoes.filter((i) => {
+        if (!i._numProc) return false;
+        const iLimpo = i._numProc.replace(/\D/g, "");
+        return procLimpas.some((p) => iLimpo.includes(p) || p.includes(iLimpo));
+      });
+
+      if (matchs.length === 0) {
+        toast({ title: "Nenhuma intimação encontrada para os processos deste cliente", variant: "default" });
+        return;
+      }
+
+      let enviados = 0;
+      for (const intim of matchs) {
+        if (idsEnviados.has(intim._id)) continue; // já enviou
+
+        if (c.email && c.notificacoes_email) {
+          const resumo = intim._resumoIA || (await buscarResumoIA(intim._numProc || ""));
+          const emailData = {
+            destinatario: c.email,
+            nomeCliente: c.nome,
+            numeroProcesso: intim._numProc,
+            dataPublicacao: fmtData(intim._data),
+            assunto: intim._titulo || "Nova Publicação AASP",
+            resumoIA: resumo || "Resumo não disponível.",
+            textoCompleto: "",
+          };
+          const res = await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(emailData),
+          });
+          if (res.ok) {
+            await supabase.from("notificacoes_enviadas").insert({
+              user_id: user!.id,
+              cliente_id: c.id,
+              intimacao_id: intim._id,
+              numero_processo: intim._numProc || "",
+              assunto: intim._titulo || "Reprocessamento",
+              resumo_ia: resumo,
+              email_destino: c.email,
+              status: "enviado",
+            });
+            enviados++;
+          }
+        }
+      }
+
+      await updateCliente.mutateAsync({ id: c.id, ultima_notificacao: new Date().toISOString() });
+      await loadLastNotificacoes();
+      toast({
+        title: enviados > 0
+          ? `✅ ${enviados} notificação(ões) reprocessada(s) e enviada(s)`
+          : "✓ Nenhuma intimação nova encontrada para reenvio",
+      });
+    } catch (err: any) {
+      toast({ title: "Erro no reprocessamento", description: err.message, variant: "destructive" });
+    } finally {
+      setReprocessing((prev) => ({ ...prev, [c.id]: false }));
+    }
+  };
+
+  // ── Atualizar Resumos IA ──────────────────────────────────────────────────────
+
+  const atualizarResumosIA = async (c: Cliente) => {
+    if (!c.numeros_processo || c.numeros_processo.length === 0) {
+      toast({ title: "Nenhum processo vinculado", variant: "destructive" });
+      return;
+    }
+
+    setUpdatingResumos((prev) => ({ ...prev, [c.id]: true }));
+    try {
+      let atualizados = 0;
+      for (const numProc of c.numeros_processo) {
+        const resumo = await buscarResumoIA(numProc);
+        if (resumo) atualizados++;
+      }
+      toast({
+        title: atualizados > 0
+          ? `✅ ${atualizados} resumo(s) de IA atualizado(s)`
+          : "Nenhum texto de intimação encontrado para gerar resumos",
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao atualizar resumos", description: err.message, variant: "destructive" });
+    } finally {
+      setUpdatingResumos((prev) => ({ ...prev, [c.id]: false }));
+    }
+  };
+
+  // ── Filtered list ─────────────────────────────────────────────────────────────
 
   const filtered = clientes.filter(
     (c) =>
@@ -182,37 +587,109 @@ export function ClientesPage() {
       (c.numeros_processo || []).some((p) => p.includes(search))
   );
 
+  // ─────────────────────────────────────────────────────────────────────────────
+
   return (
     <div>
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Clientes</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gerencie clientes e monitore intimações automaticamente
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+              <Users className="h-5 w-5 text-accent" />
+            </div>
+            <h1 className="font-display text-3xl font-bold tracking-tight">
+              Clientes — Portal
+            </h1>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1 ml-13">
+            Cadastre clientes e vincule processos para acesso no portal
           </p>
         </div>
-        <Button
-          variant="gold"
-          onClick={() => {
-            resetForm();
-            setShowForm(true);
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1.5" />
-          Novo Cliente
-        </Button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              // Reprocessar TODOS os clientes
+              toast({ title: "Reprocessando intimações para todos os clientes..." });
+              for (const c of clientes.filter(
+                (cl) => cl.status_monitoramento === "ativo" && cl.notificacoes_email && cl.email
+              )) {
+                await reprocessarIntimacoes(c);
+              }
+            }}
+            className="h-9 text-xs gap-1.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Reprocessar Intimações
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              toast({ title: "Atualizando resumos de IA para todos os clientes..." });
+              for (const c of clientes) {
+                await atualizarResumosIA(c);
+              }
+            }}
+            className="h-9 text-xs gap-1.5"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Atualizar Resumos do Portal
+          </Button>
+
+          <Button
+            variant="gold"
+            onClick={() => {
+              resetForm();
+              setShowForm(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Novo Cliente
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+            TOTAL CLIENTES
+          </div>
+          <div className="text-4xl font-bold font-display">{totalClientes}</div>
+          <div className="text-xs text-muted-foreground mt-1">cadastrados</div>
+        </div>
+        <div className="bg-card border-2 border-green-500/30 rounded-xl p-5">
+          <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+            ATIVOS
+          </div>
+          <div className="text-4xl font-bold font-display text-green-600">{clientesAtivos}</div>
+          <div className="text-xs text-muted-foreground mt-1">com acesso</div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+            NOTIFICAÇÕES
+          </div>
+          <div className="text-4xl font-bold font-display">{notificacoesHoje}</div>
+          <div className="text-xs text-muted-foreground mt-1">enviadas hoje</div>
+        </div>
       </div>
 
       {/* Busca */}
-      <div className="mb-6 relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          className="w-full pl-11 border border-border rounded-lg px-4 py-3 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
-          placeholder="Buscar por nome, CPF/CNPJ, e-mail ou número de processo..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="bg-card border border-border rounded-xl p-4 mb-5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            className="w-full pl-10 border border-border rounded-lg px-4 py-2.5 text-sm bg-background focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+            placeholder="Buscar por nome, e-mail ou processo CNJ..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Formulário */}
@@ -223,7 +700,11 @@ export function ClientesPage() {
               {editing ? "Editar Cliente" : "Novo Cliente"}
             </h2>
             <div className="flex gap-2">
-              <Button variant="gold" onClick={handleSave} disabled={createCliente.isPending || updateCliente.isPending}>
+              <Button
+                variant="gold"
+                onClick={handleSave}
+                disabled={createCliente.isPending || updateCliente.isPending}
+              >
                 {createCliente.isPending || updateCliente.isPending ? "Salvando..." : "Salvar"}
               </Button>
               <Button variant="outline" onClick={resetForm}>
@@ -232,7 +713,6 @@ export function ClientesPage() {
             </div>
           </div>
 
-          {/* Dados básicos */}
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <InputField
@@ -245,7 +725,7 @@ export function ClientesPage() {
                 label="CPF / CNPJ"
                 value={form.cpf_cnpj}
                 onChange={(v) => setForm({ ...form, cpf_cnpj: v })}
-                placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                placeholder="000.000.000-00"
               />
               <InputField
                 label="E-mail"
@@ -255,7 +735,7 @@ export function ClientesPage() {
                 placeholder="email@exemplo.com"
               />
               <InputField
-                label="Telefone"
+                label="Telefone / WhatsApp"
                 value={form.telefone}
                 onChange={(v) => setForm({ ...form, telefone: v })}
                 placeholder="(11) 99999-9999"
@@ -275,10 +755,9 @@ export function ClientesPage() {
                 Números de Processo (CNJ)
               </label>
               <p className="text-xs text-muted-foreground mb-3">
-                Adicione os números de processo CNJ que deseja monitorar para este cliente. Quando
-                houver novas intimações, o cliente receberá um e-mail automático.
+                Adicione os números de processo CNJ. Quando houver novas intimações, o cliente
+                receberá notificação automática por e-mail e/ou WhatsApp.
               </p>
-
               <div className="flex gap-2 mb-3">
                 <input
                   value={processoInput}
@@ -292,7 +771,6 @@ export function ClientesPage() {
                   Adicionar
                 </Button>
               </div>
-
               {form.numeros_processo.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {form.numeros_processo.map((proc) => (
@@ -317,34 +795,64 @@ export function ClientesPage() {
               )}
             </div>
 
-            {/* Configurações de Notificação */}
+            {/* Notificações */}
             <div className="border border-border rounded-xl p-4 bg-muted/30">
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-3 block">
-                Monitoramento e Notificações
+                Canais de Notificação Automática
               </label>
-
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* E-mail */}
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Notificações por E-mail</p>
-                    <p className="text-xs text-muted-foreground">
-                      Enviar e-mail automático quando houver novas intimações
-                    </p>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                      <Mail className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Notificações por E-mail</p>
+                      <p className="text-xs text-muted-foreground">
+                        Envio automático com resumo da IA ao detectar nova intimação
+                      </p>
+                    </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={form.notificacoes_email}
-                      onChange={(e) =>
-                        setForm({ ...form, notificacoes_email: e.target.checked })
-                      }
+                      onChange={(e) => setForm({ ...form, notificacoes_email: e.target.checked })}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
                   </label>
                 </div>
 
+                {/* WhatsApp */}
                 <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+                      <MessageCircle className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Notificações por WhatsApp</p>
+                      <p className="text-xs text-muted-foreground">
+                        Abre o WhatsApp Web para envio manual ao detectar nova intimação
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(form as any).notificacoes_whatsapp || false}
+                      onChange={(e) =>
+                        setForm({ ...form, notificacoes_whatsapp: e.target.checked } as any)
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                  </label>
+                </div>
+
+                {/* Status */}
+                <div className="flex items-center justify-between pt-2 border-t border-border">
                   <div>
                     <p className="text-sm font-medium">Status do Monitoramento</p>
                     <p className="text-xs text-muted-foreground">
@@ -385,7 +893,7 @@ export function ClientesPage() {
         </div>
       )}
 
-      {/* Lista de Clientes */}
+      {/* Tabela */}
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-3"></div>
@@ -417,168 +925,251 @@ export function ClientesPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  {["NOME", "E-MAIL", "PROCESSOS", "STATUS", "NOTIFICAÇÕES", "CADASTRO", "AÇÕES"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    )
-                  )}
+                  {[
+                    "NOME",
+                    "E-MAIL",
+                    "PROCESSO CNJ",
+                    "STATUS",
+                    "NOTIFICAÇÕES",
+                    "CADASTRADO",
+                    "AÇÕES",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="border-b border-border/50 hover:bg-muted/20 transition-colors"
-                  >
-                    {/* NOME */}
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-sm">{c.nome}</div>
-                      {c.cpf_cnpj && (
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {c.cpf_cnpj}
-                        </div>
-                      )}
-                    </td>
+                {filtered.map((c) => {
+                  const ultimaNotif = lastNotificacoes[c.id];
+                  const isLoading =
+                    sendingEmail[c.id] || reprocessing[c.id] || updatingResumos[c.id];
 
-                    {/* E-MAIL */}
-                    <td className="px-4 py-3">
-                      {c.email ? (
-                        <div className="text-xs">{c.email}</div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">Sem e-mail</span>
-                      )}
-                      {c.telefone && (
-                        <div className="text-xs text-muted-foreground">{c.telefone}</div>
-                      )}
-                    </td>
+                  return (
+                    <tr
+                      key={c.id}
+                      className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                    >
+                      {/* NOME */}
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-sm">{c.nome}</div>
+                        {c.cpf_cnpj && (
+                          <div className="text-xs text-muted-foreground font-mono">{c.cpf_cnpj}</div>
+                        )}
+                        {c.telefone && (
+                          <div className="text-xs text-muted-foreground">{c.telefone}</div>
+                        )}
+                      </td>
 
-                    {/* PROCESSOS */}
-                    <td className="px-4 py-3">
-                      {c.numeros_processo && c.numeros_processo.length > 0 ? (
-                        <div className="space-y-1">
-                          {c.numeros_processo.slice(0, 2).map((proc) => (
-                            <div
-                              key={proc}
-                              className="text-xs font-mono bg-accent/10 px-2 py-0.5 rounded"
-                            >
-                              {proc}
+                      {/* E-MAIL */}
+                      <td className="px-4 py-3">
+                        {c.email ? (
+                          <div className="text-xs">{c.email}</div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Sem e-mail</span>
+                        )}
+                      </td>
+
+                      {/* PROCESSO CNJ */}
+                      <td className="px-4 py-3">
+                        {c.numeros_processo && c.numeros_processo.length > 0 ? (
+                          <div className="space-y-1">
+                            {c.numeros_processo.slice(0, 2).map((proc) => (
+                              <div
+                                key={proc}
+                                className="text-xs font-mono bg-accent/10 px-2 py-0.5 rounded"
+                              >
+                                {proc}
+                              </div>
+                            ))}
+                            {c.numeros_processo.length > 2 && (
+                              <div className="text-xs text-muted-foreground">
+                                +{c.numeros_processo.length - 2} mais
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">
+                            Nenhum processo
+                          </span>
+                        )}
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="px-4 py-3">
+                        {c.status_monitoramento === "ativo" ? (
+                          <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                            • Ativo
+                          </Badge>
+                        ) : c.status_monitoramento === "pausado" ? (
+                          <Badge variant="outline">Pausado</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Inativo
+                          </Badge>
+                        )}
+                      </td>
+
+                      {/* NOTIFICAÇÕES */}
+                      <td className="px-4 py-3 min-w-[160px]">
+                        <div className="space-y-1.5">
+                          {/* Último envio */}
+                          {ultimaNotif ? (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {fmtDateTime(ultimaNotif.created_at)}
                             </div>
-                          ))}
-                          {c.numeros_processo.length > 2 && (
-                            <div className="text-xs text-muted-foreground">
-                              +{c.numeros_processo.length - 2} mais
+                          ) : (
+                            <div className="text-xs text-muted-foreground italic">
+                              Nenhum envio ainda
                             </div>
                           )}
+
+                          {/* Botão Notificar / toggle e-mail */}
+                          <button
+                            onClick={() => toggleNotificacoes(c)}
+                            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md transition-colors ${
+                              c.notificacoes_email
+                                ? "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                            }`}
+                          >
+                            {c.notificacoes_email ? (
+                              <>
+                                <Mail className="h-3 w-3" />
+                                Notificar
+                              </>
+                            ) : (
+                              <>
+                                <MailOff className="h-3 w-3" />
+                                Desativado
+                              </>
+                            )}
+                          </button>
+
+                          {/* Botão WhatsApp */}
+                          {c.telefone && (
+                            <button
+                              onClick={() => enviarWhatsApp(c)}
+                              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                            >
+                              <MessageCircle className="h-3 w-3" />
+                              WA
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">
-                          Nenhum processo
-                        </span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* STATUS */}
-                    <td className="px-4 py-3">
-                      {c.status_monitoramento === "ativo" ? (
-                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                          Ativo
-                        </Badge>
-                      ) : c.status_monitoramento === "pausado" ? (
-                        <Badge variant="outline">Pausado</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-muted-foreground">
-                          Inativo
-                        </Badge>
-                      )}
-                    </td>
+                      {/* CADASTRADO */}
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(c.created_at).toLocaleDateString("pt-BR")}
+                      </td>
 
-                    {/* NOTIFICAÇÕES */}
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => toggleNotificacoes(c)}
-                        className="flex items-center gap-1.5 text-xs hover:bg-muted/50 rounded-lg px-2 py-1 transition-colors"
-                        title={
-                          c.notificacoes_email
-                            ? "Desativar notificações"
-                            : "Ativar notificações"
-                        }
-                      >
-                        {c.notificacoes_email ? (
-                          <>
-                            <Mail className="h-3.5 w-3.5 text-green-600" />
-                            <span className="text-green-600">Ativas</span>
-                          </>
-                        ) : (
-                          <>
-                            <MailOff className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-muted-foreground">Desativadas</span>
-                          </>
-                        )}
-                      </button>
-                    </td>
+                      {/* AÇÕES */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1.5">
+                          {/* Row 1: Edit + Toggle + Delete */}
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEdit(c)}
+                              className="h-7 px-2"
+                              title="Editar cliente"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleStatus(c)}
+                              className="h-7 px-2"
+                              title={c.status_monitoramento === "ativo" ? "Pausar monitoramento" : "Reativar"}
+                            >
+                              {c.status_monitoramento === "ativo" ? (
+                                <Pause className="h-3.5 w-3.5" />
+                              ) : (
+                                <Play className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDelete(c.id)}
+                              className="h-7 px-2"
+                              title="Excluir cliente"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
 
-                    {/* CADASTRO */}
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {new Date(c.created_at).toLocaleDateString("pt-BR")}
-                    </td>
-
-                    {/* AÇÕES */}
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEdit(c)}
-                          className="h-8"
-                        >
-                          <Edit2 className="h-3.5 w-3.5 mr-1" />
-                          Editar
-                        </Button>
-                        {c.status_monitoramento === "ativo" ? (
+                          {/* Row 2: Send Email */}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => toggleStatus(c)}
-                            className="h-8"
-                            title="Pausar monitoramento"
+                            onClick={() => enviarEmailManual(c)}
+                            disabled={sendingEmail[c.id] || !c.email}
+                            className="h-7 px-2 text-xs gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                            title="Enviar e-mail com resumo IA"
                           >
-                            <Pause className="h-3.5 w-3.5" />
+                            {sendingEmail[c.id] ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
+                            {sendingEmail[c.id] ? "Enviando..." : "Enviar E-mail"}
                           </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => toggleStatus(c)}
-                            className="h-8"
-                            title="Reativar monitoramento"
-                          >
-                            <Play className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(c.id)}
-                          className="h-8"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+
+                          {/* Row 3: Reprocess + Update Resumos */}
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => reprocessarIntimacoes(c)}
+                              disabled={reprocessing[c.id]}
+                              className="h-7 px-2 text-xs gap-1 flex-1"
+                              title="Reprocessar intimações pendentes"
+                            >
+                              {reprocessing[c.id] ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3" />
+                              )}
+                              {reprocessing[c.id] ? "..." : "Reprocessar"}
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => atualizarResumosIA(c)}
+                              disabled={updatingResumos[c.id]}
+                              className="h-7 px-2 text-xs gap-1 flex-1 text-purple-600 border-purple-200 hover:bg-purple-50"
+                              title="Atualizar resumos de IA"
+                            >
+                              {updatingResumos[c.id] ? (
+                                <Sparkles className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-3 w-3" />
+                              )}
+                              {updatingResumos[c.id] ? "..." : "IA"}
+                            </Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Rodapé com estatísticas */}
+      {/* Rodapé */}
       {filtered.length > 0 && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <div>
@@ -592,9 +1183,15 @@ export function ClientesPage() {
               </strong>
             </span>
             <span>
-              Notificações:{" "}
+              E-mail ativo:{" "}
               <strong className="text-accent">
                 {clientes.filter((c) => c.notificacoes_email).length}
+              </strong>
+            </span>
+            <span>
+              WhatsApp:{" "}
+              <strong className="text-green-600">
+                {clientes.filter((c) => c.telefone).length}
               </strong>
             </span>
           </div>
@@ -603,6 +1200,8 @@ export function ClientesPage() {
     </div>
   );
 }
+
+// ─── Input helper ─────────────────────────────────────────────────────────────
 
 function InputField({
   label,
