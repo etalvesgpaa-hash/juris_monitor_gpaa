@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useClientes, useCreateCliente, useUpdateCliente, useDeleteCliente } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
-import { Edit2, Trash2, Mail, MailOff, Pause, Play, Plus, Search, AlertCircle } from "lucide-react";
-import type { Cliente } from "@/hooks/useClientes";
+import { Edit2, Trash2, Mail, MailWarning, Pause, Play, Plus, Search, AlertCircle } from "lucide-react";import type { Cliente } from "../hooks/useClientes";
 
 export function ClientesPage() {
   const { data: clientes = [], isLoading } = useClientes();
