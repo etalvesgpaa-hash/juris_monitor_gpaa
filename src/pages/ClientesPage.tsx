@@ -12,7 +12,6 @@ import {
   Edit2,
   Trash2,
   Mail,
-  MailOff,
   Pause,
   Play,
   Plus,
