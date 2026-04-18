@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -8,24 +8,9 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import {
-  RefreshCw,
-  RotateCcw,
-  TableIcon,
-  LayoutGrid,
-  Eye,
-  CheckCircle,
-  Pause,
-  PlayCircle,
-  Trash2,
-  X,
-  ChevronDown,
-  Loader2,
-  AlertCircle,
-} from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -187,42 +172,57 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
-  /** Busca intimações de um dia específico via proxy */
+  /** Busca intimações de um dia — tenta /api/proxy, corsproxy.io e allorigins (igual ao index.html original) */
   const buscarDia = useCallback(
     async (dataStr: string, silencioso = false): Promise<AaspIntimacao[]> => {
       if (!aaspKey) return [];
-      const aaspUrl =
-        `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json` +
-        `?chave=${encodeURIComponent(aaspKey)}&data=${dataStr}`;
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
 
-      const resp = await fetch(proxyUrl, { headers: { Accept: "application/json" } });
-      if (!resp.ok) {
-        // 500 = dia sem publicação (comportamento normal da AASP)
-        if (!silencioso) console.warn(`[AASP] ${dataStr}: HTTP ${resp.status}`);
-        return [];
+      // Monta endpoint AASP — sem diferencial=false (a API não reconhece o valor em string)
+      const params   = new URLSearchParams({ chave: aaspKey, data: dataStr });
+      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
+
+      // 3 proxies em sequência — mesma estratégia do index.html que funciona
+      const proxies = [
+        { nome: "backend",    url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+        { nome: "corsproxy",  url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
+        { nome: "allorigins", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+      ];
+
+      for (const p of proxies) {
+        try {
+          const resp = await fetch(p.url, { headers: { Accept: "application/json" } });
+          if (!resp.ok) {
+            if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: HTTP ${resp.status}`);
+            continue;
+          }
+          const text = await resp.text();
+          if (!text.trim()) continue;
+
+          let raw: unknown = null;
+          try { raw = JSON.parse(text); } catch { /* ok */ }
+          // allorigins wrapper
+          if (!raw) { try { const w: any = JSON.parse(text); if (w?.contents) raw = JSON.parse(w.contents); } catch { /* ok */ } }
+          if (!raw) continue;
+
+          return normalizar(raw).map((intim, idx) => ({
+            ...intim,
+            _id:     gerarId(intim, idx),
+            _data:   dataStr,
+            _lida:   false,
+            _status: "ativa" as const,
+            _resumoIA: null,
+            _numProc: extrairNumProc(intim),
+            _titulo:
+              intim.TituloAssunto ||
+              intim.Assunto ||
+              (intim.Texto || intim.texto || "").slice(0, 80) ||
+              "Publicação AASP",
+          }));
+        } catch (e: any) {
+          if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: ${e.message}`);
+        }
       }
-      const text = await resp.text();
-      if (!text.trim()) return [];
-      try {
-        const raw = JSON.parse(text);
-        return normalizar(raw).map((intim, idx) => ({
-          ...intim,
-          _id: gerarId(intim, idx),
-          _data: dataStr,
-          _lida: false,
-          _status: "ativa" as const,
-          _resumoIA: null,
-          _numProc: extrairNumProc(intim),
-          _titulo:
-            intim.TituloAssunto ||
-            intim.Assunto ||
-            (intim.Texto || intim.texto || "").slice(0, 80) ||
-            "Publicação AASP",
-        }));
-      } catch {
-        return [];
-      }
+      return []; // todos os proxies falharam para este dia
     },
     [aaspKey]
   );
@@ -653,7 +653,11 @@ export function IntimacoesPage() {
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-base font-medium">Nenhuma intimação encontrada.</p>
           <p className="text-sm mt-1">
+<<<<<<< HEAD
             {aaspKey ? 'Clique em "Atualizar" para buscar as publicações.' : "Configure sua chave AASP nas Configurações."}
+=======
+            {aaspKey ? 'Clique em "Atualizar" para buscar as publicações.' : 'Configure sua chave AASP nas Configurações.'}
+>>>>>>> 3df0cd0 (correcao api aasp1)
           </p>
         </div>
       ) : viewMode === "tabela" ? (

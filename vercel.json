@@ -19,7 +19,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://fonts.googleapis.com https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://vercel.live https://*.vercel.live; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api-publica.datajud.cnj.jus.br https://datajud.cnj.jus.br https://intimacaoapi.aasp.org.br https://api.groq.com https://api.escavador.com https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob:;"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://fonts.googleapis.com https://vercel.live https://*.vercel.live; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://vercel.live https://*.vercel.live; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api-publica.datajud.cnj.jus.br https://datajud.cnj.jus.br https://intimacaoapi.aasp.org.br https://api.groq.com https://api.escavador.com https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com https://fonts.gstatic.com https://corsproxy.io https://api.allorigins.win; img-src 'self' data: blob:;"
         }
       ]
     }

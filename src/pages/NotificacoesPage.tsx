@@ -3,9 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Bell, AlertCircle, Clock, CheckCircle, Calendar, DollarSign } from "lucide-react";
-import { format, differenceInDays, isPast, isToday, isTomorrow } from "date-fns";
+import { format, differenceInDays, isToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Button } from "@/components/ui/button";
+;
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Notificacao {

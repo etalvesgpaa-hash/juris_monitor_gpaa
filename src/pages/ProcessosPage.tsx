@@ -4,7 +4,7 @@ import { useProcessos, useCreateProcesso, useDeleteProcesso, useMovimentacoes } 
 import { useClientes } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ChevronDown, MoreVertical, Eye, Trash2 } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 import type { Processo } from "@/hooks/useProcessos";
 
 export function ProcessosPage() {
