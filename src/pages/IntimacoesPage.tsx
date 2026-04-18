@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,9 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
-} from "@/components/ui/select";
+  SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, X, FileText, Flag } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -22,8 +21,6 @@ interface AaspIntimacao {
   _resumoIA?: string | null;
   _titulo?: string;
   _numProc?: string;
-  _tarefaCriada?: boolean;
-  _dataInclusao?: string;
 
   // Campos diretos da API AASP
   TituloAssunto?: string;
@@ -145,39 +142,6 @@ function saveStore(items: AaspIntimacao[]) {
   localStorage.setItem(STORE_KEY, JSON.stringify(items.slice(0, 500)));
 }
 
-// Função para gerar resumo com Groq
-async function gerarResumoGroq(texto: string): Promise<string> {
-  try {
-    const groqKey = localStorage.getItem("jurismonitor_groq_key");
-    if (!groqKey) return "";
-
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model: "mixtral-8x7b-32768",
-        messages: [
-          {
-            role: "user",
-            content: `Faça um resumo conciso (máximo 3 frases) desta publicação jurídica:\n\n${texto.slice(0, 2000)}`
-          }
-        ],
-        max_tokens: 200,
-      }),
-    });
-
-    if (!response.ok) return "";
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
-  } catch (error) {
-    console.error("Erro ao gerar resumo:", error);
-    return "";
-  }
-}
-
 // ── Componente ─────────────────────────────────────────────────
 export function IntimacoesPage() {
   const { user } = useAuth();
@@ -186,12 +150,10 @@ export function IntimacoesPage() {
   const [aaspKey, setAaspKey] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [loadingDia, setLoadingDia] = useState<string | null>(null);
-  const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada" | "todas">("ativa");
+  const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
   const [viewMode, setViewMode] = useState<"tabela" | "cards">("tabela");
   const [selected, setSelected] = useState<AaspIntimacao | null>(null);
-  const [ultimos7Dias, setUltimos7Dias] = useState<string[]>([]);
-  const [gerandoResumosIds, setGerandoResumosIds] = useState<Set<string>>(new Set());
 
   // Carrega chave AASP do Supabase / localStorage
   useEffect(() => {
@@ -210,19 +172,16 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
-  // Calcula últimos 7 dias úteis
-  useEffect(() => {
-    setUltimos7Dias(diasUteisRecentes(7));
-  }, []);
-
-  /** Busca intimações de um dia — tenta /api/proxy, corsproxy.io e allorigins */
+  /** Busca intimações de um dia — tenta /api/proxy, corsproxy.io e allorigins (igual ao index.html original) */
   const buscarDia = useCallback(
     async (dataStr: string, silencioso = false): Promise<AaspIntimacao[]> => {
       if (!aaspKey) return [];
 
+      // Monta endpoint AASP — sem diferencial=false (a API não reconhece o valor em string)
       const params   = new URLSearchParams({ chave: aaspKey, data: dataStr });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
+      // 3 proxies em sequência — mesma estratégia do index.html que funciona
       const proxies = [
         { nome: "backend",    url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "corsproxy",  url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
@@ -241,373 +200,456 @@ export function IntimacoesPage() {
 
           let raw: unknown = null;
           try { raw = JSON.parse(text); } catch { /* ok */ }
+          // allorigins wrapper
           if (!raw) { try { const w: any = JSON.parse(text); if (w?.contents) raw = JSON.parse(w.contents); } catch { /* ok */ } }
           if (!raw) continue;
 
-          return normalizar(raw).map((intim, idx) => {
-            const existente = intimacoes.find(i => gerarId(intim, idx) === i._id);
-            return {
-              ...intim,
-              _id:     gerarId(intim, idx),
-              _data:   dataStr,
-              _lida:   existente?._lida ?? false,
-              _status: existente?._status ?? "ativa" as const,
-              _resumoIA: existente?._resumoIA ?? null,
-              _tarefaCriada: existente?._tarefaCriada ?? false,
-              _dataInclusao: existente?._dataInclusao ?? new Date().toISOString().split("T")[0],
-              _numProc: extrairNumProc(intim),
-              _titulo:
-                intim.TituloAssunto ||
-                intim.Assunto ||
-                (intim.Texto || intim.texto || "").slice(0, 80) ||
-                "Publicação AASP",
-            };
-          });
-        } catch (e) {
-          if (!silencioso) console.error(`[AASP] ${dataStr} via ${p.nome}:`, e);
+          return normalizar(raw).map((intim, idx) => ({
+            ...intim,
+            _id:     gerarId(intim, idx),
+            _data:   dataStr,
+            _lida:   false,
+            _status: "ativa" as const,
+            _resumoIA: null,
+            _numProc: extrairNumProc(intim),
+            _titulo:
+              intim.TituloAssunto ||
+              intim.Assunto ||
+              (intim.Texto || intim.texto || "").slice(0, 80) ||
+              "Publicação AASP",
+          }));
+        } catch (e: any) {
+          if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: ${e.message}`);
         }
       }
-      return [];
+      return []; // todos os proxies falharam para este dia
     },
-    [aaspKey, intimacoes]
+    [aaspKey]
   );
 
-  /** Busca últimos 7 dias úteis */
-  const buscarUltimos7Dias = useCallback(async () => {
+  /** Busca os últimos 7 dias úteis e mescla com store */
+  const buscarTudo = useCallback(async () => {
     if (!aaspKey) {
-      toast.error("Configure sua chave AASP nas Configurações.");
+      toast.error("Configure a chave AASP em Configurações primeiro.");
       return;
     }
     setLoading(true);
     try {
       const dias = diasUteisRecentes(7);
-      const resultados: AaspIntimacao[] = [];
+      const existentes = loadStore();
+      const existentesIds = new Set(existentes.map((i) => i._id));
+      let novas = 0;
+      const novasLista: AaspIntimacao[] = [];
+
       for (const dia of dias) {
-        setLoadingDia(dia);
-        const intims = await buscarDia(dia, false);
-        resultados.push(...intims);
+        const lista = await buscarDia(dia, true);
+        for (const item of lista) {
+          if (!existentesIds.has(item._id)) {
+            novasLista.push(item);
+            novas++;
+          }
+        }
+        await new Promise((r) => setTimeout(r, 300));
       }
-      setLoadingDia(null);
-      
-      // Mescla com existentes
-      const merged = new Map<string, AaspIntimacao>();
-      intimacoes.forEach(i => merged.set(i._id, i));
-      resultados.forEach(i => merged.set(i._id, i));
-      
-      const novo = Array.from(merged.values());
-      setIntimacoes(novo);
-      saveStore(novo);
-      
-      const novasQtd = resultados.filter(r => !intimacoes.find(i => i._id === r._id)).length;
-      toast.success(`Busca completa! ${novasQtd} novas intimações encontradas.`);
-    } catch (error) {
-      console.error("Erro na busca:", error);
-      toast.error("Erro ao buscar intimações.");
+
+      const merged = [...novasLista, ...existentes]
+        .sort((a, b) => (b._data > a._data ? 1 : -1))
+        .slice(0, 500);
+
+      saveStore(merged);
+      setIntimacoes(merged);
+      toast.success(novas > 0 ? `✅ ${novas} nova(s) intimação(ões) carregada(s)!` : "Nenhuma intimação nova nos últimos 7 dias úteis.");
+    } catch (e: any) {
+      toast.error("Erro ao buscar intimações: " + e.message);
     } finally {
       setLoading(false);
-      setLoadingDia(null);
     }
-  }, [aaspKey, buscarDia, intimacoes]);
+  }, [aaspKey, buscarDia]);
 
-  /** Atualiza status */
-  const setStatus = (id: string, status: "ativa" | "finalizada" | "pausada") => {
-    const novo = intimacoes.map(i =>
-      i._id === id ? { ...i, _status: status } : i
-    );
-    setIntimacoes(novo);
-    saveStore(novo);
-    toast.success(`Intimação ${status}.`);
+  /** Busca dia específico */
+  const buscarDiaEspecifico = useCallback(
+    async (dataStr: string) => {
+      if (!aaspKey) { toast.error("Configure a chave AASP."); return; }
+      setLoadingDia(dataStr);
+      try {
+        const lista = await buscarDia(dataStr);
+        if (!lista.length) { toast.info(`Nenhuma publicação para ${fmtData(dataStr)}.`); return; }
+        const existentes = loadStore();
+        const existentesIds = new Set(existentes.map((i) => i._id));
+        const novas = lista.filter((i) => !existentesIds.has(i._id));
+        const merged = [...novas, ...existentes].sort((a, b) => (b._data > a._data ? 1 : -1)).slice(0, 500);
+        saveStore(merged);
+        setIntimacoes(merged);
+        toast.success(`✅ ${lista.length} publicação(ões) de ${fmtData(dataStr)} carregada(s)!`);
+      } catch (e: any) {
+        toast.error("Erro: " + e.message);
+      } finally {
+        setLoadingDia(null);
+      }
+    },
+    [aaspKey, buscarDia]
+  );
+
+  // Auto-busca na primeira carga se tiver chave e store vazio
+  useEffect(() => {
+    if (aaspKey && intimacoes.length === 0) buscarTudo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aaspKey]);
+
+  /** Altera status de uma intimação */
+  const setStatus = (id: string, status: AaspIntimacao["_status"]) => {
+    setIntimacoes((prev) => {
+      const next = prev.map((i) =>
+        i._id === id ? { ...i, _status: status, _lida: status !== "ativa" ? true : i._lida } : i
+      );
+      saveStore(next);
+      return next;
+    });
+    if (selected?._id === id) setSelected((s) => s ? { ...s, _status: status } : s);
   };
 
-  /** Exclui intimação */
+  /** Exclui uma intimação */
   const excluir = (id: string) => {
-    const novo = intimacoes.filter(i => i._id !== id);
-    setIntimacoes(novo);
-    saveStore(novo);
+    if (!confirm("Excluir esta intimação?")) return;
+    setIntimacoes((prev) => {
+      const next = prev.filter((i) => i._id !== id);
+      saveStore(next);
+      return next;
+    });
+    if (selected?._id === id) setSelected(null);
     toast.success("Intimação excluída.");
   };
 
-  /** Gera resumo com IA Groq */
-  const gerarResumo = async (id: string) => {
-    const intim = intimacoes.find(i => i._id === id);
-    if (!intim) return;
-
-    const texto = (
-      intim.textoPublicacao ||
-      intim.Texto ||
-      intim.texto ||
-      intim.Conteudo ||
-      intim.conteudo ||
-      ""
-    ) as string;
-
-    if (!texto) {
-      toast.error("Nenhum texto disponível para resumir.");
-      return;
-    }
-
-    setGerandoResumosIds(prev => new Set(prev).add(id));
-    try {
-      const resumo = await gerarResumoGroq(texto);
-      if (resumo) {
-        const novo = intimacoes.map(i =>
-          i._id === id ? { ...i, _resumoIA: resumo } : i
-        );
-        setIntimacoes(novo);
-        saveStore(novo);
-        if (selected?._id === id) {
-          setSelected({ ...selected, _resumoIA: resumo });
-        }
-        toast.success("Resumo gerado com sucesso!");
-      } else {
-        toast.error("Falha ao gerar resumo.");
-      }
-    } catch (error) {
-      console.error("Erro:", error);
-      toast.error("Erro ao gerar resumo.");
-    } finally {
-      setGerandoResumosIds(prev => {
-        const novo = new Set(prev);
-        novo.delete(id);
-        return novo;
-      });
-    }
-  };
-
-  /** Cria tarefa para esta intimação */
-  const criarTarefa = async (id: string) => {
-    const intim = intimacoes.find(i => i._id === id);
-    if (!intim) return;
-
-    try {
-      const { error } = await supabase.from("tarefas").insert({
-        user_id: user?.id,
-        titulo: `Intimação: ${intim._titulo || intim._numProc || "Publicação"}`,
-        descricao: `Processo: ${intim._numProc || "N/A"}\nData: ${fmtData(intim._data)}\nStatus: ${intim._status}`,
-        status: intim._status === "ativa" ? "pendente" : intim._status === "pausada" ? "pausado" : "concluido",
-        prioridade: intim._status === "ativa" ? "alta" : "normal",
-        data_vencimento: new Date(intim._data).toISOString().split("T")[0],
-      });
-
-      if (error) throw error;
-
-      const novo = intimacoes.map(i =>
-        i._id === id ? { ...i, _tarefaCriada: true } : i
-      );
-      setIntimacoes(novo);
-      saveStore(novo);
-      toast.success("Tarefa criada com sucesso!");
-    } catch (error) {
-      console.error("Erro:", error);
-      toast.error("Erro ao criar tarefa.");
-    }
-  };
-
-  // Filtra intimações
-  const filtradas = useMemo(() => {
-    return intimacoes.filter(i => {
-      if (filtroStatus !== "todas" && i._status !== filtroStatus) return false;
-      if (filtroDia && i._data !== filtroDia) return false;
-      return true;
+  /** Marcar como lida */
+  const marcarLida = (id: string) => {
+    setIntimacoes((prev) => {
+      const next = prev.map((i) => (i._id === id ? { ...i, _lida: true } : i));
+      saveStore(next);
+      return next;
     });
-  }, [intimacoes, filtroStatus, filtroDia]);
+  };
 
-  // Calcula métricas
-  const metricas = useMemo(() => {
-    const ativas = intimacoes.filter(i => i._status === "ativa").length;
-    const finalizadas = intimacoes.filter(i => i._status === "finalizada").length;
-    const pausadas = intimacoes.filter(i => i._status === "pausada").length;
-    const total = intimacoes.length;
-    const novas = intimacoes.filter(i => !i._lida).length;
-    return { ativas, finalizadas, pausadas, total, novas };
-  }, [intimacoes]);
+  // ── Filtragem ──────────────────────────────────────────────
+  const filtradas = intimacoes.filter((i) => {
+    const statusOk = (i._status || "ativa") === filtroStatus;
+    const diaOk = !filtroDia || i._data === filtroDia;
+    return statusOk && diaOk;
+  });
 
-  // Render linha da tabela
-  function renderLinha(intim: AaspIntimacao) {
+  const totalAtivas = intimacoes.filter((i) => (i._status || "ativa") === "ativa").length;
+  const naoLidas = intimacoes.filter((i) => (i._status || "ativa") === "ativa" && !i._lida).length;
+
+  // Dropdown de dias
+  const diasDisponiveis = diasUteisRecentes(7);
+  const contagemPorDia: Record<string, number> = {};
+  for (const i of intimacoes) if (i._data) contagemPorDia[i._data] = (contagemPorDia[i._data] || 0) + 1;
+
+  const totalFiltro = filtradas.length;
+  const labelFiltro = filtroDia
+    ? `${fmtData(filtroDia)} (${totalFiltro})`
+    : `Todos os dias (${totalFiltro})`;
+
+  // ── Renderização de linha/card ─────────────────────────────
+  const renderLinha = (intim: AaspIntimacao) => {
+    const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
     const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || intim.Texto || intim.texto || "").slice(0, 60) as string;
     const partes = (intim.Partes || intim.partes || "") as string;
-    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+    const meio = (intim.Meio || intim.meio || jornal || "") as string;
 
     return (
-      <tr key={intim._id} className="border-b border-border hover:bg-muted/30 transition-colors">
-        <td className="px-3 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">
-          {fmtData(intim._data)}
+      <tr
+        key={intim._id}
+        className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+      >
+        {/* DATA */}
+        <td className="px-3 py-3 text-xs text-muted-foreground font-mono whitespace-nowrap">
+          <div className="flex items-center gap-1.5">
+            {naoLida && (
+              <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0 inline-block" />
+            )}
+            {fmtData(intim._data).slice(0, 8)}…
+          </div>
         </td>
-        <td className="px-3 py-3 text-xs font-mono text-foreground cursor-pointer hover:text-accent" onClick={() => setSelected(intim)}>
-          {intim._numProc || "—"}
-        </td>
-        <td className="px-3 py-3 text-xs text-foreground max-w-xs truncate">
-          {intim._titulo || intim.Assunto || "—"}
-        </td>
-        <td className="px-3 py-3 text-xs text-muted-foreground max-w-xs truncate">
-          {jornal || intim.Meio || "—"}
-        </td>
-        <td className="px-3 py-3 text-xs text-muted-foreground max-w-xs truncate">
-          {partes ? partes.split(";")[0].trim() : "—"}
-        </td>
+
+        {/* PROCESSO */}
         <td className="px-3 py-3">
-          <StatusBadge status={intim._status} nova={!intim._lida} />
+          {intim._numProc ? (
+            <button
+              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+              className="font-mono text-xs font-bold text-accent hover:underline text-left"
+            >
+              {intim._numProc.slice(0, 30)}…
+            </button>
+          ) : (
+            <button
+              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+              className="text-xs text-muted-foreground hover:text-accent transition-colors"
+            >
+              Ver publicação
+            </button>
+          )}
         </td>
-        <td className="px-3 py-3 flex gap-1">
-          <ActionBtn
-            title="Ver detalhes"
-            onClick={() => setSelected(intim)}
-          >
-            <Eye className="h-4 w-4 text-accent" />
-          </ActionBtn>
-          {intim._status === "ativa" && (
-            <ActionBtn
-              title="Finalizar"
-              onClick={() => setStatus(intim._id, "finalizada")}
-            >
-              <CheckCircle className="h-4 w-4 text-green-ok" />
-            </ActionBtn>
-          )}
-          {intim._status !== "pausada" && (
-            <ActionBtn
-              title="Pausar"
-              onClick={() => setStatus(intim._id, "pausada")}
-            >
-              <Pause className="h-4 w-4 text-yellow-600" />
-            </ActionBtn>
-          )}
-          <ActionBtn
-            title="Excluir"
-            onClick={() => excluir(intim._id)}
-            className="text-red-500 hover:bg-red-500/10"
-          >
-            <Trash2 className="h-4 w-4" />
-          </ActionBtn>
+
+        {/* TIPO / ÓRGÃO */}
+        <td className="px-3 py-3">
+          <div className="text-xs font-semibold text-foreground max-w-[220px] truncate">
+            {intim._titulo}
+          </div>
+          <div className="text-xs text-muted-foreground max-w-[220px] truncate mt-0.5">
+            {orgao}
+          </div>
+        </td>
+
+        {/* PUBLICAÇÃO */}
+        <td className="px-3 py-3">
+          <div className="text-xs font-semibold">{meio || jornal || "—"}</div>
+          <div className="text-xs text-muted-foreground">Diário de Justiça</div>
+        </td>
+
+        {/* PARTES */}
+        <td className="px-3 py-3 text-xs text-muted-foreground max-w-[150px] truncate">
+          {partes.slice(0, 40) || "—"}
+        </td>
+
+        {/* STATUS */}
+        <td className="px-3 py-3">
+          <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
+        </td>
+
+        {/* AÇÕES */}
+        <td className="px-3 py-3">
+          <div className="flex flex-col gap-1">
+            <div className="flex gap-1">
+              <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
+                <Eye className="h-3.5 w-3.5" />
+              </ActionBtn>
+              {(intim._status || "ativa") === "ativa" ? (
+                <ActionBtn title="Finalizar" onClick={() => setStatus(intim._id, "finalizada")} className="text-green-ok">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                </ActionBtn>
+              ) : (
+                <ActionBtn title="Reativar" onClick={() => setStatus(intim._id, "ativa")} className="text-accent">
+                  <PlayCircle className="h-3.5 w-3.5" />
+                </ActionBtn>
+              )}
+            </div>
+            <div className="flex gap-1">
+              <ActionBtn title="Pausar" onClick={() => setStatus(intim._id, "pausada")} className="text-muted-foreground">
+                <Pause className="h-3.5 w-3.5" />
+              </ActionBtn>
+              <ActionBtn title="Excluir" onClick={() => excluir(intim._id)} className="text-red-alert">
+                <Trash2 className="h-3.5 w-3.5" />
+              </ActionBtn>
+            </div>
+          </div>
         </td>
       </tr>
     );
-  }
+  };
 
-  // Render card
-  function renderCard(intim: AaspIntimacao) {
+  const renderCard = (intim: AaspIntimacao) => {
+    const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
     const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
     return (
-      <div key={intim._id} className="bg-card border border-border rounded-xl p-4 hover:border-accent/50 transition-colors">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1">
-            <div className="text-xs text-muted-foreground mb-1">{fmtData(intim._data)}</div>
-            <div className="font-bold text-sm line-clamp-2">{intim._titulo || "Publicação"}</div>
+      <div
+        key={intim._id}
+        className="bg-card border border-border rounded-xl p-4 hover:border-accent/40 transition-colors cursor-pointer"
+        onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+      >
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              {naoLida && <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />}
+              <span className="text-xs text-muted-foreground font-mono">{fmtData(intim._data)}</span>
+            </div>
+            {intim._numProc && (
+              <div className="font-mono text-sm font-bold text-accent truncate">{intim._numProc}</div>
+            )}
+            <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
+            {orgao && <div className="text-xs text-muted-foreground truncate">{orgao}</div>}
           </div>
-          <StatusBadge status={intim._status} nova={!intim._lida} />
+          <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
         </div>
-        {intim._numProc && <div className="text-xs font-mono text-accent mb-2">{intim._numProc}</div>}
-        {jornal && <div className="text-xs text-muted-foreground mb-3">{jornal}</div>}
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant="ghost" onClick={() => setSelected(intim)}>
-            <Eye className="h-3 w-3 mr-1" /> Ver
+        {intim._resumoIA && (
+          <div className="mt-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2 border-l-2 border-accent/40 leading-relaxed">
+            {intim._resumoIA}
+          </div>
+        )}
+        <div className="flex gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+          {(intim._status || "ativa") === "ativa" ? (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setStatus(intim._id, "finalizada")}>
+              <CheckCircle className="h-3 w-3 mr-1" /> Finalizar
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setStatus(intim._id, "ativa")}>
+              <PlayCircle className="h-3 w-3 mr-1" /> Reativar
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setStatus(intim._id, "pausada")}>
+            <Pause className="h-3 w-3 mr-1" /> Pausar
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setStatus(intim._id, intim._status === "ativa" ? "finalizada" : "ativa")}>
-            <CheckCircle className="h-3 w-3 mr-1" /> Status
+          <Button variant="outline" size="sm" className="h-7 text-xs text-red-alert" onClick={() => excluir(intim._id)}>
+            <Trash2 className="h-3 w-3 mr-1" /> Excluir
           </Button>
         </div>
       </div>
     );
-  }
+  };
 
+  // ── Render ─────────────────────────────────────────────────
   return (
-    <div className="space-y-6 pb-20">
+    <div>
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground mb-1">Intimações AASP</h1>
-        <p className="text-sm text-muted-foreground">Publicações do Diário de Justiça Eletrônico — atualizadas automaticamente</p>
+      <div className="mb-5">
+        <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Publicações do Diário de Justiça Eletrônico — atualizadas automaticamente
+        </p>
       </div>
 
-      {/* Estatísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <StatCard label="Ativas" value={metricas.ativas} highlight={metricas.ativas > 0} />
-        <StatCard label="Finalizadas" value={metricas.finalizadas} />
-        <StatCard label="Pausadas" value={metricas.pausadas} />
-        <StatCard label="30 ativas · 30 não lidas" value={metricas.total} highlight color="bg-yellow-500/15 text-yellow-600" />
-        <StatCard label="Última semana" value={ultimos7Dias.length} color="bg-blue-500/15 text-blue-600" />
-      </div>
-
-      {/* Controles */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {/* Tabs de Status */}
-        <div className="flex gap-2 border border-border rounded-lg p-1 bg-muted/20">
-          {["ativa", "finalizada", "pausada", "todas"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFiltroStatus(status as any)}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                filtroStatus === status
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {status === "ativa" ? "Ativas" : status === "finalizada" ? "Finalizadas" : status === "pausada" ? "Pausadas" : "Todas"}
-            </button>
-          ))}
-        </div>
-
-        {/* Filtro por dia */}
-        <Select value={filtroDia} onValueChange={setFiltroDia}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Últimos 7 dias" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">Todos os dias</SelectItem>
-            {ultimos7Dias.map((dia) => (
-              <SelectItem key={dia} value={dia}>
-                {fmtData(dia)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* View Mode */}
-        <Button
-          size="sm"
-          variant={viewMode === "tabela" ? "default" : "outline"}
-          onClick={() => setViewMode("tabela")}
-        >
-          <TableIcon className="h-4 w-4" />
-        </Button>
-        <Button
-          size="sm"
-          variant={viewMode === "cards" ? "default" : "outline"}
-          onClick={() => setViewMode("cards")}
-        >
-          <LayoutGrid className="h-4 w-4" />
-        </Button>
-
-        <div className="flex-1" />
-
-        {/* Botões de ação */}
-        <Button
-          size="sm"
-          onClick={buscarUltimos7Dias}
-          disabled={loading || !aaspKey}
-          className="gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Atualizar
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => {
-          setIntimacoes([]);
-          saveStore([]);
-          toast.success("Historico limpo!");
-        }}>
-          <RotateCcw className="h-4 w-4 mr-1" />
-          Limpar
-        </Button>
-      </div>
-
-      {/* Status de carregamento */}
-      {loading && loadingDia && (
-        <div className="flex items-center gap-2 text-sm text-accent">
-          <div className="animate-spin"><RefreshCw className="h-4 w-4" /></div>
-          <span>Buscando publicações de {fmtData(loadingDia)}...</span>
+      {!aaspKey && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-amber-800">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          Configure sua chave AASP em <strong>Configurações → API Keys</strong> para carregar as publicações.
         </div>
       )}
 
-      {/* Lista */}
-      {filtradas.length === 0 && !loading ? (
+      {/* Barra de controles */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {/* Filtros de status */}
+        <Button
+          size="sm"
+          variant={filtroStatus === "ativa" ? "gold" : "outline"}
+          className="h-8 text-xs"
+          onClick={() => setFiltroStatus("ativa")}
+        >
+          Ativas
+        </Button>
+        <Button
+          size="sm"
+          variant={filtroStatus === "finalizada" ? "default" : "outline"}
+          className="h-8 text-xs"
+          onClick={() => setFiltroStatus("finalizada")}
+        >
+          Finalizadas
+        </Button>
+        <Button
+          size="sm"
+          variant={filtroStatus === "pausada" ? "default" : "outline"}
+          className="h-8 text-xs"
+          onClick={() => setFiltroStatus("pausada")}
+        >
+          Pausadas
+        </Button>
+
+        {/* Badge contagem */}
+        <span className="text-xs px-3 py-1 rounded-full bg-accent/10 text-accent font-semibold">
+          {totalAtivas} ativa{totalAtivas !== 1 ? "s" : ""} · {naoLidas} não lida{naoLidas !== 1 ? "s" : ""}
+        </span>
+
+        {/* Dropdown de dia */}
+        <div className="relative">
+          <Select
+            value={filtroDia || "__todos__"}
+            onValueChange={(v) => {
+              if (v === "__todos__") { setFiltroDia(""); return; }
+              setFiltroDia(v);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs w-52">
+              <SelectValue>{labelFiltro}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__todos__">
+                Todos os dias ({intimacoes.filter((i) => (i._status || "ativa") === filtroStatus).length})
+              </SelectItem>
+              {diasDisponiveis.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {fmtData(d)} {contagemPorDia[d] ? `(${contagemPorDia[d]})` : "— sem dados"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Botão atualizar dia específico */}
+        {filtroDia && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            disabled={!!loadingDia}
+            onClick={() => buscarDiaEspecifico(filtroDia)}
+          >
+            {loadingDia === filtroDia ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Atualizar
+          </Button>
+        )}
+
+        {/* Botão atualizar todos */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs"
+          disabled={loading}
+          onClick={buscarTudo}
+        >
+          {loading ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          {loading ? "Buscando…" : "Atualizar"}
+        </Button>
+
+        {/* Rebuscar 7 dias */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs"
+          disabled={loading}
+          onClick={buscarTudo}
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+          Rebuscar
+        </Button>
+
+        {/* Toggle Tabela / Cards */}
+        <div className="ml-auto flex gap-1">
+          <Button
+            size="sm"
+            variant={viewMode === "tabela" ? "default" : "outline"}
+            className="h-8 px-3"
+            onClick={() => setViewMode("tabela")}
+            title="Tabela"
+          >
+            <TableIcon className="h-3.5 w-3.5 mr-1" /> Tabela
+          </Button>
+          <Button
+            size="sm"
+            variant={viewMode === "cards" ? "default" : "outline"}
+            className="h-8 px-3"
+            onClick={() => setViewMode("cards")}
+            title="Cards"
+          >
+            <LayoutGrid className="h-3.5 w-3.5 mr-1" /> Cards
+          </Button>
+        </div>
+      </div>
+
+      {/* Conteúdo */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-accent" />
+          <p className="text-muted-foreground text-sm">Buscando publicações dos últimos 7 dias úteis…</p>
+        </div>
+      ) : filtradas.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-base font-medium">Nenhuma intimação encontrada.</p>
           <p className="text-sm mt-1">
@@ -644,15 +686,6 @@ export function IntimacoesPage() {
           onClose={() => setSelected(null)}
           onSetStatus={setStatus}
           onExcluir={excluir}
-          onGerarResumo={() => gerarResumo(selected._id)}
-          onCriarTarefa={() => criarTarefa(selected._id)}
-          gerandoResumo={gerandoResumosIds.has(selected._id)}
-          onUpdate={(updated) => {
-            setSelected(updated);
-            const novo = intimacoes.map(i => i._id === updated._id ? updated : i);
-            setIntimacoes(novo);
-            saveStore(novo);
-          }}
         />
       )}
     </div>
@@ -660,25 +693,6 @@ export function IntimacoesPage() {
 }
 
 // ── Sub-componentes ────────────────────────────────────────────
-
-function StatCard({ 
-  label, 
-  value, 
-  highlight = false,
-  color = "bg-accent/10 text-accent"
-}: { 
-  label: string; 
-  value: number | string;
-  highlight?: boolean;
-  color?: string;
-}) {
-  return (
-    <div className={`p-3 rounded-lg border border-border ${highlight ? color : "bg-muted/20"}`}>
-      <div className="text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${highlight ? "" : "text-foreground"}`}>{value}</div>
-    </div>
-  );
-}
 
 function StatusBadge({ status, nova }: { status: string; nova: boolean }) {
   if (status === "finalizada") return <Badge className="bg-green-ok/10 text-green-ok text-[0.65rem]">Finalizada</Badge>;
@@ -714,19 +728,11 @@ function ModalDetalhe({
   onClose,
   onSetStatus,
   onExcluir,
-  onGerarResumo,
-  onCriarTarefa,
-  gerandoResumo,
-  onUpdate,
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
   onSetStatus: (id: string, s: AaspIntimacao["_status"]) => void;
   onExcluir: (id: string) => void;
-  onGerarResumo: () => void;
-  onCriarTarefa: () => void;
-  gerandoResumo: boolean;
-  onUpdate: (updated: AaspIntimacao) => void;
 }) {
   const titulo =
     intim._titulo ||
@@ -809,22 +815,10 @@ function ModalDetalhe({
           {intim._resumoIA && (
             <div className="bg-accent/5 border-l-2 border-accent/60 rounded-r-xl p-4">
               <div className="text-[0.65rem] font-black uppercase tracking-widest text-accent mb-2">
-                ✦ Análise IA (Resumo)
+                ✦ Análise IA
               </div>
               <p className="text-sm text-foreground leading-relaxed">{intim._resumoIA}</p>
             </div>
-          )}
-
-          {/* Botão de gerar resumo */}
-          {!intim._resumoIA && texto && (
-            <Button 
-              size="sm" 
-              onClick={onGerarResumo}
-              disabled={gerandoResumo}
-              className="gap-2"
-            >
-              {gerandoResumo ? "Gerando..." : "Gerar Resumo com IA"}
-            </Button>
           )}
 
           {/* Texto da publicação */}
@@ -850,66 +844,23 @@ function ModalDetalhe({
         {/* Ações */}
         <div className="px-6 pb-6 flex flex-wrap gap-2 border-t border-border pt-4">
           <Button variant="outline" size="sm" onClick={onClose}>Fechar</Button>
-          
-          {/* Status Actions */}
           {(intim._status || "ativa") === "ativa" ? (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-green-ok border-green-ok/30"
-              onClick={() => { onSetStatus(intim._id, "finalizada"); onClose(); }}
-            >
+            <Button variant="outline" size="sm" className="text-green-ok border-green-ok/30"
+              onClick={() => { onSetStatus(intim._id, "finalizada"); onClose(); }}>
               <CheckCircle className="h-4 w-4 mr-1.5" /> Finalizar
             </Button>
           ) : (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-accent border-accent/30"
-              onClick={() => { onSetStatus(intim._id, "ativa"); onClose(); }}
-            >
+            <Button variant="outline" size="sm" className="text-accent border-accent/30"
+              onClick={() => { onSetStatus(intim._id, "ativa"); onClose(); }}>
               <PlayCircle className="h-4 w-4 mr-1.5" /> Reativar
             </Button>
           )}
-
-          {intim._status !== "pausada" && (
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => { onSetStatus(intim._id, "pausada"); onClose(); }}
-            >
-              <Pause className="h-4 w-4 mr-1.5" /> Pausar
-            </Button>
-          )}
-
-          {/* Visualizar Publicação */}
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              const link = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${localStorage.getItem("jurismonitor_aasp_key")}&data=${intim._data}`;
-              window.open(link, "_blank");
-            }}
-          >
-            <FileText className="h-4 w-4 mr-1.5" /> Ver Publicação
+          <Button variant="outline" size="sm"
+            onClick={() => { onSetStatus(intim._id, "pausada"); onClose(); }}>
+            <Pause className="h-4 w-4 mr-1.5" /> Pausar
           </Button>
-
-          {/* Criar Tarefa */}
-          <Button 
-            variant="outline" 
-            size="sm"
-            disabled={intim._tarefaCriada}
-            onClick={() => { onCriarTarefa(); onClose(); }}
-          >
-            <Flag className="h-4 w-4 mr-1.5" /> {intim._tarefaCriada ? "Tarefa criada" : "Criar Tarefa"}
-          </Button>
-
-          {/* Excluir */}
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => { onExcluir(intim._id); onClose(); }}
-          >
+          <Button variant="destructive" size="sm"
+            onClick={() => { onExcluir(intim._id); onClose(); }}>
             <Trash2 className="h-4 w-4 mr-1.5" /> Excluir
           </Button>
         </div>
