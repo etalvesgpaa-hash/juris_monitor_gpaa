@@ -12,7 +12,7 @@ import {
   Edit2,
   Trash2,
   Mail,
-  MailOff,
+  MailWarning,
   Pause,
   Play,
   Plus,
