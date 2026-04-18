@@ -653,7 +653,7 @@ export function IntimacoesPage() {
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-base font-medium">Nenhuma intimação encontrada.</p>
           <p className="text-sm mt-1">
-            {aaspKey ? "Clique em "Atualizar" para buscar as publicações." : "Configure sua chave AASP nas Configurações."}
+            {aaspKey ? 'Clique em "Atualizar" para buscar as publicações.' : "Configure sua chave AASP nas Configurações."}
           </p>
         </div>
       ) : viewMode === "tabela" ? (
