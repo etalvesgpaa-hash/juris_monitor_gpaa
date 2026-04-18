@@ -5,11 +5,19 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // ── Diagnóstico: verifica se as variáveis de ambiente existem ──────────────
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.error('[send-email] Variáveis EMAIL_USER ou EMAIL_PASS não configuradas no Vercel');
+    return res.status(500).json({
+      error: 'Configuração de e-mail ausente no servidor. Configure EMAIL_USER e EMAIL_PASS nas variáveis de ambiente do Vercel.'
+    });
+  }
+
   // Suporta dois formatos: antigo (to_email, titulo) e novo (destinatario, nomeCliente, etc)
-  const { 
-    to_email, 
-    titulo, 
-    resumo, 
+  const {
+    to_email,
+    titulo,
+    resumo,
     portal_url,
     // Novo formato para intimações
     destinatario,
@@ -24,35 +32,43 @@ module.exports = async function handler(req, res) {
   // Determina qual formato está sendo usado
   const isIntimacao = destinatario && numeroProcesso;
   const emailDestino = destinatario || to_email;
-  const emailTitulo = isIntimacao 
+  const emailTitulo = isIntimacao
     ? `Nova Intimação - Processo ${numeroProcesso}`
     : titulo;
 
   if (!emailDestino || !emailTitulo) {
-    return res.status(400).json({ error: 'Dados obrigatórios faltando' });
+    return res.status(400).json({ error: 'Dados obrigatórios faltando (destinatario/to_email e titulo/numeroProcesso)' });
   }
 
   try {
     const nodemailer = require('nodemailer');
+
+    // ── Transportador Gmail com App Password ──────────────────────────────────
+    // EMAIL_PASS deve ser uma "Senha de app" do Google (16 caracteres sem espaços),
+    // NÃO a senha normal da conta Gmail.
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true, // SSL
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      }
+        pass: process.env.EMAIL_PASS.replace(/\s/g, ''), // remove espaços acidentais
+      },
     });
+
+    // Verifica conexão antes de enviar
+    await transporter.verify();
 
     let emailBody;
 
     if (isIntimacao) {
-      // Template específico para intimações
       emailBody = `
         <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:24px;border-radius:12px">
           <div style="background:#0d2a1e;border-radius:10px;padding:20px 24px;margin-bottom:20px">
             <div style="color:#c9a84c;font-size:1.1rem;font-weight:700">⚖️ JurisMonitor</div>
             <div style="color:rgba(255,255,255,0.7);font-size:0.78rem;margin-top:2px">Notificação Automática de Intimação</div>
           </div>
-          
+
           <div style="background:#fff;border-radius:10px;padding:24px;margin-bottom:16px;border:1px solid #e2e8f0">
             <div style="font-size:0.72rem;color:#8c8070;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:8px">
               Olá ${nomeCliente || 'Cliente'},
@@ -60,7 +76,7 @@ module.exports = async function handler(req, res) {
             <div style="color:#0d2a1e;font-size:0.9rem;margin-bottom:20px">
               Foi detectada uma nova publicação no Diário Oficial relacionada ao seu processo:
             </div>
-            
+
             <div style="background:#faf7f2;border:2px solid #c9a84c;padding:16px;border-radius:8px;margin-bottom:16px">
               <div style="font-size:0.7rem;color:#8c8070;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:4px">
                 Número do Processo
@@ -68,14 +84,14 @@ module.exports = async function handler(req, res) {
               <div style="font-family:monospace;font-size:0.95rem;font-weight:700;color:#0d2a1e;margin-bottom:12px">
                 ${numeroProcesso}
               </div>
-              
+
               <div style="font-size:0.7rem;color:#8c8070;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:4px">
                 Data da Publicação
               </div>
               <div style="font-size:0.85rem;color:#0d2a1e;margin-bottom:12px">
-                📅 ${dataPublicacao}
+                📅 ${dataPublicacao || 'Não informada'}
               </div>
-              
+
               <div style="font-size:0.7rem;color:#8c8070;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;margin-bottom:4px">
                 Assunto
               </div>
@@ -100,7 +116,7 @@ module.exports = async function handler(req, res) {
                 <summary style="cursor:pointer;color:#c9a84c;font-weight:600;font-size:0.85rem;margin-bottom:8px">
                   📄 Ver texto completo da publicação
                 </summary>
-                <div style="background:#f8f9fa;border:1px solid #e2e8f0;padding:14px;border-radius:8px;margin-top:8px;font-size:0.8rem;color:#4a5568;line-height:1.6;max-height:300px;overflow-y:auto">
+                <div style="background:#f8f9fa;border:1px solid #e2e8f0;padding:14px;border-radius:8px;margin-top:8px;font-size:0.8rem;color:#4a5568;line-height:1.6">
                   ${textoCompleto}
                 </div>
               </details>
@@ -119,7 +135,6 @@ module.exports = async function handler(req, res) {
           </div>
         </div>`;
     } else {
-      // Template antigo para compatibilidade
       emailBody = `
         <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:24px;border-radius:12px">
           <div style="background:#0d2a1e;border-radius:10px;padding:20px 24px;margin-bottom:20px">
@@ -146,9 +161,20 @@ module.exports = async function handler(req, res) {
       html: emailBody
     });
 
+    console.log(`[send-email] ✅ E-mail enviado para ${emailDestino}`);
     return res.status(200).json({ success: true });
+
   } catch (e) {
-    console.error('send-email error:', e);
-    return res.status(500).json({ error: e.message });
+    // Retorna mensagem detalhada para facilitar diagnóstico
+    console.error('[send-email] ❌ Erro:', e.message, e.code);
+    return res.status(500).json({
+      error: e.message,
+      code: e.code || null,
+      dica: e.code === 'EAUTH'
+        ? 'Erro de autenticação Gmail. Verifique se EMAIL_PASS é uma "Senha de app" do Google (não a senha da conta). Acesse myaccount.google.com → Segurança → Senhas de app.'
+        : e.code === 'ECONNECTION'
+        ? 'Erro de conexão SMTP. Verifique EMAIL_USER e EMAIL_PASS no Vercel.'
+        : 'Verifique os logs do Vercel para mais detalhes.'
+    });
   }
 };

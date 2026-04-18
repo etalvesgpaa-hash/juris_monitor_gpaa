@@ -12,7 +12,7 @@ import {
   Edit2,
   Trash2,
   Mail,
-  MailWarning,
+  MailOff,
   Pause,
   Play,
   Plus,
@@ -431,7 +431,15 @@ export function ClientesPage() {
         body: JSON.stringify(emailData),
       });
 
-      if (!response.ok) throw new Error("Falha ao enviar e-mail");
+      if (!response.ok) {
+        // Lê o erro real retornado pelo servidor para mostrar ao usuário
+        let errMsg = "Falha ao enviar e-mail";
+        try {
+          const errData = await response.json();
+          errMsg = errData.dica || errData.error || errMsg;
+        } catch {}
+        throw new Error(errMsg);
+      }
 
       // Registra no banco
       await supabase.from("notificacoes_enviadas").insert({
