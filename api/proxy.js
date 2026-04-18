@@ -45,8 +45,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // Monta headers sem Content-Type em requisições GET/HEAD.
-    // A API da AASP rejeita com erro 500 quando recebe Content-Type em GET.
+    // Sem Content-Type em GET — AASP rejeita com 500 quando recebe Content-Type em GET
     const upstreamHeaders = {
       'Accept': 'application/json',
       'User-Agent': 'JurisMonitor/1.0',
@@ -68,8 +67,12 @@ module.exports = async function handler(req, res) {
     const contentType = upstream.headers.get('content-type') || 'application/json';
     const body = await upstream.text();
 
+    // Expõe status e primeiros 500 chars do body para diagnóstico no frontend
     res.setHeader('Content-Type', contentType);
     res.setHeader('X-Upstream-Status', String(upstream.status));
+    res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(body.slice(0, 500)));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
+
     return res.status(upstream.status).send(body);
 
   } catch (err) {

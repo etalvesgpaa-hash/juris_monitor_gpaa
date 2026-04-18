@@ -207,112 +207,119 @@ export function ConfigPage() {
 
   const testAaspConnection = async () => {
     if (!apiKeys.aasp_chave) {
-      toast({ 
-        title: "Chave não configurada", 
-        description: "Configure a chave AASP antes de testar",
-        variant: "destructive" 
-      });
+      toast({ title: "Chave não configurada", description: "Configure a chave AASP antes de testar", variant: "destructive" });
       return;
     }
-
     setTestingAasp(true);
     try {
-      // Gera os últimos 5 dias úteis para tentar (AASP retorna 500 em dias sem publicação)
+      const chave = apiKeys.aasp_chave.trim();
+      const BASE   = 'https://intimacaoapi.aasp.org.br';
+
+      // Gera últimos 7 dias úteis
       const diasUteis: string[] = [];
       const d = new Date();
-      while (diasUteis.length < 5) {
-        const diaSemana = d.getDay();
-        if (diaSemana !== 0 && diaSemana !== 6) {
+      while (diasUteis.length < 7) {
+        if (d.getDay() !== 0 && d.getDay() !== 6)
           diasUteis.push(d.toISOString().split('T')[0]);
-        }
         d.setDate(d.getDate() - 1);
       }
 
+      // Variantes de URL a tentar em ordem — cobre mudanças na API da AASP
+      // A AASP retorna 500 em dias sem publicação; isso é normal e não indica chave inválida
+      const variantes: Array<{ label: string; buildUrl: (dia: string) => string }> = [
+        // 1. Padrão original (chave + data, sem diferencial)
+        { label: 'padrão',      buildUrl: (dia) => `${BASE}/api/Associado/intimacao/json?chave=${chave}&data=${dia}` },
+        // 2. Sem parâmetro de data (AASP pode retornar publicações do dia corrente por padrão)
+        { label: 'sem-data',    buildUrl: (_)   => `${BASE}/api/Associado/intimacao/json?chave=${chave}` },
+        // 3. Com diferencial=true (busca só as não vistas)
+        { label: 'diferencial', buildUrl: (dia) => `${BASE}/api/Associado/intimacao/json?chave=${chave}&data=${dia}&diferencial=true` },
+        // 4. Endpoint alternativo com barra final
+        { label: 'slash-final', buildUrl: (dia) => `${BASE}/api/Associado/intimacao/json/?chave=${chave}&data=${dia}` },
+      ];
+
+      const log: string[] = [];
       let sucesso = false;
-      let ultimoErro = '';
-      let ultimoBody = '';
 
-      for (const dataStr of diasUteis) {
-        // A AASP só aceita: chave + data. "diferencial" deve ser OMITIDO quando false.
-        const aaspUrl =
-          `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json` +
-          `?chave=${encodeURIComponent(apiKeys.aasp_chave)}&data=${dataStr}`;
+      for (const variante of variantes) {
+        let tentativas = 0;
+        for (const dia of diasUteis) {
+          tentativas++;
+          const aaspUrl   = variante.buildUrl(dia);
+          const proxyUrl  = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
 
-        const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+          let resp: Response;
+          try {
+            resp = await fetch(proxyUrl, { headers: { Accept: 'application/json' } });
+          } catch (netErr: any) {
+            log.push(`[${variante.label}] ${dia}: Erro de rede — ${netErr.message}`);
+            break; // rede falhou, não adianta tentar outros dias nesta variante
+          }
 
-        let response: Response;
-        try {
-          response = await fetch(proxyUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-          });
-        } catch (networkErr: any) {
-          ultimoErro = `Erro de rede: ${networkErr.message}`;
-          continue;
+          const body      = await resp.text().catch(() => '');
+          const upstream  = parseInt(resp.headers.get('X-Upstream-Status') || String(resp.status), 10);
+          const bodyPrev  = decodeURIComponent(resp.headers.get('X-Upstream-Body-Preview') || '').slice(0, 150);
+
+          log.push(`[${variante.label}] ${dia}: HTTP ${upstream} — ${bodyPrev || body.slice(0,100)}`);
+
+          if (upstream === 401 || upstream === 403) {
+            throw new Error(
+              `Chave AASP INVÁLIDA ou sem permissão (HTTP ${upstream}).
+` +
+              `Verifique em: minha.aasp.org.br → Meu Painel → Intimações → API
+
+` +
+              `Resposta da AASP: ${body.slice(0, 200)}`
+            );
+          }
+
+          if (upstream >= 200 && upstream < 300) {
+            let data: any = null;
+            try { data = JSON.parse(body); } catch { /* ok */ }
+            const count = Array.isArray(data) ? data.length
+              : (data?.Intimacoes?.length ?? data?.intimacoes?.length ?? data?.quantidade ?? 0);
+            toast({
+              title: '✅ AASP conectada!',
+              description: `Variante "${variante.label}" funcionou para ${dia}. ${count} intimação(ões).`,
+            });
+            sucesso = true;
+            break;
+          }
+
+          // 500 = provavelmente dia sem publicação — continua tentando
+          if (tentativas >= 3) break; // testa só 3 dias por variante para não demorar demais
         }
-
-        const bodyText = await response.text().catch(() => '');
-        ultimoBody = bodyText;
-
-        // X-Upstream-Status presente = AASP foi alcançada com sucesso pelo proxy
-        const hasUpstream = response.headers.has('X-Upstream-Status');
-        const upstreamStatus = hasUpstream
-          ? parseInt(response.headers.get('X-Upstream-Status')!, 10)
-          : response.status;
-
-        if (!hasUpstream && response.status === 500) {
-          // Erro INTERNO do proxy (timeout, DNS, etc) — não é erro da AASP
-          ultimoErro = `Erro no proxy (não chegou à AASP): ${bodyText.slice(0, 200)}`;
-          continue;
-        }
-
-        if (upstreamStatus === 401 || upstreamStatus === 403) {
-          throw new Error('Chave AASP inválida ou sem permissão. Verifique em minha.aasp.org.br');
-        }
-
-        if (upstreamStatus === 500) {
-          // AASP retorna 500 em dias sem publicação — tenta o dia anterior
-          ultimoErro = `AASP erro ${upstreamStatus} em ${dataStr}: ${bodyText.slice(0, 200)}`;
-          continue;
-        }
-
-        if (upstreamStatus >= 200 && upstreamStatus < 300) {
-          let data: any = null;
-          try { data = JSON.parse(bodyText); } catch { /* ok */ }
-          const count = Array.isArray(data) ? data.length : (data?.quantidade ?? 0);
-          toast({
-            title: '✅ AASP conectada!',
-            description: `Conexão OK para ${dataStr}. ${count} intimação(ões) encontrada(s).`,
-          });
-          sucesso = true;
-          break;
-        }
-
-        ultimoErro = `HTTP ${upstreamStatus} em ${dataStr}`;
+        if (sucesso) break;
+        if (variante.label === 'sem-data') break; // sem-data não precisa iterar dias
       }
 
       if (!sucesso) {
-        // Todos os dias falharam — chave provavelmente inválida
-        const bodyPreview = ultimoBody.slice(0, 300);
+        console.warn('[AASP] Log de tentativas:\n' + log.join('\n'));
         throw new Error(
-          `Não foi possível conectar à AASP nos últimos 5 dias úteis.\n\n` +
-          `Provável causa: chave inválida ou expirada.\n` +
-          `Verifique em: minha.aasp.org.br → Meu Painel → Intimações → API\n\n` +
-          `Último erro: ${ultimoErro}` +
-          (bodyPreview ? `\nResposta AASP: ${bodyPreview}` : '')
+          `Nenhuma combinação funcionou nos últimos 7 dias úteis.
+
+` +
+          `Possíveis causas:
+` +
+          `• Chave AASP expirada — renove em minha.aasp.org.br
+` +
+          `• Servidor da AASP instável (tente de novo mais tarde)
+` +
+          `• IP do servidor Vercel bloqueado pela AASP
+
+` +
+          `Log (últimas tentativas):
+${log.slice(-6).join('\n')}`
         );
       }
     } catch (err: any) {
       toast({
         title: '❌ Erro ao conectar com AASP',
-        description: err.message?.slice(0, 300) ?? 'Falha desconhecida',
+        description: err.message?.slice(0, 400) ?? 'Falha desconhecida',
         variant: 'destructive',
       });
     } finally {
       setTestingAasp(false);
     }
-  };
-
   };
 
   const testGroqConnection = async () => {
