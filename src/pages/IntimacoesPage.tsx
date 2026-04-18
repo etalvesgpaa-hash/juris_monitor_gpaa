@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
