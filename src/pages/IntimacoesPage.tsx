@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useClientes } from "@/hooks/useClientes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -145,6 +146,7 @@ function saveStore(items: AaspIntimacao[]) {
 // ── Componente ─────────────────────────────────────────────────
 export function IntimacoesPage() {
   const { user } = useAuth();
+  const { data: clientes = [] } = useClientes();
 
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
@@ -283,6 +285,197 @@ export function IntimacoesPage() {
     [aaspKey]
   );
 
+  /** Verifica e notifica clientes sobre novas intimações */
+  const verificarNotificacoesClientes = useCallback(async (novasIntimacoes: AaspIntimacao[]) => {
+    if (!user || clientes.length === 0) return;
+
+    // Filtra clientes ativos com notificações habilitadas
+    const clientesAtivos = clientes.filter(
+      (c) => c.status_monitoramento === "ativo" && c.notificacoes_email && c.email && c.numeros_processo
+    );
+
+    if (clientesAtivos.length === 0) return;
+
+    console.log(`[NOTIFICAÇÃO] Verificando ${novasIntimacoes.length} novas intimações para ${clientesAtivos.length} clientes`);
+
+    for (const intimacao of novasIntimacoes) {
+      if (!intimacao._numProc) continue;
+
+      // Remove formatação do número CNJ para comparação
+      const numProcLimpo = intimacao._numProc.replace(/\D/g, "");
+
+      for (const cliente of clientesAtivos) {
+        const processos = cliente.numeros_processo || [];
+        
+        // Verifica se algum processo do cliente corresponde
+        const processoMatch = processos.some((proc) => {
+          const procLimpo = proc.replace(/\D/g, "");
+          return numProcLimpo.includes(procLimpo) || procLimpo.includes(numProcLimpo);
+        });
+
+        if (processoMatch) {
+          console.log(`[NOTIFICAÇÃO] Match encontrado: Cliente ${cliente.nome} - Processo ${intimacao._numProc}`);
+          
+          // Envia notificação
+          await enviarNotificacaoCliente(intimacao, cliente);
+        }
+      }
+    }
+  }, [user, clientes]);
+
+  /** Envia notificação por e-mail ao cliente */
+  const enviarNotificacaoCliente = async (intimacao: AaspIntimacao, cliente: any) => {
+    try {
+      // Gera resumo com IA se não existir
+      let resumo = intimacao._resumoIA;
+      if (!resumo) {
+        resumo = await gerarResumoIA(intimacao);
+      }
+
+      const texto = (
+        intimacao.textoPublicacao ||
+        intimacao.Texto ||
+        intimacao.texto ||
+        intimacao.Conteudo ||
+        intimacao.conteudo ||
+        ""
+      ) as string;
+
+      // Prepara dados do email
+      const emailData = {
+        destinatario: cliente.email,
+        nomeCliente: cliente.nome,
+        numeroProcesso: intimacao._numProc,
+        dataPublicacao: fmtData(intimacao._data),
+        assunto: intimacao._titulo || "Nova Publicação AASP",
+        resumoIA: resumo,
+        textoCompleto: texto.slice(0, 500), // Limita tamanho
+        intimacaoId: intimacao._id,
+      };
+
+      // Chama API de envio de email
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emailData),
+      });
+
+      if (!response.ok) {
+        throw new Error("Falha ao enviar e-mail");
+      }
+
+      // Registra notificação enviada no banco
+      await supabase.from("notificacoes_enviadas").insert({
+        user_id: user!.id,
+        cliente_id: cliente.id,
+        intimacao_id: intimacao._id,
+        numero_processo: intimacao._numProc!,
+        assunto: intimacao._titulo || "Nova Publicação",
+        resumo_ia: resumo,
+        email_destino: cliente.email,
+        status: "enviado",
+      });
+
+      // Atualiza última notificação do cliente
+      await supabase
+        .from("clientes")
+        .update({ ultima_notificacao: new Date().toISOString() })
+        .eq("id", cliente.id);
+
+      console.log(`[NOTIFICAÇÃO] ✅ E-mail enviado para ${cliente.nome} (${cliente.email})`);
+    } catch (error: any) {
+      console.error(`[NOTIFICAÇÃO] ❌ Erro ao enviar para ${cliente.nome}:`, error);
+      
+      // Registra erro no banco
+      await supabase.from("notificacoes_enviadas").insert({
+        user_id: user!.id,
+        cliente_id: cliente.id,
+        intimacao_id: intimacao._id,
+        numero_processo: intimacao._numProc || "",
+        assunto: intimacao._titulo || "Erro",
+        email_destino: cliente.email,
+        status: "erro",
+        erro_mensagem: error.message,
+      });
+    }
+  };
+
+  /** Gera resumo da intimação usando IA */
+  const gerarResumoIA = async (intimacao: AaspIntimacao): Promise<string> => {
+    try {
+      const texto = (
+        intimacao.textoPublicacao ||
+        intimacao.Texto ||
+        intimacao.texto ||
+        intimacao.Conteudo ||
+        intimacao.conteudo ||
+        ""
+      ) as string;
+
+      if (!texto || texto.length < 50) {
+        return "Publicação sem conteúdo textual suficiente para análise.";
+      }
+
+      // Busca chave Groq do usuário
+      const { data: apiKeys } = await supabase
+        .from("api_keys")
+        .select("groq_api_key")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+
+      const groqKey = apiKeys?.groq_api_key;
+      if (!groqKey) {
+        return "Resumo automático não disponível (configure a chave Groq API).";
+      }
+
+      // Chama Groq API
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+            },
+            {
+              role: "user",
+              content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 300,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao chamar Groq API");
+      }
+
+      const data = await response.json();
+      const resumo = data.choices?.[0]?.message?.content || "Não foi possível gerar resumo.";
+
+      // Atualiza intimação com resumo (no localStorage)
+      setIntimacoes((prev) => {
+        const updated = prev.map((i) =>
+          i._id === intimacao._id ? { ...i, _resumoIA: resumo } : i
+        );
+        saveStore(updated);
+        return updated;
+      });
+
+      return resumo;
+    } catch (error: any) {
+      console.error("[IA] Erro ao gerar resumo:", error);
+      return "Erro ao gerar resumo automático.";
+    }
+  };
+
   /** Busca os últimos 7 dias úteis e mescla com store */
   const buscarTudo = useCallback(async () => {
     if (!aaspKey) {
@@ -314,13 +507,19 @@ export function IntimacoesPage() {
 
       saveStore(merged);
       setIntimacoes(merged);
+      
+      // Verifica se há clientes para notificar sobre as novas intimações
+      if (novasLista.length > 0) {
+        await verificarNotificacoesClientes(novasLista);
+      }
+      
       toast.success(novas > 0 ? `✅ ${novas} nova(s) intimação(ões) carregada(s)!` : "Nenhuma intimação nova nos últimos 7 dias úteis.");
     } catch (e: any) {
       toast.error("Erro ao buscar intimações: " + e.message);
     } finally {
       setLoading(false);
     }
-  }, [aaspKey, buscarDia]);
+  }, [aaspKey, buscarDia, verificarNotificacoesClientes]);
 
   /** Busca dia específico */
   const buscarDiaEspecifico = useCallback(

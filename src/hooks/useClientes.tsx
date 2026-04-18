@@ -3,7 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 
-export type Cliente = Tables<"clientes">;
+export type Cliente = Tables<"clientes"> & {
+  numeros_processo?: string[] | null;
+  status_monitoramento?: "ativo" | "pausado" | "inativo" | null;
+  notificacoes_email?: boolean | null;
+  ultima_notificacao?: string | null;
+};
 
 export function useClientes() {
   const { user } = useAuth();
