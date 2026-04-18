@@ -190,21 +190,71 @@ export function IntimacoesPage() {
 
       for (const p of proxies) {
         try {
+          console.log(`[AASP] Tentando buscar ${dataStr} via ${p.nome}...`);
           const resp = await fetch(p.url, { headers: { Accept: "application/json" } });
+          
           if (!resp.ok) {
-            if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: HTTP ${resp.status}`);
+            console.warn(`[AASP] ${dataStr} via ${p.nome}: HTTP ${resp.status}`);
             continue;
           }
+          
           const text = await resp.text();
-          if (!text.trim()) continue;
+          console.log(`[AASP] ${dataStr} via ${p.nome}: Resposta recebida (${text.length} chars)`);
+          
+          if (!text.trim()) {
+            console.warn(`[AASP] ${dataStr} via ${p.nome}: Resposta vazia`);
+            continue;
+          }
 
           let raw: unknown = null;
-          try { raw = JSON.parse(text); } catch { /* ok */ }
-          // allorigins wrapper
-          if (!raw) { try { const w: any = JSON.parse(text); if (w?.contents) raw = JSON.parse(w.contents); } catch { /* ok */ } }
-          if (!raw) continue;
+          
+          // Primeira tentativa: JSON direto
+          try { 
+            raw = JSON.parse(text);
+            console.log(`[AASP] ${dataStr} via ${p.nome}: JSON parseado com sucesso`);
+          } catch (parseErr) { 
+            console.warn(`[AASP] ${dataStr} via ${p.nome}: Erro no parse JSON direto`, parseErr);
+          }
+          
+          // Segunda tentativa: allorigins wrapper
+          if (!raw) { 
+            try { 
+              const w: any = JSON.parse(text); 
+              if (w?.contents) {
+                raw = JSON.parse(w.contents);
+                console.log(`[AASP] ${dataStr} via ${p.nome}: JSON parseado via allorigins wrapper`);
+              }
+            } catch (wrapperErr) { 
+              console.warn(`[AASP] ${dataStr} via ${p.nome}: Erro no parse allorigins wrapper`, wrapperErr);
+            }
+          }
+          
+          if (!raw) {
+            console.warn(`[AASP] ${dataStr} via ${p.nome}: Não foi possível parsear JSON. Primeiros 200 chars: ${text.substring(0, 200)}`);
+            continue;
+          }
 
-          return normalizar(raw).map((intim, idx) => ({
+          // Verifica se a API retornou erro
+          const rawObj = raw as any;
+          if (rawObj?.erro || rawObj?.error || rawObj?.Erro || rawObj?.Error) {
+            const msgErro = rawObj.erro || rawObj.error || rawObj.Erro || rawObj.Error;
+            console.warn(`[AASP] ${dataStr} via ${p.nome}: API retornou erro: ${msgErro}`);
+            if (!silencioso) {
+              toast.error(`AASP retornou erro: ${msgErro}`);
+            }
+            continue;
+          }
+
+          const normalizado = normalizar(raw);
+          console.log(`[AASP] ${dataStr} via ${p.nome}: ${normalizado.length} intimação(ões) encontrada(s)`);
+
+          if (normalizado.length === 0) {
+            console.log(`[AASP] ${dataStr} via ${p.nome}: Nenhuma intimação após normalização`);
+            // Retorna array vazio mas considera sucesso (dia sem publicações)
+            return [];
+          }
+
+          return normalizado.map((intim, idx) => ({
             ...intim,
             _id:     gerarId(intim, idx),
             _data:   dataStr,
@@ -219,8 +269,14 @@ export function IntimacoesPage() {
               "Publicação AASP",
           }));
         } catch (e: any) {
+          console.error(`[AASP] ${dataStr} via ${p.nome}: Exceção capturada:`, e);
           if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: ${e.message}`);
         }
+      }
+      
+      console.error(`[AASP] ${dataStr}: Todos os proxies falharam`);
+      if (!silencioso) {
+        toast.error(`Não foi possível buscar intimações de ${fmtData(dataStr)}. Verifique sua chave AASP.`);
       }
       return []; // todos os proxies falharam para este dia
     },
