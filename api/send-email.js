@@ -7,44 +7,47 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // 🔍 DEBUG: Vamos ver o que está chegando nas variáveis de ambiente
-  console.log('🔍 DEBUG - Variáveis de ambiente:');
-  console.log('USE_GMAIL:', process.env.USE_GMAIL, '(tipo:', typeof process.env.USE_GMAIL, ')');
-  console.log('GMAIL_USER:', process.env.GMAIL_USER ? '✅ Definido' : '❌ Indefinido');
-  console.log('GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? '✅ Definido' : '❌ Indefinido');
-  console.log('RESEND_API_KEY:', process.env.RESEND_API_KEY ? '✅ Definido' : '❌ Indefinido');
+  // Limpeza de variáveis - remove acentos graves, aspas e espaços
+  const cleanEnv = (value) => {
+    if (!value) return value;
+    return String(value).replace(/[`'"]/g, '').trim();
+  };
 
   // Configuração: prioriza Gmail, fallback para Resend
-  const useGmail = process.env.USE_GMAIL === 'true';
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
-  const resendKey = process.env.RESEND_API_KEY;
+  const useGmailRaw = cleanEnv(process.env.USE_GMAIL);
+  const useGmail = useGmailRaw === 'true' || useGmailRaw === '1' || useGmailRaw === 'TRUE';
+  const gmailUser = cleanEnv(process.env.GMAIL_USER);
+  const gmailAppPassword = cleanEnv(process.env.GMAIL_APP_PASSWORD);
+  const resendKey = cleanEnv(process.env.RESEND_API_KEY);
 
-  console.log('🎯 useGmail calculado:', useGmail);
+  console.log('[send-email] 🔍 Configuração:');
+  console.log('  USE_GMAIL:', useGmailRaw, '→ interpretado como:', useGmail);
+  console.log('  GMAIL_USER:', gmailUser ? 'OK' : 'AUSENTE');
+  console.log('  GMAIL_APP_PASSWORD:', gmailAppPassword ? 'OK (len:' + gmailAppPassword.length + ')' : 'AUSENTE');
+  console.log('  RESEND_API_KEY:', resendKey ? 'OK' : 'AUSENTE');
 
   // Valida configuração
   if (useGmail) {
     if (!gmailUser || !gmailAppPassword) {
-      console.log('❌ Validação falhou - gmailUser:', !!gmailUser, 'gmailAppPassword:', !!gmailAppPassword);
+      console.log('[send-email] ❌ Gmail configurado mas faltam credenciais');
       return res.status(500).json({
         error: 'Configuração do Gmail incompleta',
         dica: 'Configure GMAIL_USER e GMAIL_APP_PASSWORD nas variáveis de ambiente. Gere uma senha de app em: https://myaccount.google.com/apppasswords',
         debug: {
-          USE_GMAIL: process.env.USE_GMAIL,
-          GMAIL_USER_present: !!gmailUser,
-          GMAIL_APP_PASSWORD_present: !!gmailAppPassword,
+          gmailUser: !!gmailUser,
+          gmailAppPassword: !!gmailAppPassword,
+          passwordLength: gmailAppPassword?.length || 0
         }
       });
     }
   } else if (!resendKey) {
-    console.log('❌ Nenhum serviço configurado - useGmail:', useGmail, 'resendKey:', !!resendKey);
+    console.log('[send-email] ❌ Nenhum serviço configurado');
     return res.status(500).json({
       error: 'Nenhum serviço de e-mail configurado',
       dica: 'Configure USE_GMAIL=true com GMAIL_USER e GMAIL_APP_PASSWORD, ou configure RESEND_API_KEY.',
       debug: {
-        USE_GMAIL: process.env.USE_GMAIL,
-        useGmail_calculated: useGmail,
-        RESEND_API_KEY_present: !!resendKey,
+        USE_GMAIL_raw: process.env.USE_GMAIL,
+        useGmail_calculated: useGmail
       }
     });
   }
@@ -140,6 +143,8 @@ export default async function handler(req, res) {
       // GMAIL - usando Nodemailer
       // ════════════════════════════════════════════════════════════════════════
       console.log('[send-email] 📧 Enviando via Gmail...');
+      console.log('[send-email] De:', gmailUser);
+      console.log('[send-email] Para:', emailDestino);
       
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -205,12 +210,14 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error('[send-email] ❌ Exceção:', e.message);
+    console.error('[send-email] Stack:', e.stack);
     
     // Mensagem de erro mais específica para Gmail
     if (useGmail) {
       return res.status(500).json({ 
         error: e.message,
-        dica: 'Verifique se a Senha de App do Gmail está correta e se a autenticação em 2 fatores está ativada. Gere uma nova senha em: https://myaccount.google.com/apppasswords'
+        dica: 'Verifique se a Senha de App do Gmail está correta e se a autenticação em 2 fatores está ativada. Gere uma nova senha em: https://myaccount.google.com/apppasswords',
+        details: e.stack
       });
     }
     
