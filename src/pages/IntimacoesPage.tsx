@@ -140,7 +140,7 @@ function loadStore(): AaspIntimacao[] {
 }
 
 function saveStore(items: AaspIntimacao[]) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(items.slice(0, 500)));
+  localStorage.setItem(STORE_KEY, JSON.stringify(items.slice(0, 1000)));
 }
 
 // ── Componente ─────────────────────────────────────────────────
@@ -476,7 +476,7 @@ export function IntimacoesPage() {
     }
   };
 
-  /** Busca os últimos 30 dias úteis e mescla com store */
+  /** Busca os últimos 7 dias úteis, acumula até 1000 no store (remove mais antigos automaticamente) */
   const buscarTudo = useCallback(async () => {
     if (!aaspKey) {
       toast.error("Configure a chave AASP em Configurações primeiro.");
@@ -484,45 +484,42 @@ export function IntimacoesPage() {
     }
     setLoading(true);
     try {
-      const dias = diasUteisRecentes(30);
+      const dias = diasUteisRecentes(7);
       const existentes = loadStore();
       const existentesIds = new Set(existentes.map((i) => i._id));
       let novas = 0;
       const novasLista: AaspIntimacao[] = [];
 
       for (const dia of dias) {
-        // Tenta até 2 vezes por dia em caso de falha transitória
-        let lista: AaspIntimacao[] = [];
-        for (let tentativa = 0; tentativa < 2; tentativa++) {
-          lista = await buscarDia(dia, true);
-          if (lista.length > 0) break;
-          if (tentativa === 0) await new Promise((r) => setTimeout(r, 800));
-        }
-
+        const lista = await buscarDia(dia, true);
         for (const item of lista) {
           if (!existentesIds.has(item._id)) {
             novasLista.push(item);
-            existentesIds.add(item._id); // evita duplicatas entre dias
+            existentesIds.add(item._id);
             novas++;
           }
         }
-        // Delay maior entre requisições para evitar rate limit da AASP
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 400));
       }
 
+      // Mescla novas + existentes, ordena por data desc
+      // slice(0, 1000) descarta automaticamente os mais antigos ao atingir o limite
       const merged = [...novasLista, ...existentes]
         .sort((a, b) => (b._data > a._data ? 1 : -1))
-        .slice(0, 500);
+        .slice(0, 1000);
 
       saveStore(merged);
       setIntimacoes(merged);
-      
-      // Verifica se há clientes para notificar sobre as novas intimações
+
       if (novasLista.length > 0) {
         await verificarNotificacoesClientes(novasLista);
       }
-      
-      toast.success(novas > 0 ? `✅ ${novas} nova(s) intimação(ões) carregada(s)!` : "Nenhuma intimação nova nos últimos 30 dias úteis.");
+
+      toast.success(
+        novas > 0
+          ? `✅ ${novas} nova(s) intimação(ões) carregada(s)! Total: ${merged.length}`
+          : "Nenhuma intimação nova nos últimos 7 dias úteis."
+      );
     } catch (e: any) {
       toast.error("Erro ao buscar intimações: " + e.message);
     } finally {
@@ -604,7 +601,7 @@ export function IntimacoesPage() {
   const naoLidas = intimacoes.filter((i) => (i._status || "ativa") === "ativa" && !i._lida).length;
 
   // Dropdown de dias
-  const diasDisponiveis = diasUteisRecentes(30);
+  const diasDisponiveis = diasUteisRecentes(7);
   const contagemPorDia: Record<string, number> = {};
   for (const i of intimacoes) if (i._data) contagemPorDia[i._data] = (contagemPorDia[i._data] || 0) + 1;
 
