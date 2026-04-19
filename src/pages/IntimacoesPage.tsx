@@ -154,7 +154,9 @@ export function IntimacoesPage() {
   const [loadingDia, setLoadingDia] = useState<string | null>(null);
   const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
-  const [viewMode, setViewMode] = useState<"tabela" | "cards">("tabela");
+  const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
+    window.innerWidth < 768 ? "cards" : "tabela"
+  );
   const [selected, setSelected] = useState<AaspIntimacao | null>(null);
 
   // Carrega chave AASP do Supabase / localStorage
@@ -629,18 +631,18 @@ export function IntimacoesPage() {
             {naoLida && (
               <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0 inline-block" />
             )}
-            {fmtData(intim._data).slice(0, 8)}…
+            {fmtData(intim._data)}
           </div>
         </td>
 
         {/* PROCESSO */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-3 min-w-[200px]">
           {intim._numProc ? (
             <button
               onClick={() => { marcarLida(intim._id); setSelected(intim); }}
-              className="font-mono text-xs font-bold text-accent hover:underline text-left"
+              className="font-mono text-xs font-bold text-accent hover:underline text-left break-all"
             >
-              {intim._numProc.slice(0, 30)}…
+              {intim._numProc}
             </button>
           ) : (
             <button
@@ -726,7 +728,7 @@ export function IntimacoesPage() {
               <span className="text-xs text-muted-foreground font-mono">{fmtData(intim._data)}</span>
             </div>
             {intim._numProc && (
-              <div className="font-mono text-sm font-bold text-accent truncate">{intim._numProc}</div>
+              <div className="font-mono text-sm font-bold text-accent break-all">{intim._numProc}</div>
             )}
             <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
             {orgao && <div className="text-xs text-muted-foreground truncate">{orgao}</div>}
@@ -764,7 +766,7 @@ export function IntimacoesPage() {
     <div>
       {/* Header */}
       <div className="mb-5">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
+        <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">Intimações AASP</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Publicações do Diário de Justiça Eletrônico — atualizadas automaticamente
         </p>

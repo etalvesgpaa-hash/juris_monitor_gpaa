@@ -19,7 +19,7 @@ export function AppLayout() {
 
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard": return <DashboardPage />;
+      case "dashboard": return <DashboardPage onNavigate={setActivePage} />;
       case "processos": return <ProcessosPage />;
       case "intimacoes": return <IntimacoesPage />;
       case "notificacoes": return <NotificacoesPage />;
