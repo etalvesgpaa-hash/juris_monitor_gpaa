@@ -476,7 +476,7 @@ export function IntimacoesPage() {
     }
   };
 
-  /** Busca os últimos 7 dias úteis e mescla com store */
+  /** Busca os últimos 30 dias úteis e mescla com store */
   const buscarTudo = useCallback(async () => {
     if (!aaspKey) {
       toast.error("Configure a chave AASP em Configurações primeiro.");
@@ -484,21 +484,30 @@ export function IntimacoesPage() {
     }
     setLoading(true);
     try {
-      const dias = diasUteisRecentes(7);
+      const dias = diasUteisRecentes(30);
       const existentes = loadStore();
       const existentesIds = new Set(existentes.map((i) => i._id));
       let novas = 0;
       const novasLista: AaspIntimacao[] = [];
 
       for (const dia of dias) {
-        const lista = await buscarDia(dia, true);
+        // Tenta até 2 vezes por dia em caso de falha transitória
+        let lista: AaspIntimacao[] = [];
+        for (let tentativa = 0; tentativa < 2; tentativa++) {
+          lista = await buscarDia(dia, true);
+          if (lista.length > 0) break;
+          if (tentativa === 0) await new Promise((r) => setTimeout(r, 800));
+        }
+
         for (const item of lista) {
           if (!existentesIds.has(item._id)) {
             novasLista.push(item);
+            existentesIds.add(item._id); // evita duplicatas entre dias
             novas++;
           }
         }
-        await new Promise((r) => setTimeout(r, 300));
+        // Delay maior entre requisições para evitar rate limit da AASP
+        await new Promise((r) => setTimeout(r, 600));
       }
 
       const merged = [...novasLista, ...existentes]
@@ -513,7 +522,7 @@ export function IntimacoesPage() {
         await verificarNotificacoesClientes(novasLista);
       }
       
-      toast.success(novas > 0 ? `✅ ${novas} nova(s) intimação(ões) carregada(s)!` : "Nenhuma intimação nova nos últimos 7 dias úteis.");
+      toast.success(novas > 0 ? `✅ ${novas} nova(s) intimação(ões) carregada(s)!` : "Nenhuma intimação nova nos últimos 30 dias úteis.");
     } catch (e: any) {
       toast.error("Erro ao buscar intimações: " + e.message);
     } finally {
@@ -595,7 +604,7 @@ export function IntimacoesPage() {
   const naoLidas = intimacoes.filter((i) => (i._status || "ativa") === "ativa" && !i._lida).length;
 
   // Dropdown de dias
-  const diasDisponiveis = diasUteisRecentes(7);
+  const diasDisponiveis = diasUteisRecentes(30);
   const contagemPorDia: Record<string, number> = {};
   for (const i of intimacoes) if (i._data) contagemPorDia[i._data] = (contagemPorDia[i._data] || 0) + 1;
 
