@@ -1,86 +1,54 @@
 import nodemailer from 'nodemailer';
 
 export default async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // 1) LEITURA DAS VARIÁVEIS DE AMBIENTE
-  // ══════════════════════════════════════════════════════════════════════════
+  // 🔍 DEBUG: Vamos ver o que está chegando nas variáveis de ambiente
+  console.log('🔍 DEBUG - Variáveis de ambiente:');
+  console.log('USE_GMAIL:', process.env.USE_GMAIL, '(tipo:', typeof process.env.USE_GMAIL, ')');
+  console.log('GMAIL_USER:', process.env.GMAIL_USER ? '✅ Definido' : '❌ Indefinido');
+  console.log('GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? '✅ Definido' : '❌ Indefinido');
+  console.log('RESEND_API_KEY:', process.env.RESEND_API_KEY ? '✅ Definido' : '❌ Indefinido');
+
+  // Configuração: prioriza Gmail, fallback para Resend
   const useGmail = process.env.USE_GMAIL === 'true';
   const gmailUser = process.env.GMAIL_USER;
   const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
   const resendKey = process.env.RESEND_API_KEY;
 
-  // DEBUG - Logs para verificar se variáveis estão chegando (remover após resolver)
-  console.log('📧 [send-email] Verificação de variáveis:', {
-    USE_GMAIL: process.env.USE_GMAIL,
-    GMAIL_USER_exists: !!gmailUser,
-    GMAIL_APP_PASSWORD_exists: !!gmailAppPassword,
-    GMAIL_APP_PASSWORD_length: gmailAppPassword ? gmailAppPassword.length : 0,
-    RESEND_API_KEY_exists: !!resendKey,
-    useGmail_computed: useGmail
-  });
+  console.log('🎯 useGmail calculado:', useGmail);
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // 2) VALIDAÇÃO DA CONFIGURAÇÃO
-  // ══════════════════════════════════════════════════════════════════════════
+  // Valida configuração
   if (useGmail) {
-    // Validações específicas do Gmail
-    if (!gmailUser) {
+    if (!gmailUser || !gmailAppPassword) {
+      console.log('❌ Validação falhou - gmailUser:', !!gmailUser, 'gmailAppPassword:', !!gmailAppPassword);
       return res.status(500).json({
-        error: 'GMAIL_USER não configurado',
+        error: 'Configuração do Gmail incompleta',
+        dica: 'Configure GMAIL_USER e GMAIL_APP_PASSWORD nas variáveis de ambiente. Gere uma senha de app em: https://myaccount.google.com/apppasswords',
         debug: {
           USE_GMAIL: process.env.USE_GMAIL,
-          GMAIL_USER: 'não encontrado'
-        },
-        dica: 'Configure GMAIL_USER nas Environment Variables do Vercel com seu e-mail Gmail completo.'
+          GMAIL_USER_present: !!gmailUser,
+          GMAIL_APP_PASSWORD_present: !!gmailAppPassword,
+        }
       });
     }
-
-    if (!gmailAppPassword) {
-      return res.status(500).json({
-        error: 'GMAIL_APP_PASSWORD não configurado',
-        debug: {
-          USE_GMAIL: process.env.USE_GMAIL,
-          GMAIL_USER: gmailUser,
-          GMAIL_APP_PASSWORD: 'não encontrado'
-        },
-        dica: 'Configure GMAIL_APP_PASSWORD nas Environment Variables do Vercel. Gere uma senha de app em: https://myaccount.google.com/apppasswords'
-      });
-    }
-
-    // Validação do formato da senha de app
-    if (gmailAppPassword.length !== 16) {
-      return res.status(500).json({
-        error: 'GMAIL_APP_PASSWORD com formato inválido',
-        debug: {
-          length_atual: gmailAppPassword.length,
-          length_esperado: 16
-        },
-        dica: 'A senha de app do Gmail deve ter exatamente 16 caracteres sem espaços. Gere uma nova em: https://myaccount.google.com/apppasswords'
-      });
-    }
-
   } else if (!resendKey) {
+    console.log('❌ Nenhum serviço configurado - useGmail:', useGmail, 'resendKey:', !!resendKey);
     return res.status(500).json({
       error: 'Nenhum serviço de e-mail configurado',
+      dica: 'Configure USE_GMAIL=true com GMAIL_USER e GMAIL_APP_PASSWORD, ou configure RESEND_API_KEY.',
       debug: {
-        USE_GMAIL: process.env.USE_GMAIL || 'não definido',
-        RESEND_API_KEY: 'não encontrado'
-      },
-      dica: 'Configure USE_GMAIL=true com GMAIL_USER e GMAIL_APP_PASSWORD, ou configure RESEND_API_KEY.'
+        USE_GMAIL: process.env.USE_GMAIL,
+        useGmail_calculated: useGmail,
+        RESEND_API_KEY_present: !!resendKey,
+      }
     });
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // 3) EXTRAÇÃO DOS DADOS DO CORPO DA REQUISIÇÃO
-  // ══════════════════════════════════════════════════════════════════════════
   const {
     to_email,
     titulo,
@@ -101,24 +69,14 @@ export default async function handler(req, res) {
     ? `Nova Intimação - Processo ${numeroProcesso}`
     : titulo;
 
-  // Validação dos dados obrigatórios
   if (!emailDestino || !emailTitulo) {
-    return res.status(400).json({ 
-      error: 'Dados obrigatórios faltando',
-      campos_faltantes: {
-        emailDestino: !emailDestino,
-        emailTitulo: !emailTitulo
-      }
-    });
+    return res.status(400).json({ error: 'Dados obrigatórios faltando (to_email/destinatario e titulo)' });
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // 4) MONTAGEM DO CORPO DO E-MAIL
-  // ══════════════════════════════════════════════════════════════════════════
+  // Monta o corpo do email
   let emailBody;
 
   if (isIntimacao) {
-    // Template para intimações
     emailBody = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:24px;border-radius:12px">
         <div style="background:#0d2a1e;border-radius:10px;padding:20px 24px;margin-bottom:20px">
@@ -158,7 +116,6 @@ export default async function handler(req, res) {
         </div>
       </div>`;
   } else {
-    // Template padrão
     emailBody = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:24px;border-radius:12px">
         <div style="background:#0d2a1e;border-radius:10px;padding:20px 24px;margin-bottom:20px">
@@ -177,15 +134,12 @@ export default async function handler(req, res) {
       </div>`;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // 5) ENVIO DO E-MAIL
-  // ══════════════════════════════════════════════════════════════════════════
   try {
     if (useGmail) {
-      // ────────────────────────────────────────────────────────────────────────
+      // ════════════════════════════════════════════════════════════════════════
       // GMAIL - usando Nodemailer
-      // ────────────────────────────────────────────────────────────────────────
-      console.log('📧 [send-email] Enviando via Gmail para:', emailDestino);
+      // ════════════════════════════════════════════════════════════════════════
+      console.log('[send-email] 📧 Enviando via Gmail...');
       
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -204,19 +158,18 @@ export default async function handler(req, res) {
 
       const info = await transporter.sendMail(mailOptions);
       
-      console.log('✅ [send-email] Enviado via Gmail | ID:', info.messageId);
+      console.log('[send-email] ✅ Enviado via Gmail para', emailDestino, '| id:', info.messageId);
       return res.status(200).json({ 
         success: true, 
         id: info.messageId, 
-        provider: 'gmail',
-        to: emailDestino
+        provider: 'gmail' 
       });
 
     } else {
-      // ────────────────────────────────────────────────────────────────────────
+      // ════════════════════════════════════════════════════════════════════════
       // RESEND - fallback
-      // ────────────────────────────────────────────────────────────────────────
-      console.log('📧 [send-email] Enviando via Resend para:', emailDestino);
+      // ════════════════════════════════════════════════════════════════════════
+      console.log('[send-email] 📧 Enviando via Resend...');
       
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -235,45 +188,32 @@ export default async function handler(req, res) {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error('❌ [send-email] Resend erro:', data);
+        console.error('[send-email] Resend erro:', data);
         return res.status(500).json({
           error: data.message || 'Erro ao enviar pelo Resend',
-          details: data,
           dica: 'Verifique se a RESEND_API_KEY está correta no Vercel.',
         });
       }
 
-      console.log('✅ [send-email] Enviado via Resend | ID:', data.id);
+      console.log('[send-email] ✅ Enviado via Resend para', emailDestino, '| id:', data.id);
       return res.status(200).json({ 
         success: true, 
         id: data.id, 
-        provider: 'resend',
-        to: emailDestino
+        provider: 'resend' 
       });
     }
 
   } catch (e) {
-    console.error('❌ [send-email] Exceção:', e.message);
-    console.error('Stack:', e.stack);
+    console.error('[send-email] ❌ Exceção:', e.message);
     
-    // Mensagem de erro específica baseada no tipo de erro
-    let errorResponse = {
-      error: e.message,
-      stack: e.stack,
-      timestamp: new Date().toISOString()
-    };
-
+    // Mensagem de erro mais específica para Gmail
     if (useGmail) {
-      // Erros específicos do Gmail
-      if (e.message.includes('Invalid login')) {
-        errorResponse.dica = 'Senha de App do Gmail inválida. Verifique:\n1. Autenticação em 2 fatores está ativada?\n2. Senha tem 16 caracteres?\n3. Gere nova senha em: https://myaccount.google.com/apppasswords';
-      } else if (e.message.includes('Missing credentials')) {
-        errorResponse.dica = 'Credenciais do Gmail não foram fornecidas corretamente. Verifique as variáveis de ambiente GMAIL_USER e GMAIL_APP_PASSWORD.';
-      } else {
-        errorResponse.dica = 'Erro ao enviar via Gmail. Verifique:\n1. Senha de App correta\n2. Autenticação em 2 fatores ativa\n3. Variáveis de ambiente corretas no Vercel';
-      }
+      return res.status(500).json({ 
+        error: e.message,
+        dica: 'Verifique se a Senha de App do Gmail está correta e se a autenticação em 2 fatores está ativada. Gere uma nova senha em: https://myaccount.google.com/apppasswords'
+      });
     }
     
-    return res.status(500).json(errorResponse);
+    return res.status(500).json({ error: e.message });
   }
 }
