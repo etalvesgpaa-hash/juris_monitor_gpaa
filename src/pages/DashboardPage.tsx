@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import type { PageId } from "@/components/AppLayout";
+import { CreateTaskModal } from "@/components/CreateTaskModal";
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
@@ -33,7 +34,8 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { data: tarefas = [] } = useTarefas();
   const createTarefa = useCreateTarefa();
   const { toast } = useToast();
-  const [loadingTaskCreate, setLoadingTaskCreate] = useState<string | null>(null);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
 
   const intimacoes = loadIntimacoes();
   const intimacoesAtivas = intimacoes.filter((i: any) => (i._status || "ativa") === "ativa");
@@ -109,28 +111,37 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   })();
 
   // Função para criar tarefa a partir de intimação
-  const handleCreateTaskFromIntimacao = async (intimacao: any) => {
-    setLoadingTaskCreate(intimacao._id);
+  const handleOpenTaskModal = (intimacao: any) => {
+    setTaskModalInitialData({
+      titulo: `Análise: ${intimacao._titulo || 'Intimação AASP'}`,
+      descricao: `Processo: ${intimacao._numProc || 'Não informado'}\nData da intimação: ${fmtData(intimacao._data)}\n\nTrecho: ${intimacao._trecho?.substring(0, 200) || 'Sem detalhes'}`,
+      prioridade: "alta",
+    });
+    setShowCreateTaskModal(true);
+  };
+
+  const handleCreateTask = async (data: any) => {
     try {
       await createTarefa.mutateAsync({
-        titulo: `Análise: ${intimacao._titulo || 'Intimação AASP'}`,
-        descricao: `Processo: ${intimacao._numProc || 'Não informado'}\nData da intimação: ${fmtData(intimacao._data)}\n\nTrecho: ${intimacao._trecho?.substring(0, 200) || 'Sem detalhes'}`,
-        data_vencimento: null,
-        prioridade: "alta",
-        processo_id: null,
+        titulo: data.titulo,
+        descricao: data.descricao || null,
+        data_vencimento: data.data_vencimento || null,
+        prioridade: data.prioridade,
+        processo_id: data.processo_id || null,
+        status: data.status || "pendente",
       });
       toast({ 
         title: "✅ Tarefa criada com sucesso!", 
         description: "A tarefa foi adicionada à sua lista de tarefas." 
       });
+      setShowCreateTaskModal(false);
+      setTaskModalInitialData(null);
     } catch (err: any) {
       toast({ 
         title: "❌ Erro ao criar tarefa", 
         description: err.message, 
         variant: "destructive" 
       });
-    } finally {
-      setLoadingTaskCreate(null);
     }
   };
 
@@ -289,12 +300,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                       {fmtData(i._data)}
                     </span>
                     <button
-                      onClick={() => handleCreateTaskFromIntimacao(i)}
-                      disabled={loadingTaskCreate === i._id}
-                      className="px-2 py-1 text-[0.65rem] font-bold uppercase tracking-wide rounded bg-accent hover:bg-accent/80 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      onClick={() => handleOpenTaskModal(i)}
+                      className="px-2 py-1 text-[0.65rem] font-bold uppercase tracking-wide rounded bg-accent hover:bg-accent/80 text-white transition-colors whitespace-nowrap"
                       title="Criar tarefa a partir desta intimação"
                     >
-                      {loadingTaskCreate === i._id ? "..." : "+ Tarefa"}
+                      + Tarefa
                     </button>
                   </div>
                 </div>
@@ -361,6 +371,18 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           )}
         </div>
       </div>
+
+      {/* Modal de Criação de Tarefas */}
+      <CreateTaskModal
+        open={showCreateTaskModal}
+        onClose={() => {
+          setShowCreateTaskModal(false);
+          setTaskModalInitialData(null);
+        }}
+        onSubmit={handleCreateTask}
+        initialData={taskModalInitialData}
+        processos={processos}
+      />
     </div>
   );
 }
