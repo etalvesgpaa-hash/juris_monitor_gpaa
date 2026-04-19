@@ -1,10 +1,12 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
-import { useTarefas } from "@/hooks/useTarefas";
+import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import type { PageId } from "@/components/AppLayout";
 import {
-  BarChart, Bar, PieChart, Pie, Cell,
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
 } from "recharts";
 
@@ -29,6 +31,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
   const { data: tarefas = [] } = useTarefas();
+  const createTarefa = useCreateTarefa();
+  const { toast } = useToast();
+  const [loadingTaskCreate, setLoadingTaskCreate] = useState<string | null>(null);
 
   const intimacoes = loadIntimacoes();
   const intimacoesAtivas = intimacoes.filter((i: any) => (i._status || "ativa") === "ativa");
@@ -64,6 +69,70 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         return { month: nomes[parseInt(m) - 1], total };
       });
   })();
+
+  // Dados para gráfico de linhas de tarefas (últimos 6 meses)
+  const tarefasPorMes = (() => {
+    const meses: Record<string, { concluidas: number; abertas: number }> = {};
+    const hoje = new Date();
+    
+    // Inicializa os últimos 6 meses
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      meses[key] = { concluidas: 0, abertas: 0 };
+    }
+    
+    tarefas.forEach((t) => {
+      const dataRef = t.data_vencimento || t.created_at;
+      if (!dataRef) return;
+      const key = dataRef.slice(0, 7);
+      if (meses[key]) {
+        if (t.status === "concluida") {
+          meses[key].concluidas++;
+        } else {
+          meses[key].abertas++;
+        }
+      }
+    });
+    
+    return Object.entries(meses)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, values]) => {
+        const [y, m] = key.split("-");
+        const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+        return { 
+          month: nomes[parseInt(m) - 1], 
+          Concluídas: values.concluidas,
+          Abertas: values.abertas 
+        };
+      });
+  })();
+
+  // Função para criar tarefa a partir de intimação
+  const handleCreateTaskFromIntimacao = async (intimacao: any) => {
+    setLoadingTaskCreate(intimacao._id);
+    try {
+      await createTarefa.mutateAsync({
+        titulo: `Análise: ${intimacao._titulo || 'Intimação AASP'}`,
+        descricao: `Processo: ${intimacao._numProc || 'Não informado'}\nData da intimação: ${fmtData(intimacao._data)}\n\nTrecho: ${intimacao._trecho?.substring(0, 200) || 'Sem detalhes'}`,
+        data_vencimento: null,
+        prioridade: "alta",
+        processo_id: null,
+      });
+      toast({ 
+        title: "✅ Tarefa criada com sucesso!", 
+        description: "A tarefa foi adicionada à sua lista de tarefas." 
+      });
+    } catch (err: any) {
+      toast({ 
+        title: "❌ Erro ao criar tarefa", 
+        description: err.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoadingTaskCreate(null);
+    }
+  };
 
   return (
     <div>
@@ -159,21 +228,28 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             Tarefas — Concluídas x Abertas
           </div>
           <ResponsiveContainer width="100%" height={150}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: "Concluídas", value: tarefas.filter((t) => t.status === "concluida").length, color: "#10b981" },
-                  { name: "Abertas", value: tarefas.filter((t) => t.status !== "concluida").length, color: "#f59e0b" },
-                ]}
-                cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2} dataKey="value"
-              >
-                {[{ color: "#10b981" }, { color: "#f59e0b" }].map((entry, index) => (
-                  <Cell key={index} fill={entry.color} />
-                ))}
-              </Pie>
+            <LineChart data={tarefasPorMes.length > 0 ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]}>
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
-            </PieChart>
+              <Line 
+                type="monotone" 
+                dataKey="Concluídas" 
+                stroke="#10b981" 
+                strokeWidth={2}
+                dot={{ fill: "#10b981", r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="Abertas" 
+                stroke="#f59e0b" 
+                strokeWidth={2}
+                dot={{ fill: "#f59e0b", r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -208,9 +284,19 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                       </div>
                     </div>
                   </div>
-                  <span className="text-xs font-mono text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">
-                    {fmtData(i._data)}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-mono text-muted-foreground whitespace-nowrap pt-0.5">
+                      {fmtData(i._data)}
+                    </span>
+                    <button
+                      onClick={() => handleCreateTaskFromIntimacao(i)}
+                      disabled={loadingTaskCreate === i._id}
+                      className="px-2 py-1 text-[0.65rem] font-bold uppercase tracking-wide rounded bg-accent hover:bg-accent/80 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      title="Criar tarefa a partir desta intimação"
+                    >
+                      {loadingTaskCreate === i._id ? "..." : "+ Tarefa"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
