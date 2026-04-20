@@ -757,7 +757,7 @@ export function IntimacoesPage() {
                 Todos os dias ({intimacoes.filter(i => i._status === filtroStatus).length})
               </SelectItem>
               {ultimos7Dias.map((dia) => {
-                const count = intimacoes.filter(i => i._data === dia).length;
+                const count = intimacoes.filter(i => i._data === dia && i._status === filtroStatus).length;
                 const [ano, mes, d] = dia.split("-");
                 const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
                 const label = `${dow}, ${d}/${mes}`;
