@@ -30,6 +30,7 @@ export function TarefasPage() {
     descricao: "",
     data_vencimento: "",
     prioridade: "media",
+    status: "pendente",
     processo_id: "",
   });
 
@@ -41,7 +42,7 @@ export function TarefasPage() {
   });
 
   const resetForm = () => {
-    setForm({ titulo: "", descricao: "", data_vencimento: "", prioridade: "media", processo_id: "" });
+    setForm({ titulo: "", descricao: "", data_vencimento: "", prioridade: "media", status: "pendente", processo_id: "" });
     setShowForm(false);
     setEditingId(null);
   };
@@ -57,6 +58,7 @@ export function TarefasPage() {
       descricao: t.descricao || "",
       data_vencimento: t.data_vencimento ? new Date(t.data_vencimento).toISOString().split('T')[0] : "",
       prioridade: t.prioridade,
+      status: t.status || "pendente",
       processo_id: t.processo_id || "",
     });
     setEditingId(t.id);
@@ -76,6 +78,7 @@ export function TarefasPage() {
           descricao: form.descricao || null,
           data_vencimento: form.data_vencimento || null,
           prioridade: form.prioridade,
+          status: form.status,
           processo_id: form.processo_id || null,
         });
         toast({ title: "Tarefa atualizada!" });
@@ -85,6 +88,7 @@ export function TarefasPage() {
           descricao: form.descricao || null,
           data_vencimento: form.data_vencimento || null,
           prioridade: form.prioridade,
+          status: form.status,
           processo_id: form.processo_id || null,
         });
         toast({ title: "Tarefa criada!" });
@@ -421,6 +425,21 @@ export function TarefasPage() {
                 <option value="alta">Alta</option>
               </select>
             </div>
+            <div>
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Status</label>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
+                <option value="pendente">Pendente</option>
+                <option value="andamento">Em Andamento</option>
+                <option value="ag_cliente">Aguardando Cliente</option>
+                <option value="ag_tribunal">Aguardando Tribunal</option>
+                <option value="concluida">Concluída</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
             <InputField 
               label="Data de Vencimento" 
               value={form.data_vencimento} 
@@ -474,14 +493,23 @@ export function TarefasPage() {
           {filtered.map((t) => {
             const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
             const processo = t.processo;
-            const statusProcesso = processo?.status || null;
             
-            const statusProcessoColor = (status: string | null) => {
-              if (!status) return "";
-              if (status === "ativo") return "text-green-ok bg-green-ok/10";
-              if (status === "arquivado") return "text-muted-foreground bg-muted";
-              if (status === "suspenso") return "text-amber-500 bg-amber-500/10";
-              return "text-accent bg-accent/10";
+            const statusTarefaColor = (status: string) => {
+              if (status === "concluida") return "text-green-ok bg-green-ok/10";
+              if (status === "cancelada") return "text-muted-foreground bg-muted";
+              if (status === "andamento") return "text-blue-500 bg-blue-500/10";
+              if (status === "ag_cliente") return "text-amber-500 bg-amber-500/10";
+              if (status === "ag_tribunal") return "text-purple-500 bg-purple-500/10";
+              return "text-muted-foreground bg-muted/50"; // pendente
+            };
+
+            const statusTarefaLabel = (status: string) => {
+              if (status === "concluida") return "Concluída";
+              if (status === "cancelada") return "Cancelada";
+              if (status === "andamento") return "Em Andamento";
+              if (status === "ag_cliente") return "Ag. Cliente";
+              if (status === "ag_tribunal") return "Ag. Tribunal";
+              return "Pendente";
             };
 
             return (
@@ -502,8 +530,13 @@ export function TarefasPage() {
                       {t.status === "concluida" && "✓"}
                     </button>
                     <div className="min-w-0 flex-1">
-                      <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>
-                        {t.titulo}
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>
+                          {t.titulo}
+                        </div>
+                        <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${statusTarefaColor(t.status)}`}>
+                          {statusTarefaLabel(t.status)}
+                        </span>
                       </div>
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
                       {processo && (
@@ -511,11 +544,6 @@ export function TarefasPage() {
                           <span className="text-xs text-muted-foreground font-mono">
                             📋 {processo.numero_cnj}
                           </span>
-                          {statusProcesso && (
-                            <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${statusProcessoColor(statusProcesso)}`}>
-                              {statusProcesso}
-                            </span>
-                          )}
                         </div>
                       )}
                     </div>
