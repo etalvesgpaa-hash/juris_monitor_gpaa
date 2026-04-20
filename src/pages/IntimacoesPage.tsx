@@ -511,12 +511,15 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  // Gera os últimos 7 dias (incluindo fins de semana) para o dropdown
+  // Gera os últimos 7 dias usando data LOCAL (sem bug UTC: toISOString retorna UTC que no Brasil vira dia anterior)
   const ultimos7Dias = (() => {
     const dias: string[] = [];
     const d = new Date();
     for (let i = 0; i < 7; i++) {
-      dias.push(d.toISOString().split("T")[0]);
+      const ano = d.getFullYear();
+      const mes = String(d.getMonth() + 1).padStart(2, "0");
+      const dia = String(d.getDate()).padStart(2, "0");
+      dias.push(`${ano}-${mes}-${dia}`);
       d.setDate(d.getDate() - 1);
     }
     return dias;
