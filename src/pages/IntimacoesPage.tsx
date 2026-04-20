@@ -185,6 +185,7 @@ export function IntimacoesPage() {
   const [loadingIA, setLoadingIA] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
+  const [filtroData, setFiltroData] = useState<string>("todos"); // "todos" ou YYYY-MM-DD
   const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
     window.innerWidth < 768 ? "cards" : "tabela"
   );
@@ -510,7 +511,28 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  const filtradas = intimacoes.filter((it) => it._status === filtroStatus);
+  // Gera os últimos 7 dias (incluindo fins de semana) para o dropdown
+  const ultimos7Dias = (() => {
+    const dias: string[] = [];
+    const d = new Date();
+    for (let i = 0; i < 7; i++) {
+      dias.push(d.toISOString().split("T")[0]);
+      d.setDate(d.getDate() - 1);
+    }
+    return dias;
+  })();
+
+  // Contagem de intimações por dia (todas, independente do status)
+  const contagemPorDia = intimacoes.reduce<Record<string, number>>((acc, it) => {
+    acc[it._data] = (acc[it._data] || 0) + 1;
+    return acc;
+  }, {});
+
+  const filtradas = intimacoes.filter((it) => {
+    if (it._status !== filtroStatus) return false;
+    if (filtroData !== "todos" && it._data !== filtroData) return false;
+    return true;
+  });
 
   const renderLinha = (intim: AaspIntimacao) => {
     const naoLida = intim._status === "ativa" && !intim._lida;
@@ -676,11 +698,62 @@ export function IntimacoesPage() {
         </div>
       </div>
 
-      {/* Busca por dia específico */}
+      {/* Barra de controles: status + filtro por dia + ações */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        {/* Filtros de status */}
+        <div className="flex gap-2 flex-wrap">
+          {(["ativa", "finalizada", "pausada"] as const).map((st) => (
+            <button
+              key={st}
+              onClick={() => setFiltroStatus(st)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                filtroStatus === st
+                  ? "bg-accent text-primary"
+                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {st === "ativa"
+                ? `Ativas · ${intimacoes.filter(i => i._status === "ativa").length}`
+                : st === "finalizada"
+                ? `Finalizadas · ${intimacoes.filter(i => i._status === "finalizada").length}`
+                : `Pausadas · ${intimacoes.filter(i => i._status === "pausada").length}`}
+            </button>
+          ))}
+        </div>
+
+        {/* Dropdown: últimos 7 dias com contagem */}
+        <div className="ml-auto">
+          <Select value={filtroData} onValueChange={setFiltroData}>
+            <SelectTrigger className="w-52 text-xs h-9 border border-border bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos" className="text-xs">
+                Todos os dias ({intimacoes.filter(i => i._status === filtroStatus).length})
+              </SelectItem>
+              {ultimos7Dias.map((dia) => {
+                const count = intimacoes.filter(i => i._data === dia).length;
+                const [ano, mes, d] = dia.split("-");
+                const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+                const label = `${dow}, ${d}/${mes}`;
+                return (
+                  <SelectItem key={dia} value={dia} className="text-xs">
+                    {count === 0
+                      ? `${label} — sem dados`
+                      : `${label} (${count})`}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Busca por dia específico (API AASP) */}
       <div className="bg-card border border-border rounded-xl p-4 mb-6">
         <div className="flex gap-2 items-end flex-wrap">
           <div className="flex-1 min-w-[200px]">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar dia específico</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar novo dia na AASP</label>
             <input
               type="date"
               value={filtroDia}
@@ -693,23 +766,6 @@ export function IntimacoesPage() {
             Buscar
           </Button>
         </div>
-      </div>
-
-      {/* Filtros de status */}
-      <div className="flex gap-2 mb-5 flex-wrap">
-        {(["ativa", "finalizada", "pausada"] as const).map((st) => (
-          <button
-            key={st}
-            onClick={() => setFiltroStatus(st)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              filtroStatus === st
-                ? "bg-accent text-primary"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {st === "ativa" ? "Ativas" : st === "finalizada" ? "Finalizadas" : "Pausadas"}
-          </button>
-        ))}
       </div>
 
       {loading ? (

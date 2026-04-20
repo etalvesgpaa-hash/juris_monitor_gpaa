@@ -8,6 +8,13 @@ import { Calendar, Edit2, Trash2, Plus, X } from "lucide-react";
 
 type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
 
+/** Formata data YYYY-MM-DD para DD/MM/YYYY sem offset de fuso horário */
+function fmtDataLocal(iso: string): string {
+  if (!iso) return "";
+  const p = iso.slice(0, 10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
   const { data: processos = [] } = useProcessos();
@@ -174,9 +181,10 @@ export function TarefasPage() {
   };
 
   // Filtrar feriados futuros e ordenar por data
+  const hoje = new Date().toISOString().split("T")[0]; // YYYY-MM-DD local-safe
   const feriadosFuturos = feriados
-    .filter(f => new Date(f.data) >= now)
-    .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
+    .filter(f => f.data >= hoje)
+    .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 5);
 
   return (
@@ -266,7 +274,7 @@ export function TarefasPage() {
             <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
             {feriadosFuturos.map(f => (
               <div key={f.id} className="text-xs text-foreground flex items-center gap-2">
-                <span className="font-mono">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
+                <span className="font-mono">{fmtDataLocal(f.data)}</span>
                 <span>•</span>
                 <span>{f.descricao}</span>
                 {f.abrangencia !== 'nacional' && (
@@ -288,7 +296,7 @@ export function TarefasPage() {
                 <div key={f.id} className="bg-card border border-border rounded-lg p-3 flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
+                      <span className="text-sm font-mono font-semibold">{fmtDataLocal(f.data)}</span>
                       <span className="text-xs text-muted-foreground">•</span>
                       <span className="text-sm">{f.descricao}</span>
                     </div>
@@ -554,7 +562,7 @@ export function TarefasPage() {
                     </span>
                     {t.data_vencimento && (
                       <span className={`text-xs font-mono ${isVencida ? "text-red-alert font-bold" : "text-muted-foreground"}`}>
-                        {new Date(t.data_vencimento).toLocaleDateString("pt-BR")}
+                        {fmtDataLocal(t.data_vencimento)}
                       </span>
                     )}
                     <Button 
