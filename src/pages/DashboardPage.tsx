@@ -1,6 +1,7 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
 import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
+import { useFeriados } from "@/hooks/useFeriados";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -32,6 +33,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
   const { data: tarefas = [] } = useTarefas();
+  const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const { toast } = useToast();
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
@@ -354,6 +356,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         onSubmit={handleCreateTask}
         initialData={taskModalInitialData}
         processos={processos}
+        feriados={feriados}
       />
     </div>
   );

@@ -3,6 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientes } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
+import { useFeriados } from "@/hooks/useFeriados";
+import { useProcessos } from "@/hooks/useProcessos";
+import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -175,7 +178,13 @@ function saveStore(items: AaspIntimacao[]) {
 export function IntimacoesPage() {
   const { user } = useAuth();
   const { data: clientes = [] } = useClientes();
+  const { data: feriados = [] } = useFeriados();
+  const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
+
+  // Estado do modal de criação de tarefa
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
 
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
@@ -462,16 +471,29 @@ export function IntimacoesPage() {
   };
 
   /** Criar tarefa a partir de uma intimação */
-  const criarTarefaDeIntimacao = async (intimacao: AaspIntimacao) => {
+  const criarTarefaDeIntimacao = (intimacao: AaspIntimacao) => {
+    setTaskModalInitialData({
+      titulo: `Intimação: ${intimacao._titulo || "Publicação AASP"}`,
+      descricao: intimacao._resumoIA ||
+        (intimacao.textoPublicacao || intimacao.Texto || intimacao.texto || "").substring(0, 200),
+      prioridade: "alta",
+    });
+    setShowTaskModal(true);
+  };
+
+  const handleSubmitTarefa = async (data: any) => {
     try {
       await createTarefa.mutateAsync({
-        titulo: `Intimação: ${intimacao._titulo || 'Publicação AASP'}`,
-        descricao: intimacao._resumoIA || (intimacao.textoPublicacao || intimacao.Texto || intimacao.texto || "").substring(0, 200),
-        prioridade: "alta",
-        data_vencimento: null, // Usuário pode ajustar depois
-        processo_id: null, // Pode ser vinculado depois
+        titulo: data.titulo,
+        descricao: data.descricao || null,
+        data_vencimento: data.data_vencimento || null,
+        prioridade: data.prioridade,
+        status: data.status || "pendente",
+        processo_id: data.processo_id || null,
       });
       toast.success("Tarefa criada com sucesso!");
+      setShowTaskModal(false);
+      setTaskModalInitialData(null);
     } catch (err: any) {
       toast.error(`Erro ao criar tarefa: ${err.message}`);
     }
@@ -818,6 +840,16 @@ export function IntimacoesPage() {
           onGerarResumo={gerarResumoIA}
         />
       )}
+
+      {/* Modal de Criação de Tarefa */}
+      <CreateTaskModal
+        open={showTaskModal}
+        onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
+        onSubmit={handleSubmitTarefa}
+        initialData={taskModalInitialData}
+        processos={processos}
+        feriados={feriados}
+      />
     </div>
   );
 }

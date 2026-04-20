@@ -36,6 +36,7 @@ export function TarefasPage() {
     titulo: "",
     descricao: "",
     data_vencimento: "",
+    diasUteis: "",
     prioridade: "media",
     status: "pendente",
     processo_id: "",
@@ -49,7 +50,7 @@ export function TarefasPage() {
   });
 
   const resetForm = () => {
-    setForm({ titulo: "", descricao: "", data_vencimento: "", prioridade: "media", status: "pendente", processo_id: "" });
+    setForm({ titulo: "", descricao: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente", processo_id: "" });
     setShowForm(false);
     setEditingId(null);
   };
@@ -63,7 +64,8 @@ export function TarefasPage() {
     setForm({
       titulo: t.titulo,
       descricao: t.descricao || "",
-      data_vencimento: t.data_vencimento ? new Date(t.data_vencimento).toISOString().split('T')[0] : "",
+      data_vencimento: t.data_vencimento ? t.data_vencimento.slice(0, 10) : "",
+      diasUteis: "",
       prioridade: t.prioridade,
       status: t.status || "pendente",
       processo_id: t.processo_id || "",
@@ -448,12 +450,52 @@ export function TarefasPage() {
                 <option value="cancelada">Cancelada</option>
               </select>
             </div>
-            <InputField 
-              label="Data de Vencimento" 
-              value={form.data_vencimento} 
-              onChange={(v) => setForm({ ...form, data_vencimento: v })} 
-              type="date" 
-            />
+            <div className="md:col-span-2 bg-accent/5 rounded-xl border border-accent/20 p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Dias Úteis para Vencimento
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Ex: 15"
+                  value={form.diasUteis}
+                  onChange={(e) => {
+                    const dias = e.target.value;
+                    const num = parseInt(dias);
+                    if (!isNaN(num) && num > 0) {
+                      const resultado = calcularDiasUteis(new Date(), num, feriados);
+                      const ano = resultado.getFullYear();
+                      const mes = String(resultado.getMonth() + 1).padStart(2, "0");
+                      const dia = String(resultado.getDate()).padStart(2, "0");
+                      setForm({ ...form, diasUteis: dias, data_vencimento: `${ano}-${mes}-${dia}` });
+                    } else {
+                      setForm({ ...form, diasUteis: dias, data_vencimento: "" });
+                    }
+                  }}
+                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                />
+                <p className="text-[0.68rem] text-muted-foreground mt-1">
+                  Exclui sáb, dom e {feriados.length > 0 ? `${feriados.length} feriado(s)` : "feriados"}
+                </p>
+              </div>
+              <div>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Data de Vencimento
+                </label>
+                <input
+                  type="date"
+                  value={form.data_vencimento}
+                  onChange={(e) => setForm({ ...form, data_vencimento: e.target.value, diasUteis: "" })}
+                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                />
+                {form.data_vencimento && form.diasUteis && (
+                  <p className="text-[0.7rem] font-semibold text-accent mt-1">
+                    📅 {form.diasUteis} dias úteis a partir de hoje
+                  </p>
+                )}
+              </div>
+            </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
               <select
