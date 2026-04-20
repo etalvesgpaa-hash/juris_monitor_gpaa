@@ -667,12 +667,16 @@ export function IntimacoesPage() {
         {/* PUBLICAÇÃO */}
         <td className="px-3 py-3">
           <div className="text-xs font-semibold">{meio || jornal || "—"}</div>
-          <div className="text-xs text-muted-foreground">Diário de Justiça</div>
-        </td>
-
-        {/* PARTES */}
-        <td className="px-3 py-3 text-xs text-muted-foreground max-w-[150px] truncate">
-          {partes.slice(0, 40) || "—"}
+          {orgao && (
+            <div className="text-xs text-muted-foreground max-w-[200px] truncate">
+              📍 {orgao}
+            </div>
+          )}
+          {partes && (
+            <div className="text-xs text-muted-foreground max-w-[200px] truncate mt-0.5">
+              👤 {partes.slice(0, 60)}
+            </div>
+          )}
         </td>
 
         {/* STATUS */}
@@ -925,7 +929,7 @@ export function IntimacoesPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["DATA", "PROCESSO", "TIPO / ÓRGÃO", "PUBLICAÇÃO", "PARTES", "STATUS", "AÇÕES"].map((h) => (
+                  {["DATA", "PROCESSO", "TIPO / ÓRGÃO", "PUBLICAÇÃO", "STATUS", "AÇÕES"].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>

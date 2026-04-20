@@ -1,28 +1,21 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTarefas, useCreateTarefa, useUpdateTarefa, useDeleteTarefa } from "@/hooks/useTarefas";
-import { useFeriados, useCreateFeriado, useDeleteFeriado, calcularDiasUteis } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, Edit2, Trash2, Plus, X } from "lucide-react";
+import { Calendar } from "lucide-react";
 
 type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
 
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
   const { data: processos = [] } = useProcessos();
-  const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const updateTarefa = useUpdateTarefa();
   const deleteTarefa = useDeleteTarefa();
-  const createFeriado = useCreateFeriado();
-  const deleteFeriado = useDeleteFeriado();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showFeriados, setShowFeriados] = useState(false);
-  const [showFormFeriado, setShowFormFeriado] = useState(false);
   const [filter, setFilter] = useState<FilterType>("todas");
   const [viewMode, setViewMode] = useState<"lista" | "agenda">("lista");
   const [form, setForm] = useState({
@@ -33,87 +26,26 @@ export function TarefasPage() {
     processo_id: "",
   });
 
-  const [formFeriado, setFormFeriado] = useState({
-    data: "",
-    descricao: "",
-    tipo: "feriado" as "feriado" | "suspensao" | "recesso",
-    abrangencia: "local" as "nacional" | "estadual" | "municipal" | "local",
-  });
-
   const resetForm = () => {
     setForm({ titulo: "", descricao: "", data_vencimento: "", prioridade: "media", processo_id: "" });
     setShowForm(false);
-    setEditingId(null);
   };
 
-  const resetFormFeriado = () => {
-    setFormFeriado({ data: "", descricao: "", tipo: "feriado", abrangencia: "local" });
-    setShowFormFeriado(false);
-  };
-
-  const handleEdit = (t: typeof tarefas[0]) => {
-    setForm({
-      titulo: t.titulo,
-      descricao: t.descricao || "",
-      data_vencimento: t.data_vencimento ? new Date(t.data_vencimento).toISOString().split('T')[0] : "",
-      prioridade: t.prioridade,
-      processo_id: t.processo_id || "",
-    });
-    setEditingId(t.id);
-    setShowForm(true);
-  };
-
-  const handleCreateOrUpdate = async () => {
+  const handleCreate = async () => {
     if (!form.titulo.trim()) {
       toast({ title: "Informe o título", variant: "destructive" });
       return;
     }
     try {
-      if (editingId) {
-        await updateTarefa.mutateAsync({
-          id: editingId,
-          titulo: form.titulo,
-          descricao: form.descricao || null,
-          data_vencimento: form.data_vencimento || null,
-          prioridade: form.prioridade,
-          processo_id: form.processo_id || null,
-        });
-        toast({ title: "Tarefa atualizada!" });
-      } else {
-        await createTarefa.mutateAsync({
-          titulo: form.titulo,
-          descricao: form.descricao || null,
-          data_vencimento: form.data_vencimento || null,
-          prioridade: form.prioridade,
-          processo_id: form.processo_id || null,
-        });
-        toast({ title: "Tarefa criada!" });
-      }
+      await createTarefa.mutateAsync({
+        titulo: form.titulo,
+        descricao: form.descricao || null,
+        data_vencimento: form.data_vencimento || null,
+        prioridade: form.prioridade,
+        processo_id: form.processo_id || null,
+      });
+      toast({ title: "Tarefa criada!" });
       resetForm();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    }
-  };
-
-  const handleCreateFeriado = async () => {
-    if (!formFeriado.data || !formFeriado.descricao.trim()) {
-      toast({ title: "Preencha todos os campos", variant: "destructive" });
-      return;
-    }
-    try {
-      await createFeriado.mutateAsync(formFeriado);
-      toast({ title: "Feriado cadastrado!" });
-      resetFormFeriado();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    }
-  };
-
-  const handleDeleteFeriado = async (id: string) => {
-    if (!confirm("Excluir este feriado?")) return;
-    try {
-      await deleteFeriado.mutateAsync(id);
-      toast({ title: "Feriado excluído" });
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     }
@@ -169,12 +101,6 @@ export function TarefasPage() {
     return "text-muted-foreground bg-muted";
   };
 
-  // Filtrar feriados futuros e ordenar por data
-  const feriadosFuturos = feriados
-    .filter(f => new Date(f.data) >= now)
-    .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
-    .slice(0, 5);
-
   return (
     <div>
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
@@ -197,9 +123,7 @@ export function TarefasPage() {
           >
             <Calendar className="w-4 h-4 mr-1" /> Agenda
           </Button>
-          <Button variant="gold" onClick={() => setShowForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Nova Tarefa
-          </Button>
+          <Button variant="gold" onClick={() => setShowForm(true)}>+ Nova Tarefa</Button>
         </div>
       </div>
 
@@ -229,147 +153,19 @@ export function TarefasPage() {
 
       {/* Feriados e Suspensões */}
       <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-primary">
-              FERIADOS E SUSPENSÕES DE PRAZO
-            </h2>
-          </div>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => setShowFeriados(!showFeriados)}
-            >
-              {showFeriados ? "Ocultar" : "Ver Todos"}
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => setShowFormFeriado(true)}
-            >
-              <Plus className="w-4 h-4 mr-1" /> Adicionar
-            </Button>
-          </div>
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-5 h-5 text-primary" />
+          <h2 className="text-sm font-bold uppercase tracking-wider text-primary">
+            FERIADOS E SUSPENSÕES DE PRAZO
+          </h2>
         </div>
-        <p className="text-xs text-muted-foreground italic mb-3">
+        <p className="text-xs text-muted-foreground italic">
           Cadastrados aqui, válidos para <strong>todas as tarefas</strong>. Os feriados nacionais já são automáticos.
         </p>
-        
-        {!showFeriados && feriadosFuturos.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
-            {feriadosFuturos.map(f => (
-              <div key={f.id} className="text-xs text-foreground flex items-center gap-2">
-                <span className="font-mono">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
-                <span>•</span>
-                <span>{f.descricao}</span>
-                {f.abrangencia !== 'nacional' && (
-                  <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
-                    {f.abrangencia}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {showFeriados && (
-          <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
-            {feriados.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">Nenhum feriado cadastrado.</p>
-            ) : (
-              feriados.map(f => (
-                <div key={f.id} className="bg-card border border-border rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
-                      <span className="text-xs text-muted-foreground">•</span>
-                      <span className="text-sm">{f.descricao}</span>
-                    </div>
-                    <div className="flex gap-2 mt-1">
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
-                        {f.tipo}
-                      </span>
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
-                        {f.abrangencia}
-                      </span>
-                    </div>
-                  </div>
-                  {f.abrangencia !== 'nacional' && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert"
-                      onClick={() => handleDeleteFeriado(f.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
+        <p className="text-xs text-muted-foreground mt-1">
+          <em>Nenhum feriado extra cadastrado.</em>
+        </p>
       </div>
-
-      {/* Formulário de Feriado */}
-      {showFormFeriado && (
-        <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl font-bold">Novo Feriado/Suspensão</h2>
-            <Button variant="ghost" size="sm" onClick={resetFormFeriado}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <InputField 
-              label="Data *" 
-              value={formFeriado.data} 
-              onChange={(v) => setFormFeriado({ ...formFeriado, data: v })} 
-              type="date" 
-            />
-            <InputField 
-              label="Descrição *" 
-              value={formFeriado.descricao} 
-              onChange={(v) => setFormFeriado({ ...formFeriado, descricao: v })} 
-              placeholder="Ex: Feriado Municipal" 
-            />
-            <div>
-              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Tipo</label>
-              <select
-                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
-                value={formFeriado.tipo}
-                onChange={(e) => setFormFeriado({ ...formFeriado, tipo: e.target.value as any })}
-              >
-                <option value="feriado">Feriado</option>
-                <option value="suspensao">Suspensão de Prazo</option>
-                <option value="recesso">Recesso</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Abrangência</label>
-              <select
-                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
-                value={formFeriado.abrangencia}
-                onChange={(e) => setFormFeriado({ ...formFeriado, abrangencia: e.target.value as any })}
-              >
-                <option value="local">Local</option>
-                <option value="municipal">Municipal</option>
-                <option value="estadual">Estadual</option>
-                <option value="nacional">Nacional</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <Button variant="gold" onClick={handleCreateFeriado} disabled={createFeriado.isPending}>
-              {createFeriado.isPending ? "Salvando..." : "Salvar"}
-            </Button>
-            <Button variant="outline" onClick={resetFormFeriado}>Cancelar</Button>
-          </div>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex gap-2 mb-5 flex-wrap">
@@ -396,19 +192,11 @@ export function TarefasPage() {
         ))}
       </div>
 
-      {/* Formulário de Tarefa */}
       {showForm && (
         <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 className="font-display text-xl font-bold mb-4">
-            {editingId ? "Editar Tarefa" : "Nova Tarefa"}
-          </h2>
+          <h2 className="font-display text-xl font-bold mb-4">Nova Tarefa</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <InputField 
-              label="Título *" 
-              value={form.titulo} 
-              onChange={(v) => setForm({ ...form, titulo: v })} 
-              placeholder="Título da tarefa" 
-            />
+            <InputField label="Título *" value={form.titulo} onChange={(v) => setForm({ ...form, titulo: v })} placeholder="Título da tarefa" />
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Prioridade</label>
               <select
@@ -421,12 +209,7 @@ export function TarefasPage() {
                 <option value="alta">Alta</option>
               </select>
             </div>
-            <InputField 
-              label="Data de Vencimento" 
-              value={form.data_vencimento} 
-              onChange={(v) => setForm({ ...form, data_vencimento: v })} 
-              type="date" 
-            />
+            <InputField label="Data de Vencimento" value={form.data_vencimento} onChange={(v) => setForm({ ...form, data_vencimento: v })} placeholder="YYYY-MM-DD" type="date" />
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
               <select
@@ -451,12 +234,8 @@ export function TarefasPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Button 
-              variant="gold" 
-              onClick={handleCreateOrUpdate} 
-              disabled={createTarefa.isPending || updateTarefa.isPending}
-            >
-              {(createTarefa.isPending || updateTarefa.isPending) ? "Salvando..." : "Salvar"}
+            <Button variant="gold" onClick={handleCreate} disabled={createTarefa.isPending}>
+              {createTarefa.isPending ? "Salvando..." : "Salvar"}
             </Button>
             <Button variant="outline" onClick={resetForm}>Cancelar</Button>
           </div>
@@ -491,9 +270,7 @@ export function TarefasPage() {
                       {t.status === "concluida" && "✓"}
                     </button>
                     <div className="min-w-0">
-                      <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>
-                        {t.titulo}
-                      </div>
+                      <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>{t.titulo}</div>
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
                     </div>
                   </div>
@@ -506,21 +283,8 @@ export function TarefasPage() {
                         {new Date(t.data_vencimento).toLocaleDateString("pt-BR")}
                       </span>
                     )}
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-accent" 
-                      onClick={() => handleEdit(t)}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" 
-                      onClick={() => handleDelete(t.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" onClick={() => handleDelete(t.id)}>
+                      ✕
                     </Button>
                   </div>
                 </div>
@@ -533,19 +297,7 @@ export function TarefasPage() {
   );
 }
 
-function InputField({ 
-  label, 
-  value, 
-  onChange, 
-  placeholder, 
-  type = "text" 
-}: { 
-  label: string; 
-  value: string; 
-  onChange: (v: string) => void; 
-  placeholder?: string; 
-  type?: string;
-}) {
+function InputField({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
   return (
     <div>
       <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">{label}</label>
