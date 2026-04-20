@@ -544,6 +544,27 @@ export function IntimacoesPage() {
       dias.push(`${ano}-${mes}-${dia}`);
       d.setDate(d.getDate() - 1);
     }
+    
+    // DEBUG: Verificar distribuição de intimações
+    console.log("=== DEBUG: Distribuição de Intimações ===");
+    console.log("Filtro de status atual:", filtroStatus);
+    console.log("Total de intimações:", intimacoes.length);
+    console.log("Intimações por status:", {
+      ativa: intimacoes.filter(i => i._status === "ativa").length,
+      finalizada: intimacoes.filter(i => i._status === "finalizada").length,
+      pausada: intimacoes.filter(i => i._status === "pausada").length,
+    });
+    
+    const distribuicao = {};
+    dias.forEach(dia => {
+      const total = intimacoes.filter(i => i._data === dia).length;
+      const ativas = intimacoes.filter(i => i._data === dia && i._status === "ativa").length;
+      if (total > 0) {
+        distribuicao[dia] = { total, ativas };
+      }
+    });
+    console.log("Distribuição por dia:", distribuicao);
+    
     return dias;
   })();
 
@@ -758,6 +779,16 @@ export function IntimacoesPage() {
               </SelectItem>
               {ultimos7Dias.map((dia) => {
                 const count = intimacoes.filter(i => i._data === dia && i._status === filtroStatus).length;
+                const countTotal = intimacoes.filter(i => i._data === dia).length;
+                
+                // DEBUG: Log para investigar
+                if (countTotal > 0 && count === 0) {
+                  console.log(`DEBUG: Dia ${dia} tem ${countTotal} intimações, mas 0 com status ${filtroStatus}`);
+                  console.log('Status das intimações deste dia:', 
+                    intimacoes.filter(i => i._data === dia).map(i => ({ id: i._id, status: i._status }))
+                  );
+                }
+                
                 const [ano, mes, d] = dia.split("-");
                 const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
                 const label = `${dow}, ${d}/${mes}`;
