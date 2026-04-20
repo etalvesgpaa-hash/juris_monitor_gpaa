@@ -13,10 +13,19 @@ export function useTarefas() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tarefas")
-        .select("*")
+        .select(`
+          *,
+          processo:processos(
+            id,
+            numero_cnj,
+            status,
+            classe,
+            assunto
+          )
+        `)
         .order("data_vencimento", { ascending: true });
       if (error) throw error;
-      return data as Tarefa[];
+      return data as any[];
     },
     enabled: !!user,
   });

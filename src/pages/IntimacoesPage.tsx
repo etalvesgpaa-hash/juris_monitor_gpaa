@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientes } from "@/hooks/useClientes";
+import { useCreateTarefa } from "@/hooks/useTarefas";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -22,6 +23,7 @@ interface AaspIntimacao {
   _resumoIA?: string | null;
   _titulo?: string;
   _numProc?: string;
+  _orgaoPublicacao?: string; // NOVO: órgão de publicação (DJENTJSP, etc)
 
   // Campos diretos da API AASP
   TituloAssunto?: string;
@@ -127,6 +129,32 @@ function extrairNumProc(intim: AaspIntimacao): string {
   return n;
 }
 
+/** Extrai órgão de publicação da intimação (ex: DJENTJSP) */
+function extrairOrgaoPublicacao(intim: AaspIntimacao): string {
+  const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+  const meio = (intim.Meio || intim.meio || "") as string;
+  
+  // Primeiro tenta pelo campo Meio ou NomeJornal
+  if (meio && meio.length > 0) return meio.toUpperCase();
+  if (jornal && jornal.length > 0) return jornal.toUpperCase();
+  
+  // Se não encontrou, tenta extrair do texto
+  const texto = (
+    intim.textoPublicacao ||
+    intim.Texto ||
+    intim.texto ||
+    intim.Conteudo ||
+    intim.conteudo ||
+    ""
+  ) as string;
+  
+  // Padrões comuns: DJENTJSP, DJSP, DJE, etc
+  const padraoOrgao = /\b(DJE?N?T?J?S?P|DOE?S?P|DIÁRIO\s+(?:DE\s+)?JUSTIÇA|DIÁRIO\s+OFICIAL)\b/i;
+  const match = texto.match(padraoOrgao);
+  
+  return match ? match[0].toUpperCase() : "";
+}
+
 // ── Persistência local ─────────────────────────────────────────
 const STORE_KEY = "jm_aasp_intimacoes";
 
@@ -147,11 +175,14 @@ function saveStore(items: AaspIntimacao[]) {
 export function IntimacoesPage() {
   const { user } = useAuth();
   const { data: clientes = [] } = useClientes();
+  const createTarefa = useCreateTarefa();
 
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
+  const [groqKey, setGroqKey] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [loadingDia, setLoadingDia] = useState<string | null>(null);
+  const [loadingIA, setLoadingIA] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
   const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
@@ -159,33 +190,42 @@ export function IntimacoesPage() {
   );
   const [selected, setSelected] = useState<AaspIntimacao | null>(null);
 
-  // Carrega chave AASP do Supabase / localStorage
+  // Carrega chaves do Supabase / localStorage
   useEffect(() => {
-    const local = localStorage.getItem("jurismonitor_aasp_key") || "";
-    if (local) { setAaspKey(local); return; }
+    const localAasp = localStorage.getItem("jurismonitor_aasp_key") || "";
+    const localGroq = localStorage.getItem("jurismonitor_groq_key") || "";
+    
+    if (localAasp) setAaspKey(localAasp);
+    if (localGroq) setGroqKey(localGroq);
+    
     if (!user) return;
+    
     supabase
       .from("api_keys")
-      .select("aasp_chave")
+      .select("aasp_chave, groq_api_key")
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data }) => {
-        const k = data?.aasp_chave || "";
-        if (k) { localStorage.setItem("jurismonitor_aasp_key", k); setAaspKey(k); }
+        if (data?.aasp_chave) {
+          localStorage.setItem("jurismonitor_aasp_key", data.aasp_chave);
+          setAaspKey(data.aasp_chave);
+        }
+        if (data?.groq_api_key) {
+          localStorage.setItem("jurismonitor_groq_key", data.groq_api_key);
+          setGroqKey(data.groq_api_key);
+        }
       })
       .catch(() => {});
   }, [user]);
 
-  /** Busca intimações de um dia — tenta /api/proxy, corsproxy.io e allorigins (igual ao index.html original) */
+  /** Busca intimações de um dia */
   const buscarDia = useCallback(
     async (dataStr: string, silencioso = false): Promise<AaspIntimacao[]> => {
       if (!aaspKey) return [];
 
-      // Monta endpoint AASP — sem diferencial=false (a API não reconhece o valor em string)
       const params   = new URLSearchParams({ chave: aaspKey, data: dataStr });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
-      // 3 proxies em sequência — mesma estratégia do index.html que funciona
       const proxies = [
         { nome: "backend",    url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "corsproxy",  url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
@@ -194,502 +234,333 @@ export function IntimacoesPage() {
 
       for (const p of proxies) {
         try {
-          console.log(`[AASP] Tentando buscar ${dataStr} via ${p.nome}...`);
           const resp = await fetch(p.url, { headers: { Accept: "application/json" } });
           
-          if (!resp.ok) {
-            console.warn(`[AASP] ${dataStr} via ${p.nome}: HTTP ${resp.status}`);
-            continue;
-          }
+          if (!resp.ok) continue;
           
           const text = await resp.text();
-          console.log(`[AASP] ${dataStr} via ${p.nome}: Resposta recebida (${text.length} chars)`);
           
-          if (!text.trim()) {
-            console.warn(`[AASP] ${dataStr} via ${p.nome}: Resposta vazia`);
-            continue;
-          }
+          if (!text.trim()) continue;
 
           let raw: unknown = null;
           
-          // Primeira tentativa: JSON direto
           try { 
             raw = JSON.parse(text);
-            console.log(`[AASP] ${dataStr} via ${p.nome}: JSON parseado com sucesso`);
           } catch (parseErr) { 
-            console.warn(`[AASP] ${dataStr} via ${p.nome}: Erro no parse JSON direto`, parseErr);
-          }
-          
-          // Segunda tentativa: allorigins wrapper
-          if (!raw) { 
-            try { 
-              const w: any = JSON.parse(text); 
-              if (w?.contents) {
-                raw = JSON.parse(w.contents);
-                console.log(`[AASP] ${dataStr} via ${p.nome}: JSON parseado via allorigins wrapper`);
-              }
-            } catch (wrapperErr) { 
-              console.warn(`[AASP] ${dataStr} via ${p.nome}: Erro no parse allorigins wrapper`, wrapperErr);
-            }
-          }
-          
-          if (!raw) {
-            console.warn(`[AASP] ${dataStr} via ${p.nome}: Não foi possível parsear JSON. Primeiros 200 chars: ${text.substring(0, 200)}`);
-            continue;
+            try {
+              const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+              if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
+            } catch {}
           }
 
-          // Verifica se a API retornou erro
-          const rawObj = raw as any;
-          if (rawObj?.erro || rawObj?.error || rawObj?.Erro || rawObj?.Error) {
-            const msgErro = rawObj.erro || rawObj.error || rawObj.Erro || rawObj.Error;
-            console.warn(`[AASP] ${dataStr} via ${p.nome}: API retornou erro: ${msgErro}`);
-            if (!silencioso) {
-              toast.error(`AASP retornou erro: ${msgErro}`);
-            }
-            continue;
-          }
+          if (!raw) continue;
 
-          const normalizado = normalizar(raw);
-          console.log(`[AASP] ${dataStr} via ${p.nome}: ${normalizado.length} intimação(ões) encontrada(s)`);
+          let arr = normalizar(raw);
+          if (arr.length === 0) continue;
 
-          if (normalizado.length === 0) {
-            console.log(`[AASP] ${dataStr} via ${p.nome}: Nenhuma intimação após normalização`);
-            // Retorna array vazio mas considera sucesso (dia sem publicações)
-            return [];
-          }
+          arr = arr.map((it, idx) => {
+            const id = gerarId(it, idx);
+            const existente = intimacoes.find((x) => x._id === id);
+            return {
+              ...it,
+              _id: id,
+              _data: dataStr,
+              _lida: existente?._lida || false,
+              _status: existente?._status || "ativa",
+              _resumoIA: existente?._resumoIA || null,
+              _titulo: it.TituloAssunto || it.Assunto || "Publicação AASP",
+              _numProc: extrairNumProc(it),
+              _orgaoPublicacao: extrairOrgaoPublicacao(it), // NOVO
+            };
+          });
 
-          return normalizado.map((intim, idx) => ({
-            ...intim,
-            _id:     gerarId(intim, idx),
-            _data:   dataStr,
-            _lida:   false,
-            _status: "ativa" as const,
-            _resumoIA: null,
-            _numProc: extrairNumProc(intim),
-            _titulo:
-              intim.TituloAssunto ||
-              intim.Assunto ||
-              (intim.Texto || intim.texto || "").slice(0, 80) ||
-              "Publicação AASP",
-          }));
-        } catch (e: any) {
-          console.error(`[AASP] ${dataStr} via ${p.nome}: Exceção capturada:`, e);
-          if (!silencioso) console.warn(`[AASP] ${dataStr} via ${p.nome}: ${e.message}`);
+          if (!silencioso) toast.success(`${arr.length} intimação(ões) encontrada(s) em ${fmtData(dataStr)}`);
+          return arr;
+        } catch (err) {
+          console.error(`[AASP] Erro ao buscar ${dataStr} via ${p.nome}:`, err);
         }
       }
-      
-      console.error(`[AASP] ${dataStr}: Todos os proxies falharam`);
-      if (!silencioso) {
-        toast.error(`Não foi possível buscar intimações de ${fmtData(dataStr)}. Verifique sua chave AASP.`);
-      }
-      return []; // todos os proxies falharam para este dia
+
+      if (!silencioso) toast.error(`Nenhuma intimação retornada para ${fmtData(dataStr)}.`);
+      return [];
     },
-    [aaspKey]
+    [aaspKey, intimacoes]
   );
 
-  /** Verifica e notifica clientes sobre novas intimações */
-  const verificarNotificacoesClientes = useCallback(async (novasIntimacoes: AaspIntimacao[]) => {
-    if (!user || clientes.length === 0) return;
+  /** Atualizar (últimos 5 dias úteis) */
+  const atualizar = async () => {
+    if (!aaspKey) {
+      toast.error("Configure sua chave AASP nas Configurações.");
+      return;
+    }
+    setLoading(true);
+    const dias = diasUteisRecentes(5);
+    const novas: AaspIntimacao[] = [];
+    for (const d of dias) {
+      setLoadingDia(d);
+      const arr = await buscarDia(d, true);
+      novas.push(...arr);
+    }
+    setLoadingDia(null);
+    setLoading(false);
 
-    // Filtra clientes ativos com notificações habilitadas
-    const clientesAtivos = clientes.filter(
-      (c) => c.status_monitoramento === "ativo" && c.notificacoes_email && c.email && c.numeros_processo
-    );
-
-    if (clientesAtivos.length === 0) return;
-
-    console.log(`[NOTIFICAÇÃO] Verificando ${novasIntimacoes.length} novas intimações para ${clientesAtivos.length} clientes`);
-
-    for (const intimacao of novasIntimacoes) {
-      if (!intimacao._numProc) continue;
-
-      // Remove formatação do número CNJ para comparação
-      const numProcLimpo = intimacao._numProc.replace(/\D/g, "");
-
-      for (const cliente of clientesAtivos) {
-        const processos = cliente.numeros_processo || [];
-        
-        // Verifica se algum processo do cliente corresponde
-        const processoMatch = processos.some((proc) => {
-          const procLimpo = proc.replace(/\D/g, "");
-          return numProcLimpo.includes(procLimpo) || procLimpo.includes(numProcLimpo);
-        });
-
-        if (processoMatch) {
-          console.log(`[NOTIFICAÇÃO] Match encontrado: Cliente ${cliente.nome} - Processo ${intimacao._numProc}`);
-          
-          // Envia notificação
-          await enviarNotificacaoCliente(intimacao, cliente);
-        }
+    const merged = [...novas, ...intimacoes];
+    const uniq: AaspIntimacao[] = [];
+    const seen = new Set<string>();
+    for (const it of merged) {
+      if (!seen.has(it._id)) {
+        seen.add(it._id);
+        uniq.push(it);
       }
     }
-  }, [user, clientes]);
 
-  /** Envia notificação por e-mail ao cliente */
-  const enviarNotificacaoCliente = async (intimacao: AaspIntimacao, cliente: any) => {
-    try {
-      // Gera resumo com IA se não existir
-      let resumo = intimacao._resumoIA;
-      if (!resumo) {
-        resumo = await gerarResumoIA(intimacao);
-      }
-
-      const texto = (
-        intimacao.textoPublicacao ||
-        intimacao.Texto ||
-        intimacao.texto ||
-        intimacao.Conteudo ||
-        intimacao.conteudo ||
-        ""
-      ) as string;
-
-      // Prepara dados do email
-      const emailData = {
-        destinatario: cliente.email,
-        nomeCliente: cliente.nome,
-        numeroProcesso: intimacao._numProc,
-        dataPublicacao: fmtData(intimacao._data),
-        assunto: intimacao._titulo || "Nova Publicação AASP",
-        resumoIA: resumo,
-        textoCompleto: texto.slice(0, 500), // Limita tamanho
-        intimacaoId: intimacao._id,
-      };
-
-      // Chama API de envio de email
-      const response = await fetch("/api/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailData),
-      });
-
-      if (!response.ok) {
-        throw new Error("Falha ao enviar e-mail");
-      }
-
-      // Registra notificação enviada no banco
-      await supabase.from("notificacoes_enviadas").insert({
-        user_id: user!.id,
-        cliente_id: cliente.id,
-        intimacao_id: intimacao._id,
-        numero_processo: intimacao._numProc!,
-        assunto: intimacao._titulo || "Nova Publicação",
-        resumo_ia: resumo,
-        email_destino: cliente.email,
-        status: "enviado",
-      });
-
-      // Atualiza última notificação do cliente
-      await supabase
-        .from("clientes")
-        .update({ ultima_notificacao: new Date().toISOString() })
-        .eq("id", cliente.id);
-
-      console.log(`[NOTIFICAÇÃO] ✅ E-mail enviado para ${cliente.nome} (${cliente.email})`);
-    } catch (error: any) {
-      console.error(`[NOTIFICAÇÃO] ❌ Erro ao enviar para ${cliente.nome}:`, error);
-      
-      // Registra erro no banco
-      await supabase.from("notificacoes_enviadas").insert({
-        user_id: user!.id,
-        cliente_id: cliente.id,
-        intimacao_id: intimacao._id,
-        numero_processo: intimacao._numProc || "",
-        assunto: intimacao._titulo || "Erro",
-        email_destino: cliente.email,
-        status: "erro",
-        erro_mensagem: error.message,
-      });
-    }
+    setIntimacoes(uniq);
+    saveStore(uniq);
+    toast.success(`${novas.length} intimação(ões) encontrada(s).`);
   };
 
-  /** Gera resumo da intimação usando IA */
-  const gerarResumoIA = async (intimacao: AaspIntimacao): Promise<string> => {
+  /** Buscar dia específico */
+  const buscarDiaEspecifico = async () => {
+    if (!filtroDia) {
+      toast.error("Selecione uma data.");
+      return;
+    }
+    setLoadingDia(filtroDia);
+    const arr = await buscarDia(filtroDia);
+    setLoadingDia(null);
+
+    const merged = [...arr, ...intimacoes];
+    const uniq: AaspIntimacao[] = [];
+    const seen = new Set<string>();
+    for (const it of merged) {
+      if (!seen.has(it._id)) {
+        seen.add(it._id);
+        uniq.push(it);
+      }
+    }
+
+    setIntimacoes(uniq);
+    saveStore(uniq);
+  };
+
+  /** Gerar resumo IA para uma intimação */
+  const gerarResumoIA = async (intimacao: AaspIntimacao) => {
+    if (!groqKey) {
+      toast.error("Configure sua chave Groq nas Configurações para usar IA.");
+      return;
+    }
+
+    const texto = (
+      intimacao.textoPublicacao ||
+      intimacao.Texto ||
+      intimacao.texto ||
+      intimacao.Conteudo ||
+      intimacao.conteudo ||
+      ""
+    ) as string;
+
+    if (!texto || texto.trim().length < 50) {
+      toast.error("Texto insuficiente para gerar resumo.");
+      return;
+    }
+
     try {
-      const texto = (
-        intimacao.textoPublicacao ||
-        intimacao.Texto ||
-        intimacao.texto ||
-        intimacao.Conteudo ||
-        intimacao.conteudo ||
-        ""
-      ) as string;
-
-      if (!texto || texto.length < 50) {
-        return "Publicação sem conteúdo textual suficiente para análise.";
-      }
-
-      // Busca chave Groq do usuário
-      const { data: apiKeys } = await supabase
-        .from("api_keys")
-        .select("groq_api_key")
-        .eq("user_id", user!.id)
-        .maybeSingle();
-
-      const groqKey = apiKeys?.groq_api_key;
-      if (!groqKey) {
-        return "Resumo automático não disponível (configure a chave Groq API).";
-      }
-
-      // Chama Groq API
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
+          "Authorization": `Bearer ${groqKey}`,
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
           messages: [
             {
               role: "system",
-              content:
-                "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+              content: "Você é um assistente jurídico especializado em análise de intimações. Faça um resumo objetivo e profissional em até 3 frases, destacando: tipo de ato, prazo se houver, e ação necessária."
             },
             {
               role: "user",
-              content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
-            },
+              content: `Analise esta intimação e faça um resumo:\n\n${texto}`
+            }
           ],
           temperature: 0.3,
-          max_tokens: 300,
+          max_tokens: 200,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Erro ao chamar Groq API");
+      if (!resp.ok) {
+        throw new Error(`Erro na API Groq: ${resp.status}`);
       }
 
-      const data = await response.json();
-      const resumo = data.choices?.[0]?.message?.content || "Não foi possível gerar resumo.";
+      const data = await resp.json();
+      const resumo = data.choices?.[0]?.message?.content?.trim() || "";
 
-      // Atualiza intimação com resumo (no localStorage)
-      setIntimacoes((prev) => {
-        const updated = prev.map((i) =>
-          i._id === intimacao._id ? { ...i, _resumoIA: resumo } : i
-        );
-        saveStore(updated);
-        return updated;
-      });
+      if (!resumo) {
+        throw new Error("Resumo vazio retornado pela IA");
+      }
 
+      // Atualiza no estado
+      setIntimacoes((prev) =>
+        prev.map((it) =>
+          it._id === intimacao._id ? { ...it, _resumoIA: resumo } : it
+        )
+      );
+
+      // Salva no localStorage
+      const updated = intimacoes.map((it) =>
+        it._id === intimacao._id ? { ...it, _resumoIA: resumo } : it
+      );
+      saveStore(updated);
+
+      toast.success("Resumo IA gerado com sucesso!");
       return resumo;
-    } catch (error: any) {
-      console.error("[IA] Erro ao gerar resumo:", error);
-      return "Erro ao gerar resumo automático.";
+    } catch (err: any) {
+      console.error("Erro ao gerar resumo IA:", err);
+      toast.error(`Erro ao gerar resumo: ${err.message}`);
+      return null;
     }
   };
 
-  /** Busca os últimos 7 dias úteis, acumula até 1000 no store (remove mais antigos automaticamente) */
-  const buscarTudo = useCallback(async () => {
-    if (!aaspKey) {
-      toast.error("Configure a chave AASP em Configurações primeiro.");
+  /** Gerar resumos IA para todas as intimações ativas sem resumo */
+  const gerarTodosResumosIA = async () => {
+    if (!groqKey) {
+      toast.error("Configure sua chave Groq nas Configurações para usar IA.");
       return;
     }
-    setLoading(true);
-    try {
-      const dias = diasUteisRecentes(7);
-      const existentes = loadStore();
-      const existentesIds = new Set(existentes.map((i) => i._id));
-      let novas = 0;
-      const novasLista: AaspIntimacao[] = [];
 
-      for (const dia of dias) {
-        const lista = await buscarDia(dia, true);
-        for (const item of lista) {
-          if (!existentesIds.has(item._id)) {
-            novasLista.push(item);
-            existentesIds.add(item._id);
-            novas++;
-          }
-        }
-        await new Promise((r) => setTimeout(r, 400));
-      }
+    const semResumo = intimacoes.filter(
+      (it) => it._status === "ativa" && !it._resumoIA
+    );
 
-      // Mescla novas + existentes, ordena por data desc
-      // slice(0, 1000) descarta automaticamente os mais antigos ao atingir o limite
-      const merged = [...novasLista, ...existentes]
-        .sort((a, b) => (b._data > a._data ? 1 : -1))
-        .slice(0, 1000);
-
-      saveStore(merged);
-      setIntimacoes(merged);
-
-      if (novasLista.length > 0) {
-        await verificarNotificacoesClientes(novasLista);
-      }
-
-      toast.success(
-        novas > 0
-          ? `✅ ${novas} nova(s) intimação(ões) carregada(s)! Total: ${merged.length}`
-          : "Nenhuma intimação nova nos últimos 7 dias úteis."
-      );
-    } catch (e: any) {
-      toast.error("Erro ao buscar intimações: " + e.message);
-    } finally {
-      setLoading(false);
+    if (semResumo.length === 0) {
+      toast.info("Todas as intimações ativas já possuem resumo IA.");
+      return;
     }
-  }, [aaspKey, buscarDia, verificarNotificacoesClientes]);
 
-  /** Busca dia específico */
-  const buscarDiaEspecifico = useCallback(
-    async (dataStr: string) => {
-      if (!aaspKey) { toast.error("Configure a chave AASP."); return; }
-      setLoadingDia(dataStr);
-      try {
-        const lista = await buscarDia(dataStr);
-        if (!lista.length) { toast.info(`Nenhuma publicação para ${fmtData(dataStr)}.`); return; }
-        const existentes = loadStore();
-        const existentesIds = new Set(existentes.map((i) => i._id));
-        const novas = lista.filter((i) => !existentesIds.has(i._id));
-        const merged = [...novas, ...existentes].sort((a, b) => (b._data > a._data ? 1 : -1)).slice(0, 500);
-        saveStore(merged);
-        setIntimacoes(merged);
-        toast.success(`✅ ${lista.length} publicação(ões) de ${fmtData(dataStr)} carregada(s)!`);
-      } catch (e: any) {
-        toast.error("Erro: " + e.message);
-      } finally {
-        setLoadingDia(null);
+    if (!confirm(`Gerar resumo IA para ${semResumo.length} intimação(ões)? Isso pode levar alguns minutos.`)) {
+      return;
+    }
+
+    setLoadingIA(true);
+    let sucesso = 0;
+    let erro = 0;
+
+    for (const intimacao of semResumo) {
+      const resumo = await gerarResumoIA(intimacao);
+      if (resumo) {
+        sucesso++;
+      } else {
+        erro++;
       }
-    },
-    [aaspKey, buscarDia]
-  );
+      // Pequeno delay para evitar rate limit
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
 
-  // Auto-busca na primeira carga se tiver chave e store vazio
-  useEffect(() => {
-    if (aaspKey && intimacoes.length === 0) buscarTudo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aaspKey]);
-
-  /** Altera status de uma intimação */
-  const setStatus = (id: string, status: AaspIntimacao["_status"]) => {
-    setIntimacoes((prev) => {
-      const next = prev.map((i) =>
-        i._id === id ? { ...i, _status: status, _lida: status !== "ativa" ? true : i._lida } : i
-      );
-      saveStore(next);
-      return next;
-    });
-    if (selected?._id === id) setSelected((s) => s ? { ...s, _status: status } : s);
+    setLoadingIA(false);
+    toast.success(`${sucesso} resumos gerados com sucesso${erro > 0 ? `, ${erro} com erro` : ''}.`);
   };
 
-  /** Exclui uma intimação */
+  /** Criar tarefa a partir de uma intimação */
+  const criarTarefaDeIntimacao = async (intimacao: AaspIntimacao) => {
+    try {
+      await createTarefa.mutateAsync({
+        titulo: `Intimação: ${intimacao._titulo || 'Publicação AASP'}`,
+        descricao: intimacao._resumoIA || (intimacao.textoPublicacao || intimacao.Texto || intimacao.texto || "").substring(0, 200),
+        prioridade: "alta",
+        data_vencimento: null, // Usuário pode ajustar depois
+        processo_id: null, // Pode ser vinculado depois
+      });
+      toast.success("Tarefa criada com sucesso!");
+    } catch (err: any) {
+      toast.error(`Erro ao criar tarefa: ${err.message}`);
+    }
+  };
+
+  const marcarLida = (id: string) => {
+    setIntimacoes((prev) => {
+      const updated = prev.map((it) => (it._id === id ? { ...it, _lida: true } : it));
+      saveStore(updated);
+      return updated;
+    });
+  };
+
+  const setStatus = (id: string, status: AaspIntimacao["_status"]) => {
+    setIntimacoes((prev) => {
+      const updated = prev.map((it) => (it._id === id ? { ...it, _status: status } : it));
+      saveStore(updated);
+      return updated;
+    });
+    toast.success("Status atualizado.");
+  };
+
   const excluir = (id: string) => {
     if (!confirm("Excluir esta intimação?")) return;
     setIntimacoes((prev) => {
-      const next = prev.filter((i) => i._id !== id);
-      saveStore(next);
-      return next;
+      const updated = prev.filter((it) => it._id !== id);
+      saveStore(updated);
+      return updated;
     });
-    if (selected?._id === id) setSelected(null);
     toast.success("Intimação excluída.");
   };
 
-  /** Marcar como lida */
-  const marcarLida = (id: string) => {
-    setIntimacoes((prev) => {
-      const next = prev.map((i) => (i._id === id ? { ...i, _lida: true } : i));
-      saveStore(next);
-      return next;
-    });
+  const limparTudo = () => {
+    if (!confirm("Limpar TODAS as intimações? Esta ação não pode ser desfeita.")) return;
+    setIntimacoes([]);
+    saveStore([]);
+    toast.success("Todas as intimações foram removidas.");
   };
 
-  // ── Filtragem ──────────────────────────────────────────────
-  const filtradas = intimacoes.filter((i) => {
-    const statusOk = (i._status || "ativa") === filtroStatus;
-    const diaOk = !filtroDia || i._data === filtroDia;
-    return statusOk && diaOk;
-  });
+  const filtradas = intimacoes.filter((it) => it._status === filtroStatus);
 
-  const totalAtivas = intimacoes.filter((i) => (i._status || "ativa") === "ativa").length;
-  const naoLidas = intimacoes.filter((i) => (i._status || "ativa") === "ativa" && !i._lida).length;
-
-  // Dropdown de dias
-  const diasDisponiveis = diasUteisRecentes(7);
-  const contagemPorDia: Record<string, number> = {};
-  for (const i of intimacoes) if (i._data) contagemPorDia[i._data] = (contagemPorDia[i._data] || 0) + 1;
-
-  const totalFiltro = filtradas.length;
-  const labelFiltro = filtroDia
-    ? `${fmtData(filtroDia)} (${totalFiltro})`
-    : `Todos os dias (${totalFiltro})`;
-
-  // ── Renderização de linha/card ─────────────────────────────
   const renderLinha = (intim: AaspIntimacao) => {
-    const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
-    const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
-    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || intim.Texto || intim.texto || "").slice(0, 60) as string;
-    const partes = (intim.Partes || intim.partes || "") as string;
-    const meio = (intim.Meio || intim.meio || jornal || "") as string;
-
+    const naoLida = intim._status === "ativa" && !intim._lida;
+    const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
+    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
     return (
-      <tr
-        key={intim._id}
-        className="border-b border-border/50 hover:bg-muted/20 transition-colors"
-      >
-        {/* DATA */}
-        <td className="px-3 py-3 text-xs text-muted-foreground font-mono whitespace-nowrap">
+      <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
+        <td className="px-3 py-2.5 align-top">
           <div className="flex items-center gap-1.5">
-            {naoLida && (
-              <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0 inline-block" />
-            )}
-            {fmtData(intim._data)}
+            {naoLida && <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />}
+            <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{fmtData(intim._data)}</span>
           </div>
         </td>
-
-        {/* PROCESSO */}
-        <td className="px-3 py-3 min-w-[200px]">
+        <td className="px-3 py-2.5 align-top">
           {intim._numProc ? (
-            <button
-              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
-              className="font-mono text-xs font-bold text-accent hover:underline text-left break-all"
-            >
-              {intim._numProc}
-            </button>
+            <div className="font-mono text-xs font-bold text-accent break-all">{intim._numProc}</div>
           ) : (
-            <button
-              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
-              className="text-xs text-muted-foreground hover:text-accent transition-colors"
+            <span className="text-xs text-muted-foreground italic">—</span>
+          )}
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          <div className="text-xs font-semibold truncate max-w-[180px]">{intim._titulo}</div>
+          {jornal && <div className="text-[0.7rem] text-accent font-medium mt-0.5">{jornal}</div>}
+          {orgao && <div className="text-[0.65rem] text-muted-foreground truncate">{orgao}</div>}
+        </td>
+        <td className="px-3 py-2.5 align-top max-w-[250px]">
+          {intim._resumoIA ? (
+            <div className="text-xs text-foreground leading-relaxed">{intim._resumoIA}</div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs text-muted-foreground hover:text-accent"
+              onClick={() => gerarResumoIA(intim)}
             >
-              Ver publicação
-            </button>
+              <Sparkles className="h-3 w-3 mr-1" /> Gerar Resumo IA
+            </Button>
           )}
         </td>
-
-        {/* TIPO / ÓRGÃO */}
-        <td className="px-3 py-3">
-          <div className="text-xs font-semibold text-foreground max-w-[220px] truncate">
-            {intim._titulo}
-          </div>
-          <div className="text-xs text-muted-foreground max-w-[220px] truncate mt-0.5">
-            {orgao}
-          </div>
-        </td>
-
-        {/* PUBLICAÇÃO */}
-        <td className="px-3 py-3">
-          <div className="text-xs font-semibold">{meio || jornal || "—"}</div>
-          {orgao && (
-            <div className="text-xs text-muted-foreground max-w-[200px] truncate">
-              📍 {orgao}
-            </div>
-          )}
-          {partes && (
-            <div className="text-xs text-muted-foreground max-w-[200px] truncate mt-0.5">
-              👤 {partes.slice(0, 60)}
-            </div>
-          )}
-        </td>
-
-        {/* STATUS */}
-        <td className="px-3 py-3">
+        <td className="px-3 py-2.5 align-top">
           <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
         </td>
-
-        {/* AÇÕES */}
-        <td className="px-3 py-3">
-          <div className="flex flex-col gap-1">
+        <td className="px-3 py-2.5 align-top">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="flex gap-1">
               <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
                 <Eye className="h-3.5 w-3.5" />
+              </ActionBtn>
+              <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
+                <Plus className="h-3.5 w-3.5" />
               </ActionBtn>
               {(intim._status || "ativa") === "ativa" ? (
                 <ActionBtn title="Finalizar" onClick={() => setStatus(intim._id, "finalizada")} className="text-green-ok">
@@ -717,13 +588,12 @@ export function IntimacoesPage() {
 
   const renderCard = (intim: AaspIntimacao) => {
     const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
-    const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+    const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
     const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
     return (
       <div
         key={intim._id}
-        className="bg-card border border-border rounded-xl p-4 hover:border-accent/40 transition-colors cursor-pointer"
-        onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+        className="bg-card border border-border rounded-xl p-4 hover:border-accent/40 transition-colors"
       >
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
@@ -735,16 +605,32 @@ export function IntimacoesPage() {
               <div className="font-mono text-sm font-bold text-accent break-all">{intim._numProc}</div>
             )}
             <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
-            {orgao && <div className="text-xs text-muted-foreground truncate">{orgao}</div>}
+            {jornal && <div className="text-xs text-accent font-medium mt-1">📋 {jornal}</div>}
+            {orgao && <div className="text-xs text-muted-foreground truncate mt-0.5">{orgao}</div>}
           </div>
           <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
         </div>
-        {intim._resumoIA && (
+        {intim._resumoIA ? (
           <div className="mt-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2 border-l-2 border-accent/40 leading-relaxed">
             {intim._resumoIA}
           </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs w-full mt-2"
+            onClick={() => gerarResumoIA(intim)}
+          >
+            <Sparkles className="h-3 w-3 mr-1" /> Gerar Resumo IA
+          </Button>
         )}
-        <div className="flex gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
+            <Eye className="h-3 w-3 mr-1" /> Ver
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs text-accent" onClick={() => criarTarefaDeIntimacao(intim)}>
+            <Plus className="h-3 w-3 mr-1" /> Tarefa
+          </Button>
           {(intim._status || "ativa") === "ativa" ? (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setStatus(intim._id, "finalizada")}>
               <CheckCircle className="h-3 w-3 mr-1" /> Finalizar
@@ -754,167 +640,83 @@ export function IntimacoesPage() {
               <PlayCircle className="h-3 w-3 mr-1" /> Reativar
             </Button>
           )}
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setStatus(intim._id, "pausada")}>
-            <Pause className="h-3 w-3 mr-1" /> Pausar
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs text-red-alert" onClick={() => excluir(intim._id)}>
-            <Trash2 className="h-3 w-3 mr-1" /> Excluir
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-red-alert" onClick={() => excluir(intim._id)}>
+            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       </div>
     );
   };
 
-  // ── Render ─────────────────────────────────────────────────
   return (
     <div>
-      {/* Header */}
-      <div className="mb-5">
-        <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">Intimações AASP</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Publicações do Diário de Justiça Eletrônico — atualizadas automaticamente
-        </p>
-      </div>
-
-      {!aaspKey && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-amber-800">
-          <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          Configure sua chave AASP em <strong>Configurações → API Keys</strong> para carregar as publicações.
+      <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
+        <div>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {intimacoes.length} intimação(ões) armazenada(s) localmente
+          </p>
         </div>
-      )}
-
-      {/* Barra de controles */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {/* Filtros de status */}
-        <Button
-          size="sm"
-          variant={filtroStatus === "ativa" ? "gold" : "outline"}
-          className="h-8 text-xs"
-          onClick={() => setFiltroStatus("ativa")}
-        >
-          Ativas
-        </Button>
-        <Button
-          size="sm"
-          variant={filtroStatus === "finalizada" ? "default" : "outline"}
-          className="h-8 text-xs"
-          onClick={() => setFiltroStatus("finalizada")}
-        >
-          Finalizadas
-        </Button>
-        <Button
-          size="sm"
-          variant={filtroStatus === "pausada" ? "default" : "outline"}
-          className="h-8 text-xs"
-          onClick={() => setFiltroStatus("pausada")}
-        >
-          Pausadas
-        </Button>
-
-        {/* Badge contagem */}
-        <span className="text-xs px-3 py-1 rounded-full bg-accent/10 text-accent font-semibold">
-          {totalAtivas} ativa{totalAtivas !== 1 ? "s" : ""} · {naoLidas} não lida{naoLidas !== 1 ? "s" : ""}
-        </span>
-
-        {/* Dropdown de dia */}
-        <div className="relative">
-          <Select
-            value={filtroDia || "__todos__"}
-            onValueChange={(v) => {
-              if (v === "__todos__") { setFiltroDia(""); return; }
-              setFiltroDia(v);
-            }}
-          >
-            <SelectTrigger className="h-8 text-xs w-52">
-              <SelectValue>{labelFiltro}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__todos__">
-                Todos os dias ({intimacoes.filter((i) => (i._status || "ativa") === filtroStatus).length})
-              </SelectItem>
-              {diasDisponiveis.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {fmtData(d)} {contagemPorDia[d] ? `(${contagemPorDia[d]})` : "— sem dados"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Botão atualizar dia específico */}
-        {filtroDia && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs"
-            disabled={!!loadingDia}
-            onClick={() => buscarDiaEspecifico(filtroDia)}
-          >
-            {loadingDia === filtroDia ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            Atualizar
+        <div className="flex gap-2 flex-wrap">
+          <Button variant={viewMode === "tabela" ? "default" : "outline"} size="sm" onClick={() => setViewMode("tabela")}>
+            <TableIcon className="w-4 h-4" />
           </Button>
-        )}
-
-        {/* Botão atualizar todos */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 text-xs"
-          disabled={loading}
-          onClick={buscarTudo}
-        >
-          {loading ? (
-            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-          )}
-          {loading ? "Buscando…" : "Atualizar"}
-        </Button>
-
-        {/* Rebuscar 7 dias */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 text-xs"
-          disabled={loading}
-          onClick={buscarTudo}
-        >
-          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-          Rebuscar
-        </Button>
-
-        {/* Toggle Tabela / Cards */}
-        <div className="ml-auto flex gap-1">
-          <Button
-            size="sm"
-            variant={viewMode === "tabela" ? "default" : "outline"}
-            className="h-8 px-3"
-            onClick={() => setViewMode("tabela")}
-            title="Tabela"
-          >
-            <TableIcon className="h-3.5 w-3.5 mr-1" /> Tabela
+          <Button variant={viewMode === "cards" ? "default" : "outline"} size="sm" onClick={() => setViewMode("cards")}>
+            <LayoutGrid className="w-4 h-4" />
           </Button>
-          <Button
-            size="sm"
-            variant={viewMode === "cards" ? "default" : "outline"}
-            className="h-8 px-3"
-            onClick={() => setViewMode("cards")}
-            title="Cards"
-          >
-            <LayoutGrid className="h-3.5 w-3.5 mr-1" /> Cards
+          <Button variant="outline" size="sm" onClick={atualizar} disabled={loading || !aaspKey}>
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+          <Button variant="outline" size="sm" onClick={gerarTodosResumosIA} disabled={loadingIA || !groqKey}>
+            {loadingIA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={limparTudo}>
+            <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
-      {/* Conteúdo */}
+      {/* Busca por dia específico */}
+      <div className="bg-card border border-border rounded-xl p-4 mb-6">
+        <div className="flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar dia específico</label>
+            <input
+              type="date"
+              value={filtroDia}
+              onChange={(e) => setFiltroDia(e.target.value)}
+              className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent outline-none"
+            />
+          </div>
+          <Button variant="gold" size="sm" onClick={buscarDiaEspecifico} disabled={!!loadingDia || !aaspKey}>
+            {loadingDia ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+            Buscar
+          </Button>
+        </div>
+      </div>
+
+      {/* Filtros de status */}
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {(["ativa", "finalizada", "pausada"] as const).map((st) => (
+          <button
+            key={st}
+            onClick={() => setFiltroStatus(st)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              filtroStatus === st
+                ? "bg-accent text-primary"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {st === "ativa" ? "Ativas" : st === "finalizada" ? "Finalizadas" : "Pausadas"}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <Loader2 className="h-10 w-10 animate-spin text-accent" />
-          <p className="text-muted-foreground text-sm">Buscando publicações dos últimos 7 dias úteis…</p>
+        <div className="text-center py-12 text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3" />
+          <p className="text-sm">Buscando intimações...</p>
+          {loadingDia && <p className="text-xs mt-1">Dia: {fmtData(loadingDia)}</p>}
         </div>
       ) : filtradas.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
@@ -929,7 +731,7 @@ export function IntimacoesPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["DATA", "PROCESSO", "TIPO / ÓRGÃO", "PUBLICAÇÃO", "STATUS", "AÇÕES"].map((h) => (
+                  {["DATA", "PROCESSO", "TIPO / ÓRGÃO", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
@@ -953,6 +755,8 @@ export function IntimacoesPage() {
           onClose={() => setSelected(null)}
           onSetStatus={setStatus}
           onExcluir={excluir}
+          onCriarTarefa={criarTarefaDeIntimacao}
+          onGerarResumo={gerarResumoIA}
         />
       )}
     </div>
@@ -995,11 +799,15 @@ function ModalDetalhe({
   onClose,
   onSetStatus,
   onExcluir,
+  onCriarTarefa,
+  onGerarResumo,
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
   onSetStatus: (id: string, s: AaspIntimacao["_status"]) => void;
   onExcluir: (id: string) => void;
+  onCriarTarefa: (intim: AaspIntimacao) => void;
+  onGerarResumo: (intim: AaspIntimacao) => void;
 }) {
   const titulo =
     intim._titulo ||
@@ -1007,7 +815,7 @@ function ModalDetalhe({
     intim.Assunto ||
     "Publicação AASP";
 
-  const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+  const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
   const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
   const partes = (intim.Partes || intim.partes || "") as string;
   const meio = (intim.Meio || intim.meio || jornal) as string;
@@ -1049,17 +857,17 @@ function ModalDetalhe({
 
         {/* Badges de meta */}
         <div className="px-6 pt-4 pb-0 flex flex-wrap gap-2">
-          {meio && (
-            <span className="text-xs bg-muted/60 border border-border px-3 py-1 rounded-full font-medium">
-              {meio}
-            </span>
-          )}
           <span className="text-xs bg-muted/60 border border-border px-3 py-1 rounded-full font-medium">
             📅 {dataFmt}
           </span>
-          {jornal && jornal !== meio && (
+          {jornal && (
+            <span className="text-xs bg-accent/10 border border-accent/30 px-3 py-1 rounded-full font-medium text-accent">
+              📋 {jornal}
+            </span>
+          )}
+          {meio && meio !== jornal && (
             <span className="text-xs bg-muted/60 border border-border px-3 py-1 rounded-full font-medium">
-              {jornal}
+              {meio}
             </span>
           )}
         </div>
@@ -1079,13 +887,22 @@ function ModalDetalhe({
           )}
 
           {/* Análise IA */}
-          {intim._resumoIA && (
+          {intim._resumoIA ? (
             <div className="bg-accent/5 border-l-2 border-accent/60 rounded-r-xl p-4">
               <div className="text-[0.65rem] font-black uppercase tracking-widest text-accent mb-2">
                 ✦ Análise IA
               </div>
               <p className="text-sm text-foreground leading-relaxed">{intim._resumoIA}</p>
             </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => onGerarResumo(intim)}
+            >
+              <Sparkles className="h-4 w-4 mr-2" /> Gerar Resumo com IA
+            </Button>
           )}
 
           {/* Texto da publicação */}
@@ -1111,6 +928,9 @@ function ModalDetalhe({
         {/* Ações */}
         <div className="px-6 pb-6 flex flex-wrap gap-2 border-t border-border pt-4">
           <Button variant="outline" size="sm" onClick={onClose}>Fechar</Button>
+          <Button variant="gold" size="sm" onClick={() => { onCriarTarefa(intim); onClose(); }}>
+            <Plus className="h-4 w-4 mr-1.5" /> Criar Tarefa
+          </Button>
           {(intim._status || "ativa") === "ativa" ? (
             <Button variant="outline" size="sm" className="text-green-ok border-green-ok/30"
               onClick={() => { onSetStatus(intim._id, "finalizada"); onClose(); }}>

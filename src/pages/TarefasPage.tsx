@@ -473,6 +473,17 @@ export function TarefasPage() {
         <div className="space-y-2">
           {filtered.map((t) => {
             const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
+            const processo = t.processo;
+            const statusProcesso = processo?.status || null;
+            
+            const statusProcessoColor = (status: string | null) => {
+              if (!status) return "";
+              if (status === "ativo") return "text-green-ok bg-green-ok/10";
+              if (status === "arquivado") return "text-muted-foreground bg-muted";
+              if (status === "suspenso") return "text-amber-500 bg-amber-500/10";
+              return "text-accent bg-accent/10";
+            };
+
             return (
               <div
                 key={t.id}
@@ -490,11 +501,23 @@ export function TarefasPage() {
                     >
                       {t.status === "concluida" && "✓"}
                     </button>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>
                         {t.titulo}
                       </div>
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
+                      {processo && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-xs text-muted-foreground font-mono">
+                            📋 {processo.numero_cnj}
+                          </span>
+                          {statusProcesso && (
+                            <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${statusProcessoColor(statusProcesso)}`}>
+                              {statusProcesso}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
