@@ -136,33 +136,29 @@ function extrairNumProc(intim: AaspIntimacao): string {
 
 /** Extrai órgão de publicação da intimação (ex: DJENTJSP) */
 function extrairOrgaoPublicacao(intim: AaspIntimacao): string {
-  const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
+  // A API AASP retorna jornal como objeto: { nomeJornal: "DJENTJSP", ... }
+  const jornal = (intim as any).jornal;
+  if (jornal?.nomeJornal) return String(jornal.nomeJornal).toUpperCase();
+
+  // Fallbacks para outros formatos
+  const nomeJornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
   const meio = (intim.Meio || intim.meio || "") as string;
-  
-  // Primeiro tenta pelo campo Meio ou NomeJornal
-  if (meio && meio.length > 0) return meio.toUpperCase();
-  if (jornal && jornal.length > 0) return jornal.toUpperCase();
-  
-  // Se não encontrou, tenta extrair do texto
-  const texto = (
-    intim.textoPublicacao ||
-    intim.Texto ||
-    intim.texto ||
-    intim.Conteudo ||
-    intim.conteudo ||
-    ""
-  ) as string;
-  
-  // Padrões comuns: DJENTJSP, DJSP, DJE, etc
+  if (meio) return meio.toUpperCase();
+  if (nomeJornal) return nomeJornal.toUpperCase();
+
+  // Tenta extrair "Meio: ..." do textoPublicacao
+  const texto = (intim.textoPublicacao || intim.Texto || intim.texto || "") as string;
+  const matchMeio = texto.match(/Meio:\s*([^\r\n]+)/i);
+  if (matchMeio) return matchMeio[1].trim().toUpperCase();
+
   const padraoOrgao = /\b(DJE?N?T?J?S?P|DOE?S?P|DIÁRIO\s+(?:DE\s+)?JUSTIÇA|DIÁRIO\s+OFICIAL)\b/i;
   const match = texto.match(padraoOrgao);
-  
   return match ? match[0].toUpperCase() : "";
 }
 
 /** Extrai partes do processo da intimação */
 function extrairPartes(intim: AaspIntimacao): string {
-  // Tenta todos os campos possíveis que a API AASP pode retornar
+  // Tenta campos diretos primeiro
   const candidatos = [
     intim.Partes,
     intim.partes,
@@ -170,69 +166,58 @@ function extrairPartes(intim: AaspIntimacao): string {
     (intim as any).partesProcesso,
     (intim as any).NomePartes,
     (intim as any).nomePartes,
-    (intim as any).Polo,
-    (intim as any).polo,
   ].filter(Boolean);
-
   if (candidatos.length > 0) return String(candidatos[0]);
 
-  // Tenta extrair do texto da publicação — padrão comum: "Autor: X Réu: Y"
-  const texto = (
-    intim.textoPublicacao ||
-    intim.Texto ||
-    intim.texto ||
-    intim.Conteudo ||
-    intim.conteudo ||
-    ""
-  ) as string;
+  // A API AASP embute partes no textoPublicacao com padrão:
+  // "Parte(s): \r NOME1\r NOME2\r\n\r Advogado(s)"
+  const texto = (intim.textoPublicacao || intim.Texto || intim.texto || "") as string;
 
-  // Tenta padrão "Requerente/Autor ... Requerido/Réu ..."
-  const padraoPartes = /(?:Autor(?:a)?|Requerente|Apelante|Impetrante)[:\s]+([^,\n;]{3,60})(?:[,;]|\s+(?:x|vs?\.?|versus)\s+|\s+(?:Réu|Requerido|Apelado|Impetrado)[:\s]+([^,\n;]{3,60}))?/i;
-  const match = texto.match(padraoPartes);
-  if (match) {
-    const parte1 = match[1]?.trim() || "";
-    const parte2 = match[2]?.trim() || "";
-    return parte2 ? `${parte1} x ${parte2}` : parte1;
+  const matchPartes = texto.match(/Parte\(s\):\s*([\s\S]*?)(?:\n\r?\s*Advogado|$)/i);
+  if (matchPartes) {
+    const nomes = matchPartes[1]
+      .split(/[\r\n]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2 && !/^(Parte|Advogado)/i.test(s));
+    if (nomes.length > 0) return nomes.join(" · ");
   }
+
+  // Fallback: padrão "Autor/Requerente ... x Réu/Requerido ..."
+  const padraoPartes = /(?:Autor(?:a)?|Requerente|Apelante|Impetrante)[:\s]+([^,\n;]{3,60})/i;
+  const match = texto.match(padraoPartes);
+  if (match) return match[1].trim();
 
   return "";
 }
 
 /** Extrai órgão julgador da intimação */
 function extrairOrgaoJulgador(intim: AaspIntimacao): string {
-  // Tenta todos os campos possíveis
+  // Tenta campos diretos
   const candidatos = [
     intim.OrgaoJulgador,
     intim.orgaoJulgador,
     (intim as any).Orgao,
     (intim as any).orgao,
-    (intim as any).OrgaoJulg,
-    (intim as any).orgaoJulg,
-    (intim as any).Vara,
-    (intim as any).vara,
-    (intim as any).Tribunal,
-    (intim as any).tribunal,
-    (intim as any).CodigoOrgao,
     (intim as any).NomeOrgao,
     (intim as any).nomeOrgao,
+    (intim as any).Vara,
+    (intim as any).vara,
   ].filter(Boolean);
-
   if (candidatos.length > 0) return String(candidatos[0]);
 
-  // Tenta extrair do texto
-  const texto = (
-    intim.textoPublicacao ||
-    intim.Texto ||
-    intim.texto ||
-    intim.Conteudo ||
-    intim.conteudo ||
-    ""
-  ) as string;
+  // A API AASP embute o órgão no textoPublicacao com padrão:
+  // "Órgão: Foro Regional VI - Penha de França - 4ª Vara Cível\r"
+  const texto = (intim.textoPublicacao || intim.Texto || intim.texto || "") as string;
 
-  // Padrão: "4ª Vara", "1ª Câmara", "2ª Turma" etc — captura só até vírgula/ponto/quebra
-  const padraoOrgao = /(\d+[ªa°º]?\s*(?:Vara(?:\s+\w+){0,4}|Câmara(?:\s+\w+){0,4}|Turma(?:\s+\w+){0,3}|Seção(?:\s+\w+){0,3}))/i;
-  const match = texto.match(padraoOrgao);
-  return match ? match[1].trim().replace(/\s+/g, " ") : "";
+  const matchOrgao = texto.match(/[Óó]rg[ãa]o:\s*([^\r\n]+)/i);
+  if (matchOrgao) return matchOrgao[1].trim();
+
+  // Fallback: captura padrão "Xª Vara ..."
+  const padraoVara = /(\d+[ªa°º]?\s*Vara(?:\s+\w+){0,4})/i;
+  const matchVara = texto.match(padraoVara);
+  if (matchVara) return matchVara[1].trim().replace(/\s+/g, " ");
+
+  return "";
 }
 
 // ── Persistência local ─────────────────────────────────────────
@@ -360,7 +345,7 @@ export function IntimacoesPage() {
               _lida: existente?._lida || false,
               _status: existente?._status || "ativa",
               _resumoIA: existente?._resumoIA || null,
-              _titulo: it.TituloAssunto || it.Assunto || "Publicação AASP",
+              _titulo: it.TituloAssunto || it.Assunto || (it as any).titulo || (it as any).cabecalho?.replace(/\r\n|\n/g, "").trim() || "Publicação AASP",
               _numProc: extrairNumProc(it),
               _orgaoPublicacao: extrairOrgaoPublicacao(it),
               _partes: extrairPartes(it),
