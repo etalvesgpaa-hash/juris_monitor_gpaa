@@ -3,9 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientes } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
-import { useFeriados } from "@/hooks/useFeriados";
-import { useProcessos } from "@/hooks/useProcessos";
-import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -178,13 +175,7 @@ function saveStore(items: AaspIntimacao[]) {
 export function IntimacoesPage() {
   const { user } = useAuth();
   const { data: clientes = [] } = useClientes();
-  const { data: feriados = [] } = useFeriados();
-  const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
-
-  // Estado do modal de criação de tarefa
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
 
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
@@ -194,7 +185,7 @@ export function IntimacoesPage() {
   const [loadingIA, setLoadingIA] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
-  const [filtroData, setFiltroData] = useState<string>("todos"); // "todos" ou YYYY-MM-DD
+  const [filtroPeriodo, setFiltroPeriodo] = useState<string>("todos"); // "7dias", "30dias", "todos"
   const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
     window.innerWidth < 768 ? "cards" : "tabela"
   );
@@ -471,29 +462,16 @@ export function IntimacoesPage() {
   };
 
   /** Criar tarefa a partir de uma intimação */
-  const criarTarefaDeIntimacao = (intimacao: AaspIntimacao) => {
-    setTaskModalInitialData({
-      titulo: `Intimação: ${intimacao._titulo || "Publicação AASP"}`,
-      descricao: intimacao._resumoIA ||
-        (intimacao.textoPublicacao || intimacao.Texto || intimacao.texto || "").substring(0, 200),
-      prioridade: "alta",
-    });
-    setShowTaskModal(true);
-  };
-
-  const handleSubmitTarefa = async (data: any) => {
+  const criarTarefaDeIntimacao = async (intimacao: AaspIntimacao) => {
     try {
       await createTarefa.mutateAsync({
-        titulo: data.titulo,
-        descricao: data.descricao || null,
-        data_vencimento: data.data_vencimento || null,
-        prioridade: data.prioridade,
-        status: data.status || "pendente",
-        processo_id: data.processo_id || null,
+        titulo: `Intimação: ${intimacao._titulo || 'Publicação AASP'}`,
+        descricao: intimacao._resumoIA || (intimacao.textoPublicacao || intimacao.Texto || intimacao.texto || "").substring(0, 200),
+        prioridade: "alta",
+        data_vencimento: null, // Usuário pode ajustar depois
+        processo_id: null, // Pode ser vinculado depois
       });
       toast.success("Tarefa criada com sucesso!");
-      setShowTaskModal(false);
-      setTaskModalInitialData(null);
     } catch (err: any) {
       toast.error(`Erro ao criar tarefa: ${err.message}`);
     }
@@ -533,52 +511,19 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  // Gera os últimos 7 dias usando data LOCAL (sem bug UTC: toISOString retorna UTC que no Brasil vira dia anterior)
-  const ultimos7Dias = (() => {
-    const dias: string[] = [];
-    const d = new Date();
-    for (let i = 0; i < 7; i++) {
-      const ano = d.getFullYear();
-      const mes = String(d.getMonth() + 1).padStart(2, "0");
-      const dia = String(d.getDate()).padStart(2, "0");
-      dias.push(`${ano}-${mes}-${dia}`);
-      d.setDate(d.getDate() - 1);
-    }
-    
-    // DEBUG: Verificar distribuição de intimações
-    console.log("=== DEBUG: Distribuição de Intimações ===");
-    console.log("Filtro de status atual:", filtroStatus);
-    console.log("Total de intimações:", intimacoes.length);
-    console.log("Intimações por status:", {
-      ativa: intimacoes.filter(i => i._status === "ativa").length,
-      finalizada: intimacoes.filter(i => i._status === "finalizada").length,
-      pausada: intimacoes.filter(i => i._status === "pausada").length,
-    });
-    
-    const distribuicao = {};
-    dias.forEach(dia => {
-      const total = intimacoes.filter(i => i._data === dia).length;
-      const ativas = intimacoes.filter(i => i._data === dia && i._status === "ativa").length;
-      if (total > 0) {
-        distribuicao[dia] = { total, ativas };
-      }
-    });
-    console.log("Distribuição por dia:", distribuicao);
-    
-    return dias;
-  })();
+  // Filtrar por status
+  let filtradas = intimacoes.filter((it) => it._status === filtroStatus);
 
-  // Contagem de intimações por dia (todas, independente do status)
-  const contagemPorDia = intimacoes.reduce<Record<string, number>>((acc, it) => {
-    acc[it._data] = (acc[it._data] || 0) + 1;
-    return acc;
-  }, {});
+  // Filtrar por período
+  if (filtroPeriodo !== "todos") {
+    const hoje = new Date();
+    const diasLimite = filtroPeriodo === "7dias" ? 7 : 30;
+    const dataLimite = new Date(hoje);
+    dataLimite.setDate(dataLimite.getDate() - diasLimite);
+    const dataLimiteStr = dataLimite.toISOString().split("T")[0];
 
-  const filtradas = intimacoes.filter((it) => {
-    if (it._status !== filtroStatus) return false;
-    if (filtroData !== "todos" && it._data !== filtroData) return false;
-    return true;
-  });
+    filtradas = filtradas.filter((it) => it._data >= dataLimiteStr);
+  }
 
   const renderLinha = (intim: AaspIntimacao) => {
     const naoLida = intim._status === "ativa" && !intim._lida;
@@ -744,72 +689,11 @@ export function IntimacoesPage() {
         </div>
       </div>
 
-      {/* Barra de controles: status + filtro por dia + ações */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
-        {/* Filtros de status */}
-        <div className="flex gap-2 flex-wrap">
-          {(["ativa", "finalizada", "pausada"] as const).map((st) => (
-            <button
-              key={st}
-              onClick={() => setFiltroStatus(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filtroStatus === st
-                  ? "bg-accent text-primary"
-                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {st === "ativa"
-                ? `Ativas · ${intimacoes.filter(i => i._status === "ativa").length}`
-                : st === "finalizada"
-                ? `Finalizadas · ${intimacoes.filter(i => i._status === "finalizada").length}`
-                : `Pausadas · ${intimacoes.filter(i => i._status === "pausada").length}`}
-            </button>
-          ))}
-        </div>
-
-        {/* Dropdown: últimos 7 dias com contagem */}
-        <div className="ml-auto">
-          <Select value={filtroData} onValueChange={setFiltroData}>
-            <SelectTrigger className="w-52 text-xs h-9 border border-border bg-card">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos" className="text-xs">
-                Todos os dias ({intimacoes.filter(i => i._status === filtroStatus).length})
-              </SelectItem>
-              {ultimos7Dias.map((dia) => {
-                const count = intimacoes.filter(i => i._data === dia && i._status === filtroStatus).length;
-                const countTotal = intimacoes.filter(i => i._data === dia).length;
-                
-                // DEBUG: Log para investigar
-                if (countTotal > 0 && count === 0) {
-                  console.log(`DEBUG: Dia ${dia} tem ${countTotal} intimações, mas 0 com status ${filtroStatus}`);
-                  console.log('Status das intimações deste dia:', 
-                    intimacoes.filter(i => i._data === dia).map(i => ({ id: i._id, status: i._status }))
-                  );
-                }
-                
-                const [ano, mes, d] = dia.split("-");
-                const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
-                const label = `${dow}, ${d}/${mes}`;
-                return (
-                  <SelectItem key={dia} value={dia} className="text-xs">
-                    {count === 0
-                      ? `${label} — sem dados`
-                      : `${label} (${count})`}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Busca por dia específico (API AASP) */}
+      {/* Busca por dia específico */}
       <div className="bg-card border border-border rounded-xl p-4 mb-6">
         <div className="flex gap-2 items-end flex-wrap">
           <div className="flex-1 min-w-[200px]">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar novo dia na AASP</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar dia específico</label>
             <input
               type="date"
               value={filtroDia}
@@ -821,6 +705,46 @@ export function IntimacoesPage() {
             {loadingDia ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <RefreshCw className="w-4 h-4 mr-1" />}
             Buscar
           </Button>
+        </div>
+      </div>
+
+      {/* Filtros de status */}
+      <div className="flex gap-2 mb-5 flex-wrap items-center">
+        <div className="flex gap-2 flex-wrap">
+          {(["ativa", "finalizada", "pausada"] as const).map((st) => (
+            <button
+              key={st}
+              onClick={() => setFiltroStatus(st)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                filtroStatus === st
+                  ? "bg-accent text-primary"
+                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {st === "ativa" ? "Ativas" : st === "finalizada" ? "Finalizadas" : "Pausadas"}
+            </button>
+          ))}
+        </div>
+
+        {/* Filtro por período */}
+        <div className="ml-auto">
+          <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
+            <SelectTrigger className="w-[200px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os dias</SelectItem>
+              <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+              <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Contador de processos */}
+        <div className="bg-accent/10 border border-accent/30 px-4 py-1.5 rounded-lg">
+          <span className="text-xs font-bold text-accent">
+            {filtradas.length} {filtradas.length === 1 ? "processo" : "processos"}
+          </span>
         </div>
       </div>
 
@@ -871,16 +795,6 @@ export function IntimacoesPage() {
           onGerarResumo={gerarResumoIA}
         />
       )}
-
-      {/* Modal de Criação de Tarefa */}
-      <CreateTaskModal
-        open={showTaskModal}
-        onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
-        onSubmit={handleSubmitTarefa}
-        initialData={taskModalInitialData}
-        processos={processos}
-        feriados={feriados}
-      />
     </div>
   );
 }

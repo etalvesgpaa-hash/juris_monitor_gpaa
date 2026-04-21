@@ -1,7 +1,6 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
 import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
-import { useFeriados } from "@/hooks/useFeriados";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -33,7 +32,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
   const { data: tarefas = [] } = useTarefas();
-  const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const { toast } = useToast();
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
@@ -183,7 +181,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                   <div className="text-xs text-muted-foreground">{t.descricao || "Sem descrição"}</div>
                 </div>
                 <div className="text-xs font-mono text-red-alert font-bold">
-                  {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
+                  {t.data_vencimento ? new Date(t.data_vencimento).toLocaleDateString("pt-BR") : "—"}
                 </div>
               </div>
             ))}
@@ -328,21 +326,49 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </div>
         </div>
 
-        {/* Mini Calendário de Tarefas */}
+        {/* Tarefas & Agenda */}
         <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="w-[18px] h-0.5 bg-accent" />
-              Agenda de Tarefas
-            </div>
-            <button
-              onClick={() => onNavigate?.("tarefas")}
-              className="text-[0.65rem] text-accent hover:underline font-semibold"
-            >
-              VER COMPLETO →
-            </button>
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+            <div className="w-[18px] h-0.5 bg-accent" />
+            Tarefas & Agenda do Dia
           </div>
-          <MiniCalendario tarefas={tarefas} />
+          {tarefasVencidas.length > 0 ? (
+            <>
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-red-alert" />
+                  <h3 className="text-xs font-bold uppercase text-red-alert">VENCIDAS</h3>
+                </div>
+                <div className="space-y-2">
+                  {tarefasVencidas.slice(0, 3).map((t) => (
+                    <div key={t.id} className="px-3 py-2 rounded-lg bg-red-alert/5 border border-red-alert/20">
+                      <div className="font-semibold text-sm">{t.titulo}</div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-muted-foreground">{t.descricao || "Tarefa avulsa"}</span>
+                        <span className="font-mono text-red-alert font-bold">
+                          {t.data_vencimento
+                            ? `Venceu há ${Math.floor((now.getTime() - new Date(t.data_vencimento).getTime()) / (24 * 60 * 60 * 1000))} dias`
+                            : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-center">
+                <button
+                  onClick={() => onNavigate?.("tarefas")}
+                  className="text-xs text-accent hover:underline font-semibold"
+                >
+                  VER AGENDA COMPLETA →
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground text-sm">
+              Nenhuma tarefa urgente no momento.
+            </div>
+          )}
         </div>
       </div>
 
@@ -356,111 +382,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         onSubmit={handleCreateTask}
         initialData={taskModalInitialData}
         processos={processos}
-        feriados={feriados}
       />
-    </div>
-  );
-}
-
-// ── Mini Calendário para o Dashboard ─────────────────────────────────────────
-function MiniCalendario({ tarefas }: { tarefas: any[] }) {
-  const hoje = new Date();
-  const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-
-  const [mes, setMes] = useState(hoje.getMonth());
-  const [ano, setAno] = useState(hoje.getFullYear());
-
-  const nomesMeses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-  const diasSemana = ["S","T","Q","Q","S","S","D"];
-
-  const mesAnterior = () => { if (mes === 0) { setMes(11); setAno(a => a - 1); } else setMes(m => m - 1); };
-  const proximoMes  = () => { if (mes === 11) { setMes(0); setAno(a => a + 1); } else setMes(m => m + 1); };
-
-  const primeiroDia = new Date(ano, mes, 1);
-  const ultimoDia   = new Date(ano, mes + 1, 0);
-  const offsetInicio = (primeiroDia.getDay() + 6) % 7;
-  const totalCelulas = Math.ceil((offsetInicio + ultimoDia.getDate()) / 7) * 7;
-
-  const tarefasPorDia = tarefas.reduce<Record<string, any[]>>((acc, t) => {
-    if (!t.data_vencimento) return acc;
-    const d = t.data_vencimento.slice(0, 10);
-    (acc[d] = acc[d] || []).push(t);
-    return acc;
-  }, {});
-
-  const cells = Array.from({ length: totalCelulas }, (_, i) => {
-    const diaNum = i - offsetInicio + 1;
-    if (diaNum < 1 || diaNum > ultimoDia.getDate()) return null;
-    const diaStr = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaNum).padStart(2, "0")}`;
-    return { diaNum, diaStr };
-  });
-
-  return (
-    <div>
-      {/* Controles */}
-      <div className="flex items-center justify-between mb-3">
-        <button onClick={mesAnterior} className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted text-sm font-bold">‹</button>
-        <span className="text-xs font-bold">{nomesMeses[mes].slice(0,3)} · {ano}</span>
-        <button onClick={proximoMes} className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted text-sm font-bold">›</button>
-      </div>
-
-      {/* Header dias semana */}
-      <div className="grid grid-cols-7 mb-1">
-        {diasSemana.map((d, i) => (
-          <div key={i} className="text-center text-[0.6rem] font-bold text-muted-foreground">{d}</div>
-        ))}
-      </div>
-
-      {/* Células */}
-      <div className="grid grid-cols-7 gap-px">
-        {cells.map((cell, idx) => {
-          if (!cell) return <div key={`e-${idx}`} className="h-9" />;
-          const { diaNum, diaStr } = cell;
-          const isHoje = diaStr === hojeStr;
-          const ts = tarefasPorDia[diaStr] || [];
-          const temVencida = ts.some((t: any) => t.status !== "concluida" && diaStr < hojeStr);
-          const temHoje    = ts.some((t: any) => t.status !== "concluida" && diaStr === hojeStr);
-          const temFutura  = ts.some((t: any) => t.status !== "concluida" && diaStr > hojeStr);
-          const temConc    = ts.length > 0 && ts.every((t: any) => t.status === "concluida");
-
-          const dotColor = temVencida ? "bg-[#8b2020]" : temHoje ? "bg-[#c9a84c]" : temFutura ? "bg-[#a08a50]" : temConc ? "bg-[#d6cfc4]" : "";
-
-          return (
-            <div
-              key={diaStr}
-              title={ts.map((t: any) => t.titulo).join(", ")}
-              className={`h-9 rounded flex flex-col items-center justify-center relative cursor-default
-                ${isHoje ? "ring-2 ring-accent ring-offset-1 ring-offset-card" : ""}
-                ${(idx % 7 >= 5) ? "bg-muted/30" : ""}
-              `}
-            >
-              <span className={`text-[0.68rem] font-semibold leading-none
-                ${isHoje ? "text-accent font-bold" : "text-foreground"}
-              `}>{diaNum}</span>
-              {dotColor && (
-                <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${dotColor}`} />
-              )}
-              {ts.length > 1 && (
-                <span className="absolute top-0.5 right-1 text-[0.5rem] font-bold text-muted-foreground">{ts.length}</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Legenda */}
-      <div className="flex flex-wrap gap-3 mt-3 justify-center">
-        {[
-          { cor: "bg-[#8b2020]", label: "Vencida" },
-          { cor: "bg-[#c9a84c]", label: "Hoje" },
-          { cor: "bg-[#a08a50]", label: "Próximos" },
-          { cor: "bg-[#d6cfc4]", label: "Concluída" },
-        ].map(({ cor, label }) => (
-          <span key={label} className="flex items-center gap-1 text-[0.6rem] text-muted-foreground">
-            <span className={`w-2 h-2 rounded-full ${cor}`} /> {label}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
