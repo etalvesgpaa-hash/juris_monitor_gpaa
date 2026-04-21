@@ -584,6 +584,9 @@ export function IntimacoesPage() {
     const naoLida = intim._status === "ativa" && !intim._lida;
     const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
     const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+    const partes = (intim.Partes || intim.partes || "") as string;
+    const meio = (intim.Meio || intim.meio || "") as string;
+    
     return (
       <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
         <td className="px-3 py-2.5 align-top">
@@ -600,9 +603,30 @@ export function IntimacoesPage() {
           )}
         </td>
         <td className="px-3 py-2.5 align-top">
-          <div className="text-xs font-semibold truncate max-w-[180px]">{intim._titulo}</div>
-          {jornal && <div className="text-[0.7rem] text-accent font-medium mt-0.5">{jornal}</div>}
-          {orgao && <div className="text-[0.65rem] text-muted-foreground truncate">{orgao}</div>}
+          <div className="text-xs font-semibold truncate max-w-[200px]">{intim._titulo}</div>
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          {orgao ? (
+            <div className="text-[0.7rem] text-foreground max-w-[180px]">{orgao}</div>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">—</span>
+          )}
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          {meio ? (
+            <div className="text-[0.7rem] text-accent font-medium">{meio}</div>
+          ) : jornal ? (
+            <div className="text-[0.7rem] text-accent font-medium">{jornal}</div>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">—</span>
+          )}
+        </td>
+        <td className="px-3 py-2.5 align-top max-w-[200px]">
+          {partes ? (
+            <div className="text-[0.7rem] text-foreground truncate" title={partes}>{partes}</div>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">—</span>
+          )}
         </td>
         <td className="px-3 py-2.5 align-top max-w-[250px]">
           {intim._resumoIA ? (
@@ -658,6 +682,9 @@ export function IntimacoesPage() {
     const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
     const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
     const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+    const partes = (intim.Partes || intim.partes || "") as string;
+    const meio = (intim.Meio || intim.meio || "") as string;
+    
     return (
       <div
         key={intim._id}
@@ -673,8 +700,30 @@ export function IntimacoesPage() {
               <div className="font-mono text-sm font-bold text-accent break-all">{intim._numProc}</div>
             )}
             <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
-            {jornal && <div className="text-xs text-accent font-medium mt-1">📋 {jornal}</div>}
-            {orgao && <div className="text-xs text-muted-foreground truncate mt-0.5">{orgao}</div>}
+            
+            {/* Órgão */}
+            {orgao && (
+              <div className="text-xs text-foreground mt-1 flex items-start gap-1">
+                <span className="font-semibold">📍</span>
+                <span className="flex-1">{orgao}</span>
+              </div>
+            )}
+            
+            {/* Tipo de Comunicação */}
+            {(meio || jornal) && (
+              <div className="text-xs text-accent font-medium mt-1 flex items-center gap-1">
+                <span>📋</span>
+                <span>{meio || jornal}</span>
+              </div>
+            )}
+            
+            {/* Partes */}
+            {partes && (
+              <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                <span className="font-semibold">👥</span>
+                <span className="flex-1 line-clamp-2">{partes}</span>
+              </div>
+            )}
           </div>
           <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
         </div>
@@ -843,7 +892,7 @@ export function IntimacoesPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["DATA", "PROCESSO", "TIPO / ÓRGÃO", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
+                  {["DATA", "PROCESSO", "TÍTULO", "ÓRGÃO", "TIPO COMUNICAÇÃO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
