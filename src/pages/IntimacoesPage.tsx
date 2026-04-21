@@ -229,10 +229,10 @@ function extrairOrgaoJulgador(intim: AaspIntimacao): string {
     ""
   ) as string;
 
-  // Padrão: "Vara", "Câmara", "Turma" etc
-  const padraoOrgao = /(\d+[ªa°]?\s*(?:Vara|Câmara|Turma|Seção|Grupo)[^,\n;]{0,60})/i;
+  // Padrão: "4ª Vara", "1ª Câmara", "2ª Turma" etc — captura só até vírgula/ponto/quebra
+  const padraoOrgao = /(\d+[ªa°º]?\s*(?:Vara(?:\s+\w+){0,4}|Câmara(?:\s+\w+){0,4}|Turma(?:\s+\w+){0,3}|Seção(?:\s+\w+){0,3}))/i;
   const match = texto.match(padraoOrgao);
-  return match ? match[1].trim() : "";
+  return match ? match[1].trim().replace(/\s+/g, " ") : "";
 }
 
 // ── Persistência local ─────────────────────────────────────────
@@ -348,6 +348,11 @@ export function IntimacoesPage() {
           arr = arr.map((it, idx) => {
             const id = gerarId(it, idx);
             const existente = intimacoes.find((x) => x._id === id);
+            // DEBUG: log todos os campos da primeira intimação para diagnóstico
+            if (idx === 0) {
+              console.log("[AASP DEBUG] Campos disponíveis na intimação:", Object.keys(it));
+              console.log("[AASP DEBUG] Dados completos:", JSON.stringify(it, null, 2));
+            }
             return {
               ...it,
               _id: id,
@@ -357,7 +362,7 @@ export function IntimacoesPage() {
               _resumoIA: existente?._resumoIA || null,
               _titulo: it.TituloAssunto || it.Assunto || "Publicação AASP",
               _numProc: extrairNumProc(it),
-              _orgaoPublicacao: extrairOrgaoPublicacao(it), // NOVO
+              _orgaoPublicacao: extrairOrgaoPublicacao(it),
               _partes: extrairPartes(it),
               _orgaoJulgador: extrairOrgaoJulgador(it),
             };
