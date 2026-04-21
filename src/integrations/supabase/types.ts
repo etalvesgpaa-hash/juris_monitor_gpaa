@@ -61,9 +61,12 @@ export type Database = {
           data_publicacao: string | null
           id: string
           numero_processo: string | null
+          orgao_julgador: string | null
           origem: string
+          partes: string | null
           prazo: string | null
           processo_id: string | null
+          resumo_ia: string | null
           status: string
           tipo: string | null
           updated_at: string
@@ -76,9 +79,12 @@ export type Database = {
           data_publicacao?: string | null
           id?: string
           numero_processo?: string | null
+          orgao_julgador?: string | null
           origem?: string
+          partes?: string | null
           prazo?: string | null
           processo_id?: string | null
+          resumo_ia?: string | null
           status?: string
           tipo?: string | null
           updated_at?: string
@@ -91,9 +97,12 @@ export type Database = {
           data_publicacao?: string | null
           id?: string
           numero_processo?: string | null
+          orgao_julgador?: string | null
           origem?: string
+          partes?: string | null
           prazo?: string | null
           processo_id?: string | null
+          resumo_ia?: string | null
           status?: string
           tipo?: string | null
           updated_at?: string

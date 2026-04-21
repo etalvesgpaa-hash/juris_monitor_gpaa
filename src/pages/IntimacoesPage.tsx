@@ -26,7 +26,9 @@ interface AaspIntimacao {
   _resumoIA?: string | null;
   _titulo?: string;
   _numProc?: string;
-  _orgaoPublicacao?: string; // NOVO: órgão de publicação (DJENTJSP, etc)
+  _orgaoPublicacao?: string; // órgão de publicação (DJENTJSP, etc)
+  _partes?: string;          // partes do processo (normalizado)
+  _orgaoJulgador?: string;   // órgão julgador (normalizado)
 
   // Campos diretos da API AASP
   TituloAssunto?: string;
@@ -158,6 +160,81 @@ function extrairOrgaoPublicacao(intim: AaspIntimacao): string {
   return match ? match[0].toUpperCase() : "";
 }
 
+/** Extrai partes do processo da intimação */
+function extrairPartes(intim: AaspIntimacao): string {
+  // Tenta todos os campos possíveis que a API AASP pode retornar
+  const candidatos = [
+    intim.Partes,
+    intim.partes,
+    (intim as any).PartesProcesso,
+    (intim as any).partesProcesso,
+    (intim as any).NomePartes,
+    (intim as any).nomePartes,
+    (intim as any).Polo,
+    (intim as any).polo,
+  ].filter(Boolean);
+
+  if (candidatos.length > 0) return String(candidatos[0]);
+
+  // Tenta extrair do texto da publicação — padrão comum: "Autor: X Réu: Y"
+  const texto = (
+    intim.textoPublicacao ||
+    intim.Texto ||
+    intim.texto ||
+    intim.Conteudo ||
+    intim.conteudo ||
+    ""
+  ) as string;
+
+  // Tenta padrão "Requerente/Autor ... Requerido/Réu ..."
+  const padraoPartes = /(?:Autor(?:a)?|Requerente|Apelante|Impetrante)[:\s]+([^,\n;]{3,60})(?:[,;]|\s+(?:x|vs?\.?|versus)\s+|\s+(?:Réu|Requerido|Apelado|Impetrado)[:\s]+([^,\n;]{3,60}))?/i;
+  const match = texto.match(padraoPartes);
+  if (match) {
+    const parte1 = match[1]?.trim() || "";
+    const parte2 = match[2]?.trim() || "";
+    return parte2 ? `${parte1} x ${parte2}` : parte1;
+  }
+
+  return "";
+}
+
+/** Extrai órgão julgador da intimação */
+function extrairOrgaoJulgador(intim: AaspIntimacao): string {
+  // Tenta todos os campos possíveis
+  const candidatos = [
+    intim.OrgaoJulgador,
+    intim.orgaoJulgador,
+    (intim as any).Orgao,
+    (intim as any).orgao,
+    (intim as any).OrgaoJulg,
+    (intim as any).orgaoJulg,
+    (intim as any).Vara,
+    (intim as any).vara,
+    (intim as any).Tribunal,
+    (intim as any).tribunal,
+    (intim as any).CodigoOrgao,
+    (intim as any).NomeOrgao,
+    (intim as any).nomeOrgao,
+  ].filter(Boolean);
+
+  if (candidatos.length > 0) return String(candidatos[0]);
+
+  // Tenta extrair do texto
+  const texto = (
+    intim.textoPublicacao ||
+    intim.Texto ||
+    intim.texto ||
+    intim.Conteudo ||
+    intim.conteudo ||
+    ""
+  ) as string;
+
+  // Padrão: "Vara", "Câmara", "Turma" etc
+  const padraoOrgao = /(\d+[ªa°]?\s*(?:Vara|Câmara|Turma|Seção|Grupo)[^,\n;]{0,60})/i;
+  const match = texto.match(padraoOrgao);
+  return match ? match[1].trim() : "";
+}
+
 // ── Persistência local ─────────────────────────────────────────
 const STORE_KEY = "jm_aasp_intimacoes";
 
@@ -281,6 +358,8 @@ export function IntimacoesPage() {
               _titulo: it.TituloAssunto || it.Assunto || "Publicação AASP",
               _numProc: extrairNumProc(it),
               _orgaoPublicacao: extrairOrgaoPublicacao(it), // NOVO
+              _partes: extrairPartes(it),
+              _orgaoJulgador: extrairOrgaoJulgador(it),
             };
           });
 
@@ -583,12 +662,11 @@ export function IntimacoesPage() {
   const renderLinha = (intim: AaspIntimacao) => {
     const naoLida = intim._status === "ativa" && !intim._lida;
     const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
-    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
-    const partes = (intim.Partes || intim.partes || "") as string;
+    const orgao = intim._orgaoJulgador || (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+    const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
     const meio = (intim.Meio || intim.meio || "") as string;
     
-    return (
-      <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
+    return ( className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
         <td className="px-3 py-2.5 align-top">
           <div className="flex items-center gap-1.5">
             {naoLida && <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />}
@@ -681,8 +759,8 @@ export function IntimacoesPage() {
   const renderCard = (intim: AaspIntimacao) => {
     const naoLida = (intim._status || "ativa") === "ativa" && !intim._lida;
     const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
-    const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
-    const partes = (intim.Partes || intim.partes || "") as string;
+    const orgao = intim._orgaoJulgador || (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+    const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
     const meio = (intim.Meio || intim.meio || "") as string;
     
     return (
@@ -987,8 +1065,8 @@ function ModalDetalhe({
     "Publicação AASP";
 
   const jornal = intim._orgaoPublicacao || (intim.NomeJornal || intim.nomeJornal || "") as string;
-  const orgao = (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
-  const partes = (intim.Partes || intim.partes || "") as string;
+  const orgao = intim._orgaoJulgador || (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
+  const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
   const meio = (intim.Meio || intim.meio || jornal) as string;
   const texto = (
     intim.textoPublicacao ||
