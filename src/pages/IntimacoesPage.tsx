@@ -60,13 +60,21 @@ interface AaspIntimacao {
 
 // ── Helpers ────────────────────────────────────────────────────
 
+/** Formata Date para YYYY-MM-DD usando data LOCAL (sem bug UTC) */
+function dataLocalStr(d: Date): string {
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 /** Gera os últimos N dias úteis a partir de hoje */
 function diasUteisRecentes(n: number): string[] {
   const dias: string[] = [];
   const d = new Date();
   while (dias.length < n) {
     const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) dias.push(d.toISOString().split("T")[0]);
+    if (dow !== 0 && dow !== 6) dias.push(dataLocalStr(d));
     d.setDate(d.getDate() - 1);
   }
   return dias;
@@ -333,11 +341,6 @@ export function IntimacoesPage() {
           arr = arr.map((it, idx) => {
             const id = gerarId(it, idx);
             const existente = intimacoes.find((x) => x._id === id);
-            // DEBUG: log todos os campos da primeira intimação para diagnóstico
-            if (idx === 0) {
-              console.log("[AASP DEBUG] Campos disponíveis na intimação:", Object.keys(it));
-              console.log("[AASP DEBUG] Dados completos:", JSON.stringify(it, null, 2));
-            }
             return {
               ...it,
               _id: id,
@@ -373,7 +376,7 @@ export function IntimacoesPage() {
       return;
     }
     setLoading(true);
-    const dias = diasUteisRecentes(5);
+    const dias = diasUteisRecentes(7);
     const novas: AaspIntimacao[] = [];
     for (const d of dias) {
       setLoadingDia(d);
@@ -602,38 +605,15 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  // Gera os últimos 7 dias usando data LOCAL (sem bug UTC: toISOString retorna UTC que no Brasil vira dia anterior)
+  // Gera os últimos 7 dias ÚTEIS usando data LOCAL
   const ultimos7Dias = (() => {
     const dias: string[] = [];
     const d = new Date();
-    for (let i = 0; i < 7; i++) {
-      const ano = d.getFullYear();
-      const mes = String(d.getMonth() + 1).padStart(2, "0");
-      const dia = String(d.getDate()).padStart(2, "0");
-      dias.push(`${ano}-${mes}-${dia}`);
+    while (dias.length < 7) {
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) dias.push(dataLocalStr(d));
       d.setDate(d.getDate() - 1);
     }
-    
-    // DEBUG: Verificar distribuição de intimações
-    console.log("=== DEBUG: Distribuição de Intimações ===");
-    console.log("Filtro de status atual:", filtroStatus);
-    console.log("Total de intimações:", intimacoes.length);
-    console.log("Intimações por status:", {
-      ativa: intimacoes.filter(i => i._status === "ativa").length,
-      finalizada: intimacoes.filter(i => i._status === "finalizada").length,
-      pausada: intimacoes.filter(i => i._status === "pausada").length,
-    });
-    
-    const distribuicao = {};
-    dias.forEach(dia => {
-      const total = intimacoes.filter(i => i._data === dia).length;
-      const ativas = intimacoes.filter(i => i._data === dia && i._status === "ativa").length;
-      if (total > 0) {
-        distribuicao[dia] = { total, ativas };
-      }
-    });
-    console.log("Distribuição por dia:", distribuicao);
-    
     return dias;
   })();
 
@@ -898,15 +878,6 @@ export function IntimacoesPage() {
               {ultimos7Dias.map((dia) => {
                 const count = intimacoes.filter(i => i._data === dia && i._status === filtroStatus).length;
                 const countTotal = intimacoes.filter(i => i._data === dia).length;
-                
-                // DEBUG: Log para investigar
-                if (countTotal > 0 && count === 0) {
-                  console.log(`DEBUG: Dia ${dia} tem ${countTotal} intimações, mas 0 com status ${filtroStatus}`);
-                  console.log('Status das intimações deste dia:', 
-                    intimacoes.filter(i => i._data === dia).map(i => ({ id: i._id, status: i._status }))
-                  );
-                }
-                
                 const [ano, mes, d] = dia.split("-");
                 const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
                 const label = `${dow}, ${d}/${mes}`;
