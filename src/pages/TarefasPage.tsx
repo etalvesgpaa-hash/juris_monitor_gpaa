@@ -8,6 +8,13 @@ import { Calendar, Edit2, Trash2, Plus, X } from "lucide-react";
 
 type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
 
+/** Formata data YYYY-MM-DD para DD/MM/YYYY sem offset de fuso horário */
+function fmtDataLocal(iso: string): string {
+  if (!iso) return "";
+  const p = iso.slice(0, 10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
   const { data: processos = [] } = useProcessos();
@@ -29,6 +36,7 @@ export function TarefasPage() {
     titulo: "",
     descricao: "",
     data_vencimento: "",
+    diasUteis: "",
     prioridade: "media",
     status: "pendente",
     processo_id: "",
@@ -42,7 +50,7 @@ export function TarefasPage() {
   });
 
   const resetForm = () => {
-    setForm({ titulo: "", descricao: "", data_vencimento: "", prioridade: "media", status: "pendente", processo_id: "" });
+    setForm({ titulo: "", descricao: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente", processo_id: "" });
     setShowForm(false);
     setEditingId(null);
   };
@@ -56,7 +64,8 @@ export function TarefasPage() {
     setForm({
       titulo: t.titulo,
       descricao: t.descricao || "",
-      data_vencimento: t.data_vencimento ? new Date(t.data_vencimento).toISOString().split('T')[0] : "",
+      data_vencimento: t.data_vencimento ? t.data_vencimento.slice(0, 10) : "",
+      diasUteis: "",
       prioridade: t.prioridade,
       status: t.status || "pendente",
       processo_id: t.processo_id || "",
@@ -174,9 +183,10 @@ export function TarefasPage() {
   };
 
   // Filtrar feriados futuros e ordenar por data
+  const hoje = new Date().toISOString().split("T")[0]; // YYYY-MM-DD local-safe
   const feriadosFuturos = feriados
-    .filter(f => new Date(f.data) >= now)
-    .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
+    .filter(f => f.data >= hoje)
+    .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 5);
 
   return (
@@ -266,7 +276,7 @@ export function TarefasPage() {
             <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
             {feriadosFuturos.map(f => (
               <div key={f.id} className="text-xs text-foreground flex items-center gap-2">
-                <span className="font-mono">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
+                <span className="font-mono">{fmtDataLocal(f.data)}</span>
                 <span>•</span>
                 <span>{f.descricao}</span>
                 {f.abrangencia !== 'nacional' && (
@@ -288,7 +298,7 @@ export function TarefasPage() {
                 <div key={f.id} className="bg-card border border-border rounded-lg p-3 flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold">{new Date(f.data).toLocaleDateString('pt-BR')}</span>
+                      <span className="text-sm font-mono font-semibold">{fmtDataLocal(f.data)}</span>
                       <span className="text-xs text-muted-foreground">•</span>
                       <span className="text-sm">{f.descricao}</span>
                     </div>
@@ -440,12 +450,52 @@ export function TarefasPage() {
                 <option value="cancelada">Cancelada</option>
               </select>
             </div>
-            <InputField 
-              label="Data de Vencimento" 
-              value={form.data_vencimento} 
-              onChange={(v) => setForm({ ...form, data_vencimento: v })} 
-              type="date" 
-            />
+            <div className="md:col-span-2 bg-accent/5 rounded-xl border border-accent/20 p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Dias Úteis para Vencimento
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Ex: 15"
+                  value={form.diasUteis}
+                  onChange={(e) => {
+                    const dias = e.target.value;
+                    const num = parseInt(dias);
+                    if (!isNaN(num) && num > 0) {
+                      const resultado = calcularDiasUteis(new Date(), num, feriados);
+                      const ano = resultado.getFullYear();
+                      const mes = String(resultado.getMonth() + 1).padStart(2, "0");
+                      const dia = String(resultado.getDate()).padStart(2, "0");
+                      setForm({ ...form, diasUteis: dias, data_vencimento: `${ano}-${mes}-${dia}` });
+                    } else {
+                      setForm({ ...form, diasUteis: dias, data_vencimento: "" });
+                    }
+                  }}
+                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                />
+                <p className="text-[0.68rem] text-muted-foreground mt-1">
+                  Exclui sáb, dom e {feriados.length > 0 ? `${feriados.length} feriado(s)` : "feriados"}
+                </p>
+              </div>
+              <div>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Data de Vencimento
+                </label>
+                <input
+                  type="date"
+                  value={form.data_vencimento}
+                  onChange={(e) => setForm({ ...form, data_vencimento: e.target.value, diasUteis: "" })}
+                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                />
+                {form.data_vencimento && form.diasUteis && (
+                  <p className="text-[0.7rem] font-semibold text-accent mt-1">
+                    📅 {form.diasUteis} dias úteis a partir de hoje
+                  </p>
+                )}
+              </div>
+            </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
               <select
@@ -484,6 +534,8 @@ export function TarefasPage() {
 
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+      ) : viewMode === "agenda" ? (
+        <AgendaCalendario tarefas={tarefas} />
       ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-8 text-center">
           <p className="text-muted-foreground text-sm">Nenhuma tarefa encontrada.</p>
@@ -554,7 +606,7 @@ export function TarefasPage() {
                     </span>
                     {t.data_vencimento && (
                       <span className={`text-xs font-mono ${isVencida ? "text-red-alert font-bold" : "text-muted-foreground"}`}>
-                        {new Date(t.data_vencimento).toLocaleDateString("pt-BR")}
+                        {fmtDataLocal(t.data_vencimento)}
                       </span>
                     )}
                     <Button 
@@ -607,6 +659,146 @@ function InputField({
         className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
         placeholder={placeholder}
       />
+    </div>
+  );
+}
+
+// ── Componente de Agenda / Calendário Mensal ────────────────────────────────
+function AgendaCalendario({ tarefas }: { tarefas: any[] }) {
+  const hoje = new Date();
+  const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+
+  const [mes, setMes] = useState(hoje.getMonth());
+  const [ano, setAno] = useState(hoje.getFullYear());
+
+  const nomesMeses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const diasSemana = ["SEG","TER","QUA","QUI","SEX","SÁB","DOM"];
+
+  const irParaHoje = () => { setMes(hoje.getMonth()); setAno(hoje.getFullYear()); };
+  const mesAnterior = () => { if (mes === 0) { setMes(11); setAno(a => a - 1); } else setMes(m => m - 1); };
+  const proximoMes  = () => { if (mes === 11) { setMes(0); setAno(a => a + 1); } else setMes(m => m + 1); };
+
+  // Monta grid do calendário (lunedì = index 0)
+  const primeiroDia = new Date(ano, mes, 1);
+  const ultimoDia   = new Date(ano, mes + 1, 0);
+  // getDay(): 0=dom,1=seg...6=sab → queremos seg=0
+  const offsetInicio = (primeiroDia.getDay() + 6) % 7;
+  const totalCelulas = Math.ceil((offsetInicio + ultimoDia.getDate()) / 7) * 7;
+
+  // Index de tarefas por data "YYYY-MM-DD"
+  const tarefasPorDia = tarefas.reduce<Record<string, any[]>>((acc, t) => {
+    if (!t.data_vencimento) return acc;
+    const d = t.data_vencimento.slice(0, 10);
+    (acc[d] = acc[d] || []).push(t);
+    return acc;
+  }, {});
+
+  const corTarefa = (t: any) => {
+    if (t.status === "concluida") return "bg-[#d6cfc4] text-[#6b6358]";
+    const d = t.data_vencimento?.slice(0, 10) || "";
+    if (d < hojeStr) return "bg-[#8b2020] text-white";
+    if (d === hojeStr) return "bg-[#c9a84c] text-white";
+    return "bg-[#a08a50] text-white"; // próximos dias
+  };
+
+  const cells = Array.from({ length: totalCelulas }, (_, i) => {
+    const diaNum = i - offsetInicio + 1;
+    if (diaNum < 1 || diaNum > ultimoDia.getDate()) return null;
+    const diaStr = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaNum).padStart(2, "0")}`;
+    return { diaNum, diaStr };
+  });
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      {/* Header do calendário */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={mesAnterior}
+            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold"
+          >‹</button>
+          <h2 className="font-display text-lg font-bold tracking-tight">
+            {nomesMeses[mes]} · {ano}
+          </h2>
+          <button
+            onClick={proximoMes}
+            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold"
+          >›</button>
+          <button
+            onClick={irParaHoje}
+            className="px-3 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors"
+          >Hoje</button>
+        </div>
+        {/* Legenda */}
+        <div className="hidden sm:flex items-center gap-4 text-[0.65rem] font-semibold">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#8b2020]" /> Vencida</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#c9a84c]" /> Hoje</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#a08a50]" /> Próximos dias</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d6cfc4]" /> Concluída</span>
+        </div>
+      </div>
+
+      {/* Dias da semana */}
+      <div className="grid grid-cols-7 border-b border-border">
+        {diasSemana.map(d => (
+          <div key={d} className="py-2 text-center text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Células */}
+      <div className="grid grid-cols-7">
+        {cells.map((cell, idx) => {
+          if (!cell) {
+            return (
+              <div
+                key={`empty-${idx}`}
+                className="min-h-[100px] border-b border-r border-border bg-muted/20 last:border-r-0"
+              />
+            );
+          }
+          const { diaNum, diaStr } = cell;
+          const isHoje = diaStr === hojeStr;
+          const isWeekend = ((idx % 7) === 5 || (idx % 7) === 6);
+          const tarefasDia = tarefasPorDia[diaStr] || [];
+
+          return (
+            <div
+              key={diaStr}
+              className={`min-h-[100px] border-b border-r border-border p-1.5 last:border-r-0 relative transition-colors
+                ${isWeekend ? "bg-muted/30" : "bg-card"}
+                ${isHoje ? "ring-2 ring-inset ring-accent" : ""}
+              `}
+            >
+              <div className="flex items-center gap-1 mb-1">
+                <span className={`text-xs font-semibold leading-none
+                  ${isHoje ? "bg-accent text-white rounded-full w-5 h-5 flex items-center justify-center text-[0.65rem] font-bold" : isWeekend ? "text-muted-foreground" : "text-foreground"}
+                `}>
+                  {diaNum}
+                </span>
+                {isHoje && <span className="text-[0.55rem] font-bold uppercase tracking-wide text-accent">Hoje</span>}
+              </div>
+              <div className="space-y-0.5">
+                {tarefasDia.slice(0, 3).map((t: any) => (
+                  <div
+                    key={t.id}
+                    title={t.titulo}
+                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug ${corTarefa(t)}`}
+                  >
+                    {t.titulo}
+                  </div>
+                ))}
+                {tarefasDia.length > 3 && (
+                  <div className="text-[0.6rem] text-muted-foreground font-semibold px-1">
+                    +{tarefasDia.length - 3} mais
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
