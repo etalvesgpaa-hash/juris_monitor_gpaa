@@ -185,7 +185,6 @@ export function IntimacoesPage() {
   const [loadingIA, setLoadingIA] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"ativa" | "finalizada" | "pausada">("ativa");
   const [filtroDia, setFiltroDia] = useState<string>("");
-  const [filtroPeriodo, setFiltroPeriodo] = useState<string>("todos"); // "7dias", "30dias", "todos"
   const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
     window.innerWidth < 768 ? "cards" : "tabela"
   );
@@ -511,19 +510,7 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  // Filtrar por status
-  let filtradas = intimacoes.filter((it) => it._status === filtroStatus);
-
-  // Filtrar por período
-  if (filtroPeriodo !== "todos") {
-    const hoje = new Date();
-    const diasLimite = filtroPeriodo === "7dias" ? 7 : 30;
-    const dataLimite = new Date(hoje);
-    dataLimite.setDate(dataLimite.getDate() - diasLimite);
-    const dataLimiteStr = dataLimite.toISOString().split("T")[0];
-
-    filtradas = filtradas.filter((it) => it._data >= dataLimiteStr);
-  }
+  const filtradas = intimacoes.filter((it) => it._status === filtroStatus);
 
   const renderLinha = (intim: AaspIntimacao) => {
     const naoLida = intim._status === "ativa" && !intim._lida;
@@ -709,43 +696,20 @@ export function IntimacoesPage() {
       </div>
 
       {/* Filtros de status */}
-      <div className="flex gap-2 mb-5 flex-wrap items-center">
-        <div className="flex gap-2 flex-wrap">
-          {(["ativa", "finalizada", "pausada"] as const).map((st) => (
-            <button
-              key={st}
-              onClick={() => setFiltroStatus(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filtroStatus === st
-                  ? "bg-accent text-primary"
-                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {st === "ativa" ? "Ativas" : st === "finalizada" ? "Finalizadas" : "Pausadas"}
-            </button>
-          ))}
-        </div>
-
-        {/* Filtro por período */}
-        <div className="ml-auto">
-          <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
-            <SelectTrigger className="w-[200px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os dias</SelectItem>
-              <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-              <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Contador de processos */}
-        <div className="bg-accent/10 border border-accent/30 px-4 py-1.5 rounded-lg">
-          <span className="text-xs font-bold text-accent">
-            {filtradas.length} {filtradas.length === 1 ? "processo" : "processos"}
-          </span>
-        </div>
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {(["ativa", "finalizada", "pausada"] as const).map((st) => (
+          <button
+            key={st}
+            onClick={() => setFiltroStatus(st)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              filtroStatus === st
+                ? "bg-accent text-primary"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {st === "ativa" ? "Ativas" : st === "finalizada" ? "Finalizadas" : "Pausadas"}
+          </button>
+        ))}
       </div>
 
       {loading ? (

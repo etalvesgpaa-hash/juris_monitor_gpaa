@@ -86,16 +86,9 @@ export function FeriadosManager({ open, onClose }: { open: boolean; onClose: () 
       const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
       return `${dia}/${meses[parseInt(mes) - 1]} (todo ano)`;
     } else {
-      // Corrigindo problema de timezone: usar Date sem conversão UTC
       const [ano, mes, dia] = data.split("-");
       return `${dia}/${mes}/${ano}`;
     }
-  };
-
-  // Converte data local para formato YYYY-MM-DD sem conversão UTC
-  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputValue = e.target.value; // Já vem no formato YYYY-MM-DD
-    setNewFeriado({ ...newFeriado, data: inputValue });
   };
 
   return (
@@ -121,7 +114,7 @@ export function FeriadosManager({ open, onClose }: { open: boolean; onClose: () 
               <Input
                 type="date"
                 value={newFeriado.data}
-                onChange={handleDateInputChange}
+                onChange={(e) => setNewFeriado({ ...newFeriado, data: e.target.value })}
               />
               <Button onClick={handleAdd} className="bg-accent hover:bg-accent/80">
                 <Plus className="w-4 h-4 mr-1" />
