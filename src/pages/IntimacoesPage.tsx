@@ -666,7 +666,8 @@ export function IntimacoesPage() {
     const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
     const meio = (intim.Meio || intim.meio || "") as string;
     
-    return ( className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
+    return (
+      <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
         <td className="px-3 py-2.5 align-top">
           <div className="flex items-center gap-1.5">
             {naoLida && <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />}
