@@ -168,6 +168,85 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <StatCard label="Tarefas Vencidas" value={tarefasVencidas.length} sub="prazo expirado" accent="red" />
       </div>
 
+      {/* Últimas Intimações + Agenda de Tarefas */}
+      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3.5 mb-5">
+        {/* Últimas Intimações */}
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="w-[18px] h-0.5 bg-accent" />
+              Últimas Intimações AASP
+            </div>
+            <div className="flex gap-1.5 text-[0.65rem]">
+              <span className="px-2 py-0.5 rounded bg-accent/10 text-accent font-bold">{intimacoesAtivas.length} ATIVAS</span>
+              <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">{intimacoesNaoLidas.length} NÃO LIDAS</span>
+            </div>
+          </div>
+
+          {ultimasIntimacoes.length > 0 ? (
+            <div className="space-y-2">
+              {ultimasIntimacoes.map((i: any) => (
+                <div key={i._id} className="flex items-start justify-between px-3 py-2.5 rounded-lg border border-border hover:border-accent/40 transition-all gap-2">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-2 h-2 rounded-full bg-accent shrink-0 mt-1.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm line-clamp-1">
+                        {i._titulo || "Publicação AASP"}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 break-all">
+                        {i._numProc || "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-mono text-muted-foreground whitespace-nowrap pt-0.5">
+                      {fmtData(i._data)}
+                    </span>
+                    <button
+                      onClick={() => handleOpenTaskModal(i)}
+                      className="px-2 py-1 text-[0.65rem] font-bold uppercase tracking-wide rounded bg-accent hover:bg-accent/80 text-white transition-colors whitespace-nowrap"
+                      title="Criar tarefa a partir desta intimação"
+                    >
+                      + Tarefa
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground text-sm">
+              Nenhuma intimação encontrada. Acesse Intimações e clique em Atualizar.
+            </div>
+          )}
+
+          <div className="text-center mt-4">
+            <button
+              onClick={() => onNavigate?.("intimacoes")}
+              className="text-xs text-accent hover:underline font-semibold"
+            >
+              VER TODAS AS INTIMAÇÕES →
+            </button>
+          </div>
+        </div>
+
+        {/* Mini Calendário de Tarefas */}
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="w-[18px] h-0.5 bg-accent" />
+              Agenda de Tarefas
+            </div>
+            <button
+              onClick={() => onNavigate?.("tarefas")}
+              className="text-[0.65rem] text-accent hover:underline font-semibold"
+            >
+              VER COMPLETO →
+            </button>
+          </div>
+          <MiniCalendario tarefas={tarefas} />
+        </div>
+      </div>
+
       {/* Prazos Críticos */}
       {prazosCriticos.length > 0 && (
         <div className="bg-card rounded-xl p-5 border border-red-alert/30 mb-5">
@@ -264,85 +343,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Bottom Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3.5 mb-5">
-        {/* Últimas Intimações */}
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="w-[18px] h-0.5 bg-accent" />
-              Últimas Intimações AASP
-            </div>
-            <div className="flex gap-1.5 text-[0.65rem]">
-              <span className="px-2 py-0.5 rounded bg-accent/10 text-accent font-bold">{intimacoesAtivas.length} ATIVAS</span>
-              <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">{intimacoesNaoLidas.length} NÃO LIDAS</span>
-            </div>
-          </div>
-
-          {ultimasIntimacoes.length > 0 ? (
-            <div className="space-y-2">
-              {ultimasIntimacoes.map((i: any) => (
-                <div key={i._id} className="flex items-start justify-between px-3 py-2.5 rounded-lg border border-border hover:border-accent/40 transition-all gap-2">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-accent shrink-0 mt-1.5" />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-sm line-clamp-1">
-                        {i._titulo || "Publicação AASP"}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 break-all">
-                        {i._numProc || "—"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-mono text-muted-foreground whitespace-nowrap pt-0.5">
-                      {fmtData(i._data)}
-                    </span>
-                    <button
-                      onClick={() => handleOpenTaskModal(i)}
-                      className="px-2 py-1 text-[0.65rem] font-bold uppercase tracking-wide rounded bg-accent hover:bg-accent/80 text-white transition-colors whitespace-nowrap"
-                      title="Criar tarefa a partir desta intimação"
-                    >
-                      + Tarefa
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground text-sm">
-              Nenhuma intimação encontrada. Acesse Intimações e clique em Atualizar.
-            </div>
-          )}
-
-          <div className="text-center mt-4">
-            <button
-              onClick={() => onNavigate?.("intimacoes")}
-              className="text-xs text-accent hover:underline font-semibold"
-            >
-              VER TODAS AS INTIMAÇÕES →
-            </button>
-          </div>
-        </div>
-
-        {/* Mini Calendário de Tarefas */}
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="w-[18px] h-0.5 bg-accent" />
-              Agenda de Tarefas
-            </div>
-            <button
-              onClick={() => onNavigate?.("tarefas")}
-              className="text-[0.65rem] text-accent hover:underline font-semibold"
-            >
-              VER COMPLETO →
-            </button>
-          </div>
-          <MiniCalendario tarefas={tarefas} />
         </div>
       </div>
 
