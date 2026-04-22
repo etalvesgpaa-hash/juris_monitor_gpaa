@@ -219,130 +219,135 @@ export function ConfigPage() {
     setTestingAasp(true);
     try {
       const chave = apiKeys.aasp_chave.trim();
-      
-      // ✨ VALIDAÇÃO PRÉVIA DA CHAVE
-      if (chave.length === 0) {
-        throw new Error('Chave AASP está vazia. Configure antes de testar.');
-      }
-      
-      if (chave.length < 10) {
-        throw new Error('Chave AASP parece ser muito curta (menos de 10 caracteres). Verifique se a chave foi copiada completamente em minha.aasp.org.br → API');
-      }
-      
-      if (chave.includes(' ') || chave.includes('\n') || chave.includes('\t')) {
-        throw new Error('Chave contém espaços, quebras de linha ou tabs. Remova esses caracteres e tente novamente.');
-      }
-
       const hoje  = new Date().toISOString().split("T")[0];
 
       // Monta endpoint final da AASP
       const params = new URLSearchParams({ chave, data: hoje });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
-      // ✨ ORDEM OTIMIZADA DE PROXIES (backend primeiro)
+      // Lista de proxies em ordem de preferência
       const proxies = [
-        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}`, priority: 1, timeout: 10000 },
-        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`, priority: 2, timeout: 8000 },
-        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`, priority: 3, timeout: 8000 },
-        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}`, priority: 4, timeout: 10000 },
+        { 
+          nome: "CORS Anywhere", 
+          url: `https://cors-anywhere.herokuapp.com/${endpoint}`,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        },
+        { 
+          nome: "AllOrigins", 
+          url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`,
+          headers: {}
+        },
+        { 
+          nome: "Backend Proxy", 
+          url: `/api/proxy?url=${encodeURIComponent(endpoint)}`,
+          headers: {}
+        },
+        { 
+          nome: "CodeTabs", 
+          url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`,
+          headers: {}
+        },
       ];
 
-      const erros: Array<{ proxy: string; erro: string }> = [];
+      const erros: string[] = [];
+      let successProxy = null;
 
       for (const p of proxies) {
         try {
-          // ✨ TIMEOUT REDUZIDO (10s por proxy)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), p.timeout);
-
-          const resp = await fetch(p.url + `&_t=${Date.now()}`, {
+          console.log(`Tentando proxy: ${p.nome}...`);
+          
+          const resp = await fetch(p.url, {
+            method: 'GET',
             headers: { 
-              'Accept': 'application/json', 
-              'Cache-Control': 'no-cache, no-store',
-              'Pragma': 'no-cache',
-              'User-Agent': 'JurisMonitor/1.0 (AASP Test)'
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache',
+              ...p.headers
             },
             cache: "no-store",
-            signal: controller.signal,
+            signal: AbortSignal.timeout(15000), // 15 segundos de timeout
           });
 
-          clearTimeout(timeoutId);
+          console.log(`${p.nome} - Status: ${resp.status}`);
 
           if (!resp.ok) {
-            const statusText = resp.statusText || 'Unknown Error';
-            erros.push({ proxy: p.nome, erro: `HTTP ${resp.status} ${statusText}` });
+            const errorText = await resp.text().catch(() => 'Não foi possível ler o erro');
+            erros.push(`${p.nome}: HTTP ${resp.status} - ${errorText.slice(0, 100)}`);
             continue;
           }
 
           const text = await resp.text();
-          if (!text || text.trim() === "" || text.includes("Free usage is limited") || text.includes("rate limit")) {
-            erros.push({ proxy: p.nome, erro: "Resposta vazia ou limitada" });
+          
+          // Verificar se a resposta é válida
+          if (!text || text.trim() === "") {
+            erros.push(`${p.nome}: resposta vazia`);
             continue;
           }
 
+          if (text.includes("Free usage is limited") || text.includes("Rate limit")) {
+            erros.push(`${p.nome}: limite de uso atingido`);
+            continue;
+          }
+
+          // Tentar parsear o JSON
           let data: any = null;
-          try { data = JSON.parse(text); } catch (e) { }
-          // allorigins encapsula em { contents: "..." }
-          if (!data) {
-            try { const w = JSON.parse(text); if (w?.contents) data = JSON.parse(w.contents); } catch { }
+          
+          // Tentar parse direto
+          try { 
+            data = JSON.parse(text); 
+          } catch (parseError) {
+            // Pode ser que esteja encapsulado (allorigins)
+            try { 
+              const wrapper = JSON.parse(text); 
+              if (wrapper?.contents) {
+                data = JSON.parse(wrapper.contents);
+              }
+            } catch {
+              erros.push(`${p.nome}: JSON inválido - ${text.slice(0, 100)}`);
+              continue;
+            }
           }
 
           if (!data) {
-            erros.push({ proxy: p.nome, erro: "JSON inválido ou resposta não é JSON" });
+            erros.push(`${p.nome}: não foi possível extrair dados do JSON`);
             continue;
           }
 
-          // ✅ SUCESSO!
+          // Verificar estrutura dos dados
           const lista = Array.isArray(data) ? data
             : (data?.Intimacoes ?? data?.intimacoes ?? data?.Data ?? data?.data ?? []);
-          const count = Array.isArray(lista) ? lista.length : 0;
+          
+          if (!Array.isArray(lista)) {
+            erros.push(`${p.nome}: estrutura de dados inválida`);
+            continue;
+          }
+
+          // Sucesso!
+          const count = lista.length;
+          successProxy = p.nome;
 
           toast({
             title: "✅ AASP conectada com sucesso!",
-            description: `Proxy: ${p.nome} | Intimações em ${hoje}: ${count}`,
+            description: `Conexão estabelecida via ${p.nome}. ${count} intimação(ões) encontrada(s) para hoje.`,
           });
           
-          console.log('[testAaspConnection] Sucesso:', {
-            proxy: p.nome,
-            dataConsultada: hoje,
-            intimacoesEncontradas: count,
-            chaveComprimento: chave.length
-          });
-          
-          return; // ✨ Sair da função
+          console.log(`Sucesso via ${p.nome}!`, { count, data });
+          return;
 
         } catch (e: any) {
-          const mensagemErro = e.message || 'Erro desconhecido';
-          let erroFormatado = '';
-          
-          if (e.name === 'AbortError') {
-            erroFormatado = `Timeout (${p.timeout}ms)`;
-          } else if (mensagemErro.includes('Failed to fetch')) {
-            erroFormatado = 'Falha ao conectar (CORS ou DNS)';
-          } else if (mensagemErro.includes('Network request failed')) {
-            erroFormatado = 'Erro de rede';
-          } else {
-            erroFormatado = `${e.name}: ${mensagemErro}`;
-          }
-          
-          erros.push({ proxy: p.nome, erro: erroFormatado });
+          console.error(`Erro no proxy ${p.nome}:`, e);
+          erros.push(`${p.nome}: ${e.message}`);
         }
       }
 
-      // ❌ TODOS OS PROXIES FALHARAM
-      const resumoErros = erros
-        .map(e => `• ${e.proxy}: ${e.erro}`)
-        .join("\n");
-
-      const mensagemErro = `Falha em todos os proxies para ${hoje}:\n${resumoErros}\n\nDicas:\n1. Valide sua chave em minha.aasp.org.br\n2. Confirme que está ATIVA e não expirada\n3. Tente novamente em alguns minutos`;
-
-      console.error('[testAaspConnection] Todos proxies falharam:', {
-        dataConsultada: hoje,
-        errosDetalhados: erros,
-        chaveComprimento: chave.length
-      });
-
-      throw new Error(mensagemErro);
+      // Todos os proxies falharam
+      throw new Error(
+        `Não foi possível conectar à API AASP. Falhas:\n\n` + 
+        erros.map((e, i) => `${i + 1}. ${e}`).join('\n') + 
+        `\n\nVerifique:\n` +
+        `• Sua chave AASP está válida em minha.aasp.org.br → Meu Painel → Intimações → API\n` +
+        `• Sua conexão com a internet\n` +
+        `• Se o serviço da AASP está funcionando`
+      );
 
     } catch (err: any) {
       toast({
@@ -427,27 +432,63 @@ export function ConfigPage() {
 
         const params = new URLSearchParams({ chave, data: dataStr });
         const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
+        
+        // Proxies em ordem de preferência
         const proxies = [
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`,
-          `/api/proxy?url=${encodeURIComponent(endpoint)}`,
+          { 
+            nome: "AllOrigins",
+            url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`
+          },
+          { 
+            nome: "Backend",
+            url: `/api/proxy?url=${encodeURIComponent(endpoint)}`
+          },
+          { 
+            nome: "CodeTabs",
+            url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`
+          },
         ];
 
-        for (const proxyUrl of proxies) {
+        // Tentar cada proxy
+        for (const proxy of proxies) {
           try {
-            const resp = await fetch(proxyUrl + `&_t=${Date.now()}`, {
-              headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+            const resp = await fetch(proxy.url, {
+              headers: { 
+                'Accept': 'application/json', 
+                'Cache-Control': 'no-cache' 
+              },
               cache: "no-store",
               signal: AbortSignal.timeout(15000),
             });
+            
+            if (!resp.ok) continue;
+            
             const text = await resp.text();
-            if (!text.trim() || text.includes("Free usage is limited")) continue;
+            if (!text.trim() || text.includes("Free usage is limited") || text.includes("Rate limit")) {
+              continue;
+            }
 
             let raw: any = null;
-            try { raw = JSON.parse(text); } catch { continue; }
+            
+            // Tentar parse direto
+            try { 
+              raw = JSON.parse(text); 
+            } catch {
+              // Tentar wrapper do allorigins
+              try { 
+                const wrapper = JSON.parse(text); 
+                if (wrapper?.contents) {
+                  raw = JSON.parse(wrapper.contents);
+                }
+              } catch {
+                continue;
+              }
+            }
+
+            if (!raw) continue;
 
             const lista = Array.isArray(raw) ? raw
-              : (raw?.intimacoes ?? raw?.Intimacoes ?? raw?.Data ?? []);
+              : (raw?.intimacoes ?? raw?.Intimacoes ?? raw?.Data ?? raw?.data ?? []);
 
             if (!Array.isArray(lista)) continue;
 
@@ -458,16 +499,20 @@ export function ConfigPage() {
               quantidade: lista.length,
               jsonPreview: JSON.stringify(raw, null, 2).slice(0, 3000),
             };
-          } catch { continue; }
+          } catch (err) {
+            console.error(`Erro ao consultar ${dataStr} via ${proxy.nome}:`, err);
+            continue;
+          }
         }
 
+        // Se todos os proxies falharam
         return {
           data: dataFmt,
           diaSemana,
           retorno: "Erro",
           quantidade: 0,
           jsonPreview: "",
-          erro: "Todos os proxies falharam",
+          erro: "Falha em todos os proxies",
         };
       })
     );
