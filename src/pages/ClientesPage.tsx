@@ -1053,7 +1053,7 @@ export function ClientesPage() {
                             ) : (
                               <>
                                 <MailOff className="h-3 w-3" />
-                                Desativado
+                                Notificar
                               </>
                             )}
                           </button>
