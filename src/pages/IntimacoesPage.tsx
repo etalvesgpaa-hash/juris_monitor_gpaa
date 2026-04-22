@@ -314,68 +314,60 @@ export function IntimacoesPage() {
       const params   = new URLSearchParams({ chave: chaveAtual, data: dataStr });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
-      // /api/proxy (Vercel serverless) em PRIMEIRO — é o mais confiável em produção
-      // Proxies públicos ficam como fallback apenas
+      // /api/proxy (Vercel serverless) SEMPRE primeiro — igual ao projeto de referência.
+      // Proxies públicos apenas como fallback local/dev.
+      // NÃO usa AbortSignal.timeout (não existe em Node 16) — usa Promise.race igual ao fetchWithTimeout do projeto original.
       const proxies = [
-        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
-        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
-        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
-        { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
+        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+        { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
+        { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
       ];
 
+      /** fetchWithTimeout idêntico ao do projeto de referência — Promise.race sem AbortSignal */
+      function fetchComTimeout(url: string, ms: number): Promise<Response> {
+        return Promise.race([
+          fetch(url, { headers: { Accept: "application/json" } }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
+          ),
+        ]);
+      }
+
+      const erros: string[] = [];
       for (const p of proxies) {
         try {
-          // Adiciona timestamp para evitar cache do browser/proxy
-          const urlComCache = p.url + (p.url.includes("?") ? "&" : "?") + `_t=${Date.now()}`;
-          const resp = await fetch(urlComCache, {
-            headers: {
-              Accept: "application/json",
-              "Cache-Control": "no-cache, no-store",
-              Pragma: "no-cache",
-            },
-            cache: "no-store",
-            signal: AbortSignal.timeout(15000),
-          });
+          const resp = await fetchComTimeout(p.url, 12000);
+          if (!resp.ok) { erros.push(`${p.nome}: HTTP ${resp.status}`); continue; }
 
-          // Alguns proxies retornam 200 com mensagem de erro no body — lemos sempre
           const text = await resp.text();
+          if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
 
-          if (!text.trim()) continue;
-
-          // Detecta respostas de erro de proxy (não da API AASP)
+          // Detecta respostas de erro de proxy
           if (
             text.includes("Free usage is limited") ||
             text.includes("Error fetching") ||
-            text.includes("rate limit") ||
-            (!resp.ok && text.length < 500)
-          ) {
-            console.warn(`[AASP] Proxy ${p.nome} recusou: ${text.slice(0, 120)}`);
-            continue;
-          }
+            text.includes("rate limit")
+          ) { erros.push(`${p.nome}: limitado — ${text.slice(0, 80)}`); continue; }
 
           let raw: unknown = null;
-          
-          try { 
-            raw = JSON.parse(text);
-          } catch (parseErr) { 
-            try {
-              const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-              if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
-            } catch {}
+          try { raw = JSON.parse(text); } catch (_) {}
+          // allorigins encapsula em { contents: "..." }
+          if (!raw) {
+            try { const w = JSON.parse(text); if ((w as any)?.contents) raw = JSON.parse((w as any).contents); } catch (_) {}
           }
 
-          if (!raw) continue;
+          if (!raw) { erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`); continue; }
 
           let arr = normalizar(raw);
           if (arr.length === 0) {
-            console.warn(`[AASP] ${p.nome} retornou JSON mas normalizar() vazio. Estrutura recebida:`, JSON.stringify(raw).slice(0, 400));
-            continue;
+            console.warn(`[AASP] ${p.nome} respondeu mas sem intimações. Raw:`, JSON.stringify(raw).slice(0, 300));
+            // Não descarta — pode ser dia sem publicação (retorna lista vazia legitimamente)
+            if (!silencioso) toast.info(`Sem intimações em ${fmtData(dataStr)}.`);
+            return [];
           }
 
           arr = arr.map((it, idx) => {
             const id = gerarId(it, idx);
-            // Usa ref para evitar closure obsoleto do estado
             const existente = intimacoesRef.current.find((x) => x._id === id);
             return {
               ...it,

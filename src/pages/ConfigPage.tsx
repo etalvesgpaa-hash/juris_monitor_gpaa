@@ -386,11 +386,10 @@ export function ConfigPage() {
 
         for (const proxyUrl of proxies) {
           try {
-            const resp = await fetch(proxyUrl + `&_t=${Date.now()}`, {
-              headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-              cache: "no-store",
-              signal: AbortSignal.timeout(15000),
-            });
+            const resp = await Promise.race([
+              fetch(proxyUrl, { headers: { Accept: "application/json" } }),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
+            ]);
             const text = await resp.text();
             if (!text.trim() || text.includes("Free usage is limited")) continue;
 
