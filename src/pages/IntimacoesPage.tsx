@@ -645,11 +645,13 @@ export function IntimacoesPage() {
     return acc;
   }, {});
 
-  const filtradas = intimacoes.filter((it) => {
-    if (it._status !== filtroStatus) return false;
-    if (filtroData !== "todos" && it._data !== filtroData) return false;
-    return true;
-  });
+  const filtradas = intimacoes
+    .filter((it) => {
+      if (it._status !== filtroStatus) return false;
+      if (filtroData !== "todos" && it._data !== filtroData) return false;
+      return true;
+    })
+    .sort((a, b) => b._data.localeCompare(a._data));
 
   const renderLinha = (intim: AaspIntimacao) => {
     const naoLida = intim._status === "ativa" && !intim._lida;

@@ -229,16 +229,20 @@ export function ConfigPage() {
       // Mesma estratégia do index.html que funciona:
       // tenta /api/proxy primeiro, depois corsproxy.io, depois allorigins como fallback
       const proxies = [
+        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
         { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
-        { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
       ];
 
       const erros: string[] = [];
 
       for (const p of proxies) {
         try {
-          const resp = await fetch(p.url, { headers: { Accept: "application/json" } });
+          const resp = await fetch(p.url + `&_t=${Date.now()}`, {
+            headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+            cache: "no-store",
+          });
 
           if (!resp.ok) {
             erros.push(`${p.nome}: HTTP ${resp.status}`);
@@ -246,8 +250,8 @@ export function ConfigPage() {
           }
 
           const text = await resp.text();
-          if (!text || text.trim() === "") {
-            erros.push(`${p.nome}: resposta vazia`);
+          if (!text || text.trim() === "" || text.includes("Free usage is limited")) {
+            erros.push(`${p.nome}: resposta inválida`);
             continue;
           }
 
