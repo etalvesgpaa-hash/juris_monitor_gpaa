@@ -12,7 +12,6 @@ import {
   Edit2,
   Trash2,
   Mail,
-  MailX,
   Pause,
   Play,
   Plus,
@@ -1053,7 +1052,7 @@ export function ClientesPage() {
                               </>
                             ) : (
                               <>
-                                <MailX className="h-3 w-3" />
+                                <Mail className="h-3 w-3 opacity-40" />
                                 Notificar
                               </>
                             )}
