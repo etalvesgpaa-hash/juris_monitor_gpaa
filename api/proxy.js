@@ -54,7 +54,9 @@ module.exports = async function handler(req, res) {
       'Accept': 'application/json, text/plain, */*',
       'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0)',
       'Accept-Language': 'pt-BR,pt;q=0.9',
-     'Authorization': `Bearer ${process.env.AASP_API_KEY}`,
+      ...(req.headers['authorization']
+        ? { 'Authorization': req.headers['authorization'] }
+        : {}),
     };
     if (isPost) {
       upstreamHeaders['Content-Type'] = 'application/json';
