@@ -33,6 +33,10 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // Remove o parâmetro _t (cache-busting) antes de repassar — a AASP não o reconhece
+  parsedUrl.searchParams.delete('_t');
+  const cleanUrl = parsedUrl.toString();
+
   try {
     const isPost = req.method === 'POST';
     let bodyToSend = undefined;
@@ -47,8 +51,9 @@ module.exports = async function handler(req, res) {
 
     // Sem Content-Type em GET — AASP rejeita com 500 quando recebe Content-Type em GET
     const upstreamHeaders = {
-      'Accept': 'application/json',
-      'User-Agent': 'JurisMonitor/1.0',
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0)',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
       ...(req.headers['authorization']
         ? { 'Authorization': req.headers['authorization'] }
         : {}),
@@ -57,7 +62,7 @@ module.exports = async function handler(req, res) {
       upstreamHeaders['Content-Type'] = 'application/json';
     }
 
-    const upstream = await fetch(targetUrl, {
+    const upstream = await fetch(cleanUrl, {
       method: req.method,
       headers: upstreamHeaders,
       ...(bodyToSend ? { body: bodyToSend } : {}),
@@ -68,7 +73,7 @@ module.exports = async function handler(req, res) {
     const body = await upstream.text();
 
     // Expõe status e primeiros 500 chars do body para diagnóstico no frontend
-    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Type', contentType.includes('json') ? 'application/json' : contentType);
     res.setHeader('X-Upstream-Status', String(upstream.status));
     res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(body.slice(0, 500)));
     res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
@@ -76,9 +81,18 @@ module.exports = async function handler(req, res) {
     return res.status(upstream.status).send(body);
 
   } catch (err) {
+    // Expõe o erro real (ex: "fetch failed", "ETIMEDOUT", "ECONNREFUSED")
+    const detail = err.cause
+      ? `${err.message} — ${err.cause?.message || String(err.cause)}`
+      : err.message;
+
+    console.error('[proxy] Erro upstream:', cleanUrl, detail);
+
     return res.status(500).json({
       error: 'Erro ao chamar API externa.',
-      detail: err.message,
+      detail,
+      url: cleanUrl,
+      tip: 'Verifique se a chave AASP é válida. Se o erro for "fetch failed" ou "ECONNREFUSED", o servidor Vercel pode estar bloqueado pela AASP — certifique-se que a região está configurada como "gru1" (São Paulo) no vercel.json.',
     });
   }
 };

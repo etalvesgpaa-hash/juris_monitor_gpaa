@@ -1,8 +1,13 @@
 {
+  "regions": ["gru1"],
   "functions": {
     "api/proxy.js": {
       "memory": 256,
       "maxDuration": 60
+    },
+    "api/diag-aasp.js": {
+      "memory": 128,
+      "maxDuration": 30
     },
     "api/send-email.js": {
       "memory": 256,
@@ -10,14 +15,9 @@
     }
   },
   "rewrites": [
-    {
-      "source": "/api/proxy",
-      "destination": "/api/proxy"
-    },
-    {
-      "source": "/api/send-email",
-      "destination": "/api/send-email"
-    }
+    { "source": "/api/proxy",     "destination": "/api/proxy"     },
+    { "source": "/api/diag-aasp", "destination": "/api/diag-aasp" },
+    { "source": "/api/send-email","destination": "/api/send-email" }
   ],
   "headers": [
     {
