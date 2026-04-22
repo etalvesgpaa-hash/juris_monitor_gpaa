@@ -307,17 +307,24 @@ export function IntimacoesPage() {
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
       const proxies = [
-        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
         { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
+        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
         { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
       ];
 
       for (const p of proxies) {
         try {
-          const resp = await fetch(p.url, {
-            headers: { Accept: "application/json" },
+          // Adiciona timestamp para evitar cache do browser/proxy
+          const urlComCache = p.url + (p.url.includes("?") ? "&" : "?") + `_t=${Date.now()}`;
+          const resp = await fetch(urlComCache, {
+            headers: {
+              Accept: "application/json",
+              "Cache-Control": "no-cache, no-store",
+              Pragma: "no-cache",
+            },
+            cache: "no-store",
             signal: AbortSignal.timeout(15000),
           });
 
@@ -384,20 +391,20 @@ export function IntimacoesPage() {
     [aaspKey, intimacoes]
   );
 
-  /** Atualizar (últimos 5 dias úteis) */
+  /** Atualizar (últimos 7 dias úteis) — busca em paralelo */
   const atualizar = async () => {
     if (!aaspKey) {
       toast.error("Configure sua chave AASP nas Configurações.");
       return;
     }
     setLoading(true);
+    setLoadingDia("buscando...");
     const dias = diasUteisRecentes(7);
-    const novas: AaspIntimacao[] = [];
-    for (const d of dias) {
-      setLoadingDia(d);
-      const arr = await buscarDia(d, true);
-      novas.push(...arr);
-    }
+
+    // Busca todos os dias em paralelo para ser muito mais rápido
+    const resultados = await Promise.all(dias.map((d) => buscarDia(d, true)));
+    const novas = resultados.flat();
+
     setLoadingDia(null);
     setLoading(false);
 
