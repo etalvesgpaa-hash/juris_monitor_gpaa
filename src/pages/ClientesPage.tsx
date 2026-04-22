@@ -12,6 +12,7 @@ import {
   Edit2,
   Trash2,
   Mail,
+  MailOff,
   Pause,
   Play,
   Plus,
@@ -1052,8 +1053,8 @@ export function ClientesPage() {
                               </>
                             ) : (
                               <>
-                                <Mail className="h-3 w-3 opacity-40" />
-                                Notificar
+                                <MailOff className="h-3 w-3" />
+                                Desativado
                               </>
                             )}
                           </button>
