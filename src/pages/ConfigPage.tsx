@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -35,6 +35,12 @@ export function ConfigPage() {
   const [testingDatajud, setTestingDatajud] = useState(false);
   const [testingAasp, setTestingAasp] = useState(false);
   const [testingGroq, setTestingGroq] = useState(false);
+
+  // Estado do diagnóstico AASP
+  type DiagRow = { data: string; diaSemana: string; retorno: string; quantidade: number; jsonPreview: string; erro?: string };
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagRows, setDiagRows] = useState<DiagRow[]>([]);
+  const [diagJsonAberto, setDiagJsonAberto] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -328,6 +334,89 @@ export function ConfigPage() {
     }
   };
 
+  const runDiagnostico = async () => {
+    if (!apiKeys.aasp_chave) {
+      toast({ title: "Chave AASP não configurada", variant: "destructive" });
+      return;
+    }
+    setDiagLoading(true);
+    setDiagRows([]);
+    setDiagJsonAberto(null);
+
+    // Gera últimos 10 dias úteis com data local
+    function dataLocalStr(d: Date) {
+      const a = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dia = String(d.getDate()).padStart(2, "0");
+      return `${a}-${m}-${dia}`;
+    }
+    const diasUteis: string[] = [];
+    const cur = new Date();
+    while (diasUteis.length < 10) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) diasUteis.push(dataLocalStr(cur));
+      cur.setDate(cur.getDate() - 1);
+    }
+
+    const chave = apiKeys.aasp_chave.trim();
+
+    const resultados = await Promise.all(
+      diasUteis.map(async (dataStr): Promise<DiagRow> => {
+        const [ano, mes, dia] = dataStr.split("-");
+        const diaSemana = new Date(`${dataStr}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+        const dataFmt = `${dia}/${mes}/${ano}`;
+
+        const params = new URLSearchParams({ chave, data: dataStr });
+        const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
+        const proxies = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`,
+          `/api/proxy?url=${encodeURIComponent(endpoint)}`,
+        ];
+
+        for (const proxyUrl of proxies) {
+          try {
+            const resp = await fetch(proxyUrl + `&_t=${Date.now()}`, {
+              headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+              cache: "no-store",
+              signal: AbortSignal.timeout(15000),
+            });
+            const text = await resp.text();
+            if (!text.trim() || text.includes("Free usage is limited")) continue;
+
+            let raw: any = null;
+            try { raw = JSON.parse(text); } catch { continue; }
+
+            const lista = Array.isArray(raw) ? raw
+              : (raw?.intimacoes ?? raw?.Intimacoes ?? raw?.Data ?? []);
+
+            if (!Array.isArray(lista)) continue;
+
+            return {
+              data: dataFmt,
+              diaSemana,
+              retorno: lista.length > 0 ? "Intimações" : "Sem dados",
+              quantidade: lista.length,
+              jsonPreview: JSON.stringify(raw, null, 2).slice(0, 3000),
+            };
+          } catch { continue; }
+        }
+
+        return {
+          data: dataFmt,
+          diaSemana,
+          retorno: "Erro",
+          quantidade: 0,
+          jsonPreview: "",
+          erro: "Todos os proxies falharam",
+        };
+      })
+    );
+
+    setDiagRows(resultados);
+    setDiagLoading(false);
+  };
+
   const getConnectionStatus = () => {
     return {
       datajud: !!apiKeys.datajud_token,
@@ -349,10 +438,11 @@ export function ConfigPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
+        <TabsList className="grid w-full grid-cols-4 lg:w-[750px]">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
+          <TabsTrigger value="diagnostico">Diagnóstico AASP</TabsTrigger>
         </TabsList>
 
         {/* ABA PERFIL */}
@@ -715,6 +805,117 @@ export function ConfigPage() {
                 <li>Algumas funcionalidades requerem integrações ativas</li>
               </ul>
             </div>
+          </div>
+        </TabsContent>
+        {/* ABA DIAGNÓSTICO AASP */}
+        <TabsContent value="diagnostico" className="space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-display text-xl font-bold flex items-center gap-2">
+                  <FlaskConical className="h-5 w-5 text-accent" />
+                  Diagnóstico AASP
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Consulta os últimos 10 dias úteis na API AASP e mostra o retorno de cada um
+                </p>
+              </div>
+              <Button
+                variant="gold"
+                onClick={runDiagnostico}
+                disabled={diagLoading || !apiKeys.aasp_chave}
+              >
+                {diagLoading ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Consultando...</>
+                ) : (
+                  <><FlaskConical className="h-4 w-4 mr-2" /> Executar Diagnóstico</>
+                )}
+              </Button>
+            </div>
+
+            {!apiKeys.aasp_chave && (
+              <Alert className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>Configure a chave AASP na aba "API Keys" antes de executar o diagnóstico.</AlertDescription>
+              </Alert>
+            )}
+
+            {diagRows.length > 0 && (
+              <>
+                <div className="overflow-x-auto rounded-lg border border-border mb-4">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 border-b border-border">
+                      <tr>
+                        {["DATA ENVIADA PARA API", "RETORNO", "QUANTIDADE", "ENVELOPE JSON"].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diagRows.map((row, i) => (
+                        <tr key={i} className="border-b border-border hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-3 font-mono text-xs">
+                            <span className="text-muted-foreground mr-2">{row.diaSemana}</span>
+                            <span className="font-bold">{row.data}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              row.retorno === "Intimações"
+                                ? "bg-green-ok/10 text-green-ok"
+                                : row.retorno === "Erro"
+                                ? "bg-red-alert/10 text-red-alert"
+                                : "bg-muted text-muted-foreground"
+                            }`}>
+                              {row.retorno}
+                            </span>
+                            {row.erro && <span className="text-xs text-red-alert ml-2">{row.erro}</span>}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs font-bold text-accent">
+                            {row.quantidade > 0 ? row.quantidade : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            {row.jsonPreview ? (
+                              <button
+                                onClick={() => setDiagJsonAberto(diagJsonAberto === row.data ? null : row.data)}
+                                className="text-xs text-accent hover:underline font-semibold"
+                              >
+                                {diagJsonAberto === row.data ? "▲ Fechar" : "▼ Ver JSON"}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* JSON expandido */}
+                {diagJsonAberto && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Envelope JSON — {diagJsonAberto}
+                      </span>
+                      <button onClick={() => setDiagJsonAberto(null)} className="text-xs text-muted-foreground hover:text-foreground">✕ Fechar</button>
+                    </div>
+                    <pre className="text-[0.7rem] text-foreground overflow-x-auto max-h-80 leading-relaxed whitespace-pre-wrap break-all">
+                      {diagRows.find(r => r.data === diagJsonAberto)?.jsonPreview}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+
+            {diagRows.length === 0 && !diagLoading && (
+              <div className="text-center py-12 text-muted-foreground">
+                <FlaskConical className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">Clique em "Executar Diagnóstico" para consultar os últimos 10 dias úteis na API AASP.</p>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
