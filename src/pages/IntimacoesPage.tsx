@@ -307,20 +307,35 @@ export function IntimacoesPage() {
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
       const proxies = [
-        { nome: "backend",    url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "corsproxy",  url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
-        { nome: "allorigins", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
+        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
+        { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
       ];
 
       for (const p of proxies) {
         try {
-          const resp = await fetch(p.url, { headers: { Accept: "application/json" } });
-          
-          if (!resp.ok) continue;
-          
+          const resp = await fetch(p.url, {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(15000),
+          });
+
+          // Alguns proxies retornam 200 com mensagem de erro no body — lemos sempre
           const text = await resp.text();
-          
+
           if (!text.trim()) continue;
+
+          // Detecta respostas de erro de proxy (não da API AASP)
+          if (
+            text.includes("Free usage is limited") ||
+            text.includes("Error fetching") ||
+            text.includes("rate limit") ||
+            (!resp.ok && text.length < 500)
+          ) {
+            console.warn(`[AASP] Proxy ${p.nome} recusou: ${text.slice(0, 120)}`);
+            continue;
+          }
 
           let raw: unknown = null;
           
