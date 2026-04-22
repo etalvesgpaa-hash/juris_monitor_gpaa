@@ -1,3 +1,7 @@
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -19,27 +23,29 @@ module.exports = async function handler(req, res) {
   let parsedUrl;
   try {
     parsedUrl = new URL(targetUrl);
-  } catch {
+  } catch (e) {
     return res.status(400).json({ error: 'URL inválida.', url: targetUrl });
   }
 
-  const isAllowed = allowed.some(d =>
-    parsedUrl.hostname === d || parsedUrl.hostname.endsWith('.' + d)
-  );
+  const isAllowed = allowed.some(function(d) {
+    return parsedUrl.hostname === d || parsedUrl.hostname.endsWith('.' + d);
+  });
   if (!isAllowed) {
     return res.status(403).json({
-      error: `Domínio não autorizado: ${parsedUrl.hostname}`,
-      allowed,
+      error: 'Domínio não autorizado: ' + parsedUrl.hostname,
+      allowed: allowed,
     });
   }
 
-  // Remove o parâmetro _t (cache-busting) antes de repassar — a AASP não o reconhece
+  // Remove cache-busting antes de repassar
   parsedUrl.searchParams.delete('_t');
   const cleanUrl = parsedUrl.toString();
 
-  try {
+  // Faz a requisição usando o módulo nativo https/http do Node
+  // evita dependência de fetch e AbortSignal.timeout que pode não existir
+  return new Promise(function(resolve) {
     const isPost = req.method === 'POST';
-    let bodyToSend = undefined;
+    let bodyToSend = '';
 
     if (isPost) {
       if (typeof req.body === 'string') {
@@ -49,50 +55,71 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // Sem Content-Type em GET — AASP rejeita com 500 quando recebe Content-Type em GET
-    const upstreamHeaders = {
+    const reqHeaders = {
       'Accept': 'application/json, text/plain, */*',
       'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0)',
       'Accept-Language': 'pt-BR,pt;q=0.9',
-      ...(req.headers['authorization']
-        ? { 'Authorization': req.headers['authorization'] }
-        : {}),
     };
-    if (isPost) {
-      upstreamHeaders['Content-Type'] = 'application/json';
+
+    if (req.headers['authorization']) {
+      reqHeaders['Authorization'] = req.headers['authorization'];
+    }
+    if (isPost && bodyToSend) {
+      reqHeaders['Content-Type'] = 'application/json';
+      reqHeaders['Content-Length'] = Buffer.byteLength(bodyToSend);
     }
 
-    const upstream = await fetch(cleanUrl, {
+    const lib = parsedUrl.protocol === 'https:' ? https : http;
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
       method: req.method,
-      headers: upstreamHeaders,
-      ...(bodyToSend ? { body: bodyToSend } : {}),
-      signal: AbortSignal.timeout(55000),
+      headers: reqHeaders,
+      timeout: 50000,
+    };
+
+    const upstream = lib.request(options, function(upstreamRes) {
+      let data = '';
+      upstreamRes.on('data', function(chunk) { data += chunk; });
+      upstreamRes.on('end', function() {
+        const contentType = upstreamRes.headers['content-type'] || 'application/json';
+        res.setHeader('Content-Type', contentType.includes('json') ? 'application/json' : contentType);
+        res.setHeader('X-Upstream-Status', String(upstreamRes.statusCode));
+        res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(data.slice(0, 500)));
+        res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
+        res.status(upstreamRes.statusCode).send(data);
+        resolve();
+      });
     });
 
-    const contentType = upstream.headers.get('content-type') || 'application/json';
-    const body = await upstream.text();
-
-    // Expõe status e primeiros 500 chars do body para diagnóstico no frontend
-    res.setHeader('Content-Type', contentType.includes('json') ? 'application/json' : contentType);
-    res.setHeader('X-Upstream-Status', String(upstream.status));
-    res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(body.slice(0, 500)));
-    res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
-
-    return res.status(upstream.status).send(body);
-
-  } catch (err) {
-    // Expõe o erro real (ex: "fetch failed", "ETIMEDOUT", "ECONNREFUSED")
-    const detail = err.cause
-      ? `${err.message} — ${err.cause?.message || String(err.cause)}`
-      : err.message;
-
-    console.error('[proxy] Erro upstream:', cleanUrl, detail);
-
-    return res.status(500).json({
-      error: 'Erro ao chamar API externa.',
-      detail,
-      url: cleanUrl,
-      tip: 'Verifique se a chave AASP é válida. Se o erro for "fetch failed" ou "ECONNREFUSED", o servidor Vercel pode estar bloqueado pela AASP — certifique-se que a região está configurada como "gru1" (São Paulo) no vercel.json.',
+    upstream.on('timeout', function() {
+      upstream.destroy();
+      res.status(504).json({
+        error: 'Timeout ao chamar API externa.',
+        detail: 'A API da AASP não respondeu em 50 segundos.',
+        url: cleanUrl,
+      });
+      resolve();
     });
-  }
+
+    upstream.on('error', function(err) {
+      console.error('[proxy] Erro upstream:', cleanUrl, err.message);
+      res.status(500).json({
+        error: 'Erro ao chamar API externa.',
+        detail: err.message,
+        code: err.code || '',
+        url: cleanUrl,
+        tip: err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND'
+          ? 'Servidor Vercel não conseguiu alcançar a AASP. Verifique se "regions": ["gru1"] está no vercel.json.'
+          : 'Verifique se a chave AASP é válida em minha.aasp.org.br.',
+      });
+      resolve();
+    });
+
+    if (isPost && bodyToSend) {
+      upstream.write(bodyToSend);
+    }
+    upstream.end();
+  });
 };
