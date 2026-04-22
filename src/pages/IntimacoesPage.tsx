@@ -397,24 +397,27 @@ export function IntimacoesPage() {
     [] // sem dependências: aaspKey e intimacoes são lidos via refs (aaspKeyRef / intimacoesRef)
   );
 
-  /** Atualizar (últimos 7 dias úteis) — busca em paralelo */
+  /** Atualizar (últimos 7 dias úteis) — busca SEQUENCIAL igual ao projeto de referência */
   const atualizar = async () => {
     if (!aaspKey) {
       toast.error("Configure sua chave AASP nas Configurações.");
       return;
     }
     setLoading(true);
-    setLoadingDia("buscando...");
     const dias = diasUteisRecentes(7);
+    const novas: AaspIntimacao[] = [];
 
-    // Busca todos os dias em paralelo para ser muito mais rápido
-    const resultados = await Promise.all(dias.map((d) => buscarDia(d, true)));
-    const novas = resultados.flat();
+    // Busca sequencialmente — evita rate limiting no proxy e na API da AASP
+    for (const d of dias) {
+      setLoadingDia(d);
+      const arr = await buscarDia(d, true);
+      novas.push(...arr);
+    }
 
     setLoadingDia(null);
     setLoading(false);
 
-    const merged = [...novas, ...intimacoes];
+    const merged = [...novas, ...intimacoesRef.current];
     const uniq: AaspIntimacao[] = [];
     const seen = new Set<string>();
     for (const it of merged) {
@@ -426,7 +429,7 @@ export function IntimacoesPage() {
 
     setIntimacoes(uniq);
     saveStore(uniq);
-    toast.success(`${novas.length} intimação(ões) encontrada(s).`);
+    toast.success(`${novas.length} intimação(ões) encontrada(s) nos últimos 7 dias úteis.`);
   };
 
   /** Buscar dia específico */

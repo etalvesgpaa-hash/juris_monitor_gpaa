@@ -225,74 +225,71 @@ export function ConfigPage() {
     setTestingAasp(true);
     try {
       const chave = apiKeys.aasp_chave.trim();
-      const hoje  = new Date().toISOString().split("T")[0];
 
-      // Monta endpoint final da AASP — igual ao aaspFetch() do index.html original
-      // NUNCA envia diferencial=false (a AASP não reconhece o valor em string)
-      const params = new URLSearchParams({ chave, data: hoje });
-      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
+      // Gera os últimos 7 dias úteis para testar (igual ao projeto de referência)
+      const diasUteis: string[] = [];
+      for (let i = 0; diasUteis.length < 7 && i < 14; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        if (d.getDay() === 0 || d.getDay() === 6) continue;
+        const ano = d.getFullYear();
+        const mes = String(d.getMonth() + 1).padStart(2, "0");
+        const dia = String(d.getDate()).padStart(2, "0");
+        diasUteis.push(`${ano}-${mes}-${dia}`);
+      }
 
-      // /api/proxy (Vercel serverless) em PRIMEIRO — igual à IntimacoesPage
-      const proxies = [
-        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
-        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
-        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
-      ];
+      /** fetchWithTimeout idêntico ao projeto de referência */
+      function fetchComTimeout(url: string, ms: number): Promise<Response> {
+        return Promise.race([
+          fetch(url, { headers: { Accept: "application/json" } }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
+          ),
+        ]);
+      }
+
+      async function fetchRaw(dataStr: string): Promise<any> {
+        const qs = new URLSearchParams({ chave, data: dataStr }).toString();
+        const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
+        const resp = await fetchComTimeout(proxyUrl, 20000);
+        const txt = await resp.text();
+        try { return JSON.parse(txt); } catch { return { _parseError: txt.slice(0, 200) }; }
+      }
 
       const erros: string[] = [];
+      let totalIntimacoes = 0;
+      let diasComDados = 0;
 
-      for (const p of proxies) {
+      // Testa sequencialmente (igual ao projeto de referência) para evitar rate limiting
+      for (const dia of diasUteis) {
         try {
-          const resp = await fetch(p.url + `&_t=${Date.now()}`, {
-            headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-            cache: "no-store",
-          });
+          const raw = await fetchRaw(dia);
+          if (raw?._parseError) { erros.push(`${dia}: JSON inválido`); continue; }
 
-          if (!resp.ok) {
-            erros.push(`${p.nome}: HTTP ${resp.status}`);
-            continue;
+          const lista = Array.isArray(raw) ? raw
+            : (raw?.Intimacoes ?? raw?.intimacoes ?? raw?.Data ?? []);
+
+          if (Array.isArray(lista) && lista.length > 0) {
+            totalIntimacoes += lista.length;
+            diasComDados++;
           }
-
-          const text = await resp.text();
-          if (!text || text.trim() === "" || text.includes("Free usage is limited")) {
-            erros.push(`${p.nome}: resposta inválida`);
-            continue;
-          }
-
-          let data: any = null;
-          try { data = JSON.parse(text); } catch { /* tenta allorigins wrapper */ }
-          // allorigins encapsula em { contents: "..." }
-          if (!data) {
-            try { const w = JSON.parse(text); if (w?.contents) data = JSON.parse(w.contents); } catch { /* ok */ }
-          }
-
-          if (!data) {
-            erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 100)}`);
-            continue;
-          }
-
-          // Sucesso!
-          const lista = Array.isArray(data) ? data
-            : (data?.Intimacoes ?? data?.intimacoes ?? data?.Data ?? []);
-          const count = Array.isArray(lista) ? lista.length : 0;
-
-          toast({
-            title: "✅ AASP conectada!",
-            description: `Conexão OK via ${p.nome}. ${count} intimação(ões) hoje.`,
-          });
-          return; // encerra aqui
-
         } catch (e: any) {
-          erros.push(`${p.nome}: ${e.message}`);
+          erros.push(`${dia}: ${e.message}`);
         }
       }
 
-      // Todos os proxies falharam
-      throw new Error(
-        `Falha em todos os proxies para hoje (${hoje}):\n` + erros.join("\n") + "\n\n" +
-        "Verifique se sua chave AASP é válida em minha.aasp.org.br → Meu Painel → Intimações → API"
-      );
+      if (erros.length === diasUteis.length) {
+        throw new Error(
+          `Falha em todos os dias testados:\n` + erros.join("\n") + "\n\n" +
+          "Verifique se sua chave AASP é válida em minha.aasp.org.br → Meu Painel → Intimações → API"
+        );
+      }
+
+      toast({
+        title: "✅ AASP conectada!",
+        description: `${totalIntimacoes} intimação(ões) encontrada(s) em ${diasComDados} de ${diasUteis.length} dias úteis testados.`,
+      });
 
     } catch (err: any) {
       console.error("Erro detalhado AASP:", err);
@@ -370,57 +367,50 @@ export function ConfigPage() {
 
     const chave = apiKeys.aasp_chave.trim();
 
-    const resultados = await Promise.all(
-      diasUteis.map(async (dataStr): Promise<DiagRow> => {
-        const [ano, mes, dia] = dataStr.split("-");
-        const diaSemana = new Date(`${dataStr}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
-        const dataFmt = `${dia}/${mes}/${ano}`;
+    // Busca SEQUENCIAL — evita rate limiting no /api/proxy
+    const resultados: DiagRow[] = [];
 
-        const params = new URLSearchParams({ chave, data: dataStr });
-        const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
-        const proxies = [
-          `/api/proxy?url=${encodeURIComponent(endpoint)}`,
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`,
-        ];
+    for (const dataStr of diasUteis) {
+      const [ano, mes, dia] = dataStr.split("-");
+      const diaSemana = new Date(`${dataStr}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+      const dataFmt = `${dia}/${mes}/${ano}`;
 
-        for (const proxyUrl of proxies) {
-          try {
-            const resp = await Promise.race([
-              fetch(proxyUrl, { headers: { Accept: "application/json" } }),
-              new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 12000)),
-            ]);
-            const text = await resp.text();
-            if (!text.trim() || text.includes("Free usage is limited")) continue;
+      const params = new URLSearchParams({ chave, data: dataStr });
+      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
 
-            let raw: any = null;
-            try { raw = JSON.parse(text); } catch { continue; }
+      try {
+        const resp = await Promise.race([
+          fetch(proxyUrl, { headers: { Accept: "application/json" } }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000)),
+        ]);
+        const text = await resp.text();
 
-            const lista = Array.isArray(raw) ? raw
-              : (raw?.intimacoes ?? raw?.Intimacoes ?? raw?.Data ?? []);
+        let raw: any = null;
+        try { raw = JSON.parse(text); } catch { /* ok */ }
 
-            if (!Array.isArray(lista)) continue;
+        const lista = raw
+          ? (Array.isArray(raw) ? raw : (raw?.Intimacoes ?? raw?.intimacoes ?? raw?.Data ?? []))
+          : [];
 
-            return {
-              data: dataFmt,
-              diaSemana,
-              retorno: lista.length > 0 ? "Intimações" : "Sem dados",
-              quantidade: lista.length,
-              jsonPreview: JSON.stringify(raw, null, 2).slice(0, 3000),
-            };
-          } catch { continue; }
-        }
-
-        return {
+        resultados.push({
+          data: dataFmt,
+          diaSemana,
+          retorno: Array.isArray(lista) && lista.length > 0 ? "Intimações" : "Sem dados",
+          quantidade: Array.isArray(lista) ? lista.length : 0,
+          jsonPreview: JSON.stringify(raw, null, 2).slice(0, 3000),
+        });
+      } catch (e: any) {
+        resultados.push({
           data: dataFmt,
           diaSemana,
           retorno: "Erro",
           quantidade: 0,
           jsonPreview: "",
-          erro: "Todos os proxies falharam",
-        };
-      })
-    );
+          erro: e.message,
+        });
+      }
+    }
 
     setDiagRows(resultados);
     setDiagLoading(false);
