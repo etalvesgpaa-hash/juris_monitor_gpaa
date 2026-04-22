@@ -306,13 +306,13 @@ export function IntimacoesPage() {
       const params   = new URLSearchParams({ chave: aaspKey, data: dataStr });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
-      const proxies = [
-        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
-        { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
-        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
-        { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
-      ];
+     const proxies = [
+  { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+  { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+  { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
+  { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
+  { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
+];
 
       for (const p of proxies) {
         try {
