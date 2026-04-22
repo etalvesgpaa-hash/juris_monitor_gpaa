@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientes } from "@/hooks/useClientes";
@@ -258,6 +258,12 @@ export function IntimacoesPage() {
 
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
+
+  // Refs para evitar stale closures nos callbacks assíncronos
+  const aaspKeyRef = useRef(aaspKey);
+  const intimacoesRef = useRef(intimacoes);
+  useEffect(() => { aaspKeyRef.current = aaspKey; }, [aaspKey]);
+  useEffect(() => { intimacoesRef.current = intimacoes; }, [intimacoes]);
   const [groqKey, setGroqKey] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [loadingDia, setLoadingDia] = useState<string | null>(null);
@@ -301,15 +307,19 @@ export function IntimacoesPage() {
   /** Busca intimações de um dia */
   const buscarDia = useCallback(
     async (dataStr: string, silencioso = false): Promise<AaspIntimacao[]> => {
-      if (!aaspKey) return [];
+      // Lê sempre o valor atual via ref, evitando closure obsoleto
+      const chaveAtual = aaspKeyRef.current;
+      if (!chaveAtual) return [];
 
-      const params   = new URLSearchParams({ chave: aaspKey, data: dataStr });
+      const params   = new URLSearchParams({ chave: chaveAtual, data: dataStr });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
+      // /api/proxy (Vercel serverless) em PRIMEIRO — é o mais confiável em produção
+      // Proxies públicos ficam como fallback apenas
       const proxies = [
+        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
         { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
-        { nome: "backend",      url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
         { nome: "htmldriven",   url: `https://cors.eu.org/${endpoint}` },
       ];
@@ -358,11 +368,15 @@ export function IntimacoesPage() {
           if (!raw) continue;
 
           let arr = normalizar(raw);
-          if (arr.length === 0) continue;
+          if (arr.length === 0) {
+            console.warn(`[AASP] ${p.nome} retornou JSON mas normalizar() vazio. Estrutura recebida:`, JSON.stringify(raw).slice(0, 400));
+            continue;
+          }
 
           arr = arr.map((it, idx) => {
             const id = gerarId(it, idx);
-            const existente = intimacoes.find((x) => x._id === id);
+            // Usa ref para evitar closure obsoleto do estado
+            const existente = intimacoesRef.current.find((x) => x._id === id);
             return {
               ...it,
               _id: id,
@@ -388,7 +402,7 @@ export function IntimacoesPage() {
       if (!silencioso) toast.error(`Nenhuma intimação retornada para ${fmtData(dataStr)}.`);
       return [];
     },
-    [aaspKey, intimacoes]
+    [] // sem dependências: aaspKey e intimacoes são lidos via refs (aaspKeyRef / intimacoesRef)
   );
 
   /** Atualizar (últimos 7 dias úteis) — busca em paralelo */
@@ -510,8 +524,8 @@ export function IntimacoesPage() {
         )
       );
 
-      // Salva no localStorage
-      const updated = intimacoes.map((it) =>
+      // Salva no localStorage usando ref para garantir snapshot atualizado
+      const updated = intimacoesRef.current.map((it) =>
         it._id === intimacao._id ? { ...it, _resumoIA: resumo } : it
       );
       saveStore(updated);

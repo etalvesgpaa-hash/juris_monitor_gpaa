@@ -166,6 +166,12 @@ export function ConfigPage() {
         }
       }
 
+      // Persiste no localStorage para que IntimacoesPage leia mesmo sem nova query ao Supabase
+      if (apiKeys.aasp_chave) localStorage.setItem("jurismonitor_aasp_key", apiKeys.aasp_chave);
+      else localStorage.removeItem("jurismonitor_aasp_key");
+      if (apiKeys.groq_api_key) localStorage.setItem("jurismonitor_groq_key", apiKeys.groq_api_key);
+      else localStorage.removeItem("jurismonitor_groq_key");
+
       toast({ title: "✅ API Keys salvas com sucesso!" });
     } catch (err: any) {
       console.error("Erro completo:", err);
@@ -226,12 +232,11 @@ export function ConfigPage() {
       const params = new URLSearchParams({ chave, data: hoje });
       const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
 
-      // Mesma estratégia do index.html que funciona:
-      // tenta /api/proxy primeiro, depois corsproxy.io, depois allorigins como fallback
+      // /api/proxy (Vercel serverless) em PRIMEIRO — igual à IntimacoesPage
       const proxies = [
+        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
         { nome: "codetabs",     url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}` },
-        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
         { nome: "thingproxy",   url: `https://thingproxy.freeboard.io/fetch/${endpoint}` },
       ];
 
@@ -374,9 +379,9 @@ export function ConfigPage() {
         const params = new URLSearchParams({ chave, data: dataStr });
         const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
         const proxies = [
+          `/api/proxy?url=${encodeURIComponent(endpoint)}`,
           `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`,
           `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(endpoint)}`,
-          `/api/proxy?url=${encodeURIComponent(endpoint)}`,
         ];
 
         for (const proxyUrl of proxies) {
