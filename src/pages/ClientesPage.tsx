@@ -12,7 +12,7 @@ import {
   Edit2,
   Trash2,
   Mail,
-  MailOff,
+  MailX,
   Pause,
   Play,
   Plus,
@@ -1053,7 +1053,7 @@ export function ClientesPage() {
                               </>
                             ) : (
                               <>
-                                <MailOff className="h-3 w-3" />
+                                <MailX className="h-3 w-3" />
                                 Desativado
                               </>
                             )}
