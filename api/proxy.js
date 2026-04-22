@@ -1,5 +1,4 @@
-// ESM — compatível com "type": "module" no package.json
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
@@ -36,17 +35,27 @@ export default async function handler(req, res) {
 
   try {
     const isPost = req.method === 'POST';
-    let bodyToSend;
+    let bodyToSend = undefined;
+
     if (isPost) {
-      bodyToSend = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+      if (typeof req.body === 'string') {
+        bodyToSend = req.body;
+      } else if (req.body && typeof req.body === 'object') {
+        bodyToSend = JSON.stringify(req.body);
+      }
     }
 
+    // Sem Content-Type em GET — AASP rejeita com 500 quando recebe Content-Type em GET
     const upstreamHeaders = {
-      Accept: 'application/json',
+      'Accept': 'application/json',
       'User-Agent': 'JurisMonitor/1.0',
-      ...(req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {}),
+      ...(req.headers['authorization']
+        ? { 'Authorization': req.headers['authorization'] }
+        : {}),
     };
-    if (isPost) upstreamHeaders['Content-Type'] = 'application/json';
+    if (isPost) {
+      upstreamHeaders['Content-Type'] = 'application/json';
+    }
 
     const upstream = await fetch(targetUrl, {
       method: req.method,
@@ -58,13 +67,18 @@ export default async function handler(req, res) {
     const contentType = upstream.headers.get('content-type') || 'application/json';
     const body = await upstream.text();
 
+    // Expõe status e primeiros 500 chars do body para diagnóstico no frontend
     res.setHeader('Content-Type', contentType);
     res.setHeader('X-Upstream-Status', String(upstream.status));
     res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(body.slice(0, 500)));
     res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
 
     return res.status(upstream.status).send(body);
+
   } catch (err) {
-    return res.status(500).json({ error: 'Erro ao chamar API externa.', detail: err.message });
+    return res.status(500).json({
+      error: 'Erro ao chamar API externa.',
+      detail: err.message,
+    });
   }
-}
+};

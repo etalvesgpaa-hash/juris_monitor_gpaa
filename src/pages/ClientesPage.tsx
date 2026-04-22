@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  useClientes, 
-useCreateCliente, 
-useUpdateCliente, 
-useDeleteCliente 
+  useClientes,
+  useCreateCliente,
+  useUpdateCliente,
+  useDeleteCliente,
 } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import {
