@@ -6,7 +6,7 @@ import {
 useCreateCliente, 
 useUpdateCliente, 
 useDeleteCliente 
-} from "../hooks/useClientes";
+} from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import {
   Edit2,
