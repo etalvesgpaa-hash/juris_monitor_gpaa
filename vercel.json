@@ -2,13 +2,11 @@
   "functions": {
     "api/proxy.js": {
       "memory": 256,
-      "maxDuration": 60,
-      "runtime": "nodejs20.x"
+      "maxDuration": 60
     },
     "api/send-email.js": {
       "memory": 256,
-      "maxDuration": 10,
-      "runtime": "nodejs20.x"
+      "maxDuration": 10
     }
   },
   "rewrites": [
