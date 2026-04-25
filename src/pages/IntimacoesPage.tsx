@@ -321,27 +321,33 @@ export function IntimacoesPage() {
   }, []);
 
   /**
-   * aaspFetchRaw — chama APENAS /api/proxy (único proxy permitido pelo CSP do Vercel).
-   * Constrói a URL sem double-encoding: URLSearchParams encoda '/' em '%2F',
-   * depois encodeURIComponent encodaria '%2F' em '%252F' — por isso montamos manualmente.
+   * aaspFetchRaw — chama /api/proxy sem double-encoding.
+   * A data (ISO ou BR) é concatenada direto na query string sem encode extra,
+   * pois encodeURIComponent numa data com '/' já gera %2F, e encodar de novo
+   * geraria %252F que a API da AASP rejeita com HTTP 500.
    */
   const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
     const chave = aaspKeyRef.current;
     if (!chave) throw new Error("Chave AASP não configurada.");
 
-    // Monta endpoint sem URLSearchParams para evitar double-encoding da data BR (DD/MM/YYYY)
-    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${encodeURIComponent(dataParam)}`;
+    // Monta a URL da AASP — data concatenada sem encode extra
+    const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
 
-    // Apenas /api/proxy — corsproxy.io e allorigins são bloqueados pelo CSP do Vercel
-    const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
+    // Encoda a URL completa uma única vez para o parâmetro ?url= do proxy
+    const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+
+    console.log(`[AASP] Buscando: data="${dataParam}"`);
 
     try {
       const resp = await fetchComTimeout(proxyUrl, 20000);
       const text = await resp.text();
       if (!text || text.trim() === "") throw new Error("Resposta vazia do proxy");
-      try { return JSON.parse(text); } catch (_) {
-        throw new Error(`JSON inválido: ${text.slice(0, 120)}`);
+      const parsed = JSON.parse(text);
+      // Detecta erro retornado pela própria AASP
+      if (parsed?.error?.code === "500" || parsed?.erro === true) {
+        throw new Error(`AASP retornou erro: ${JSON.stringify(parsed).slice(0, 200)}`);
       }
+      return parsed;
     } catch (e: any) {
       throw new Error(`/api/proxy: ${e.message}`);
     }
@@ -424,8 +430,8 @@ export function IntimacoesPage() {
               const fmt = fmtPreferidoRef.current || "ISO";
               const [a, m, d] = dataStr.split("-");
               const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
-              const endpoint2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${encodeURIComponent(dataParam)}&pagina=${pag}`;
-              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(endpoint2)}`, 20000);
+              const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}&pagina=${pag}`;
+              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(aaspUrl2)}`, 20000);
               const raw2 = JSON.parse(await resp2.text());
               todasItens = [...todasItens, ...normalizar(raw2)];
               console.log(`[AASP] Pág ${pag}/${totalPags}: +${normalizar(raw2).length}`);
