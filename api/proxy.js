@@ -19,30 +19,31 @@ module.exports = function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Pega a URL alvo — decodifica uma vez para evitar double-encoding
   let targetUrl = req.query.url;
   if (!targetUrl) {
     return res.status(400).json({ error: 'Parâmetro "url" obrigatório.' });
   }
 
-  // Decodifica o parâmetro url= uma única vez (ele vem encodado pelo frontend)
+  // Decodifica o parâmetro url= uma única vez (ele vem encodado pelo frontend via encodeURIComponent)
   let decoded = targetUrl;
-  try {
-    decoded = decodeURIComponent(targetUrl);
-  } catch (_) { decoded = targetUrl; }
+  try { decoded = decodeURIComponent(targetUrl); } catch (_) {}
+
+  // ─── CRÍTICO: NÃO usar new URL() aqui ───────────────────────────────────────
+  // new URL() normaliza %2F → "/" no search, quebrando datas DD/MM/YYYY passadas
+  // como data=24%2F04%2F2026. Em vez disso, extraímos hostname e path com regex,
+  // preservando o search string exatamente como veio.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const urlMatch = decoded.match(/^(https?):\/\/([^\/]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
+  if (!urlMatch) {
+    return res.status(400).json({ error: 'URL inválida.', url: decoded.slice(0, 200) });
+  }
+  const protocol = urlMatch[1] + ':';
+  const hostname  = urlMatch[2].split(':')[0]; // remove porta se houver
+  const portStr   = urlMatch[2].includes(':') ? urlMatch[2].split(':')[1] : null;
+  const pathname  = urlMatch[3] || '/';
+  const rawSearch = urlMatch[4] || ''; // preservado EXATAMENTE — sem re-encode
 
   // Valida hostname
-  let hostname, pathname, search, protocol;
-  try {
-    const u = new URL(decoded);
-    hostname = u.hostname;
-    pathname = u.pathname;
-    search   = u.search;
-    protocol = u.protocol;
-  } catch (_) {
-    return res.status(400).json({ error: 'URL inválida após decodificação.', url: decoded.slice(0, 200) });
-  }
-
   const isAllowed = ALLOWED.some(function(d) {
     return hostname === d || hostname.endsWith('.' + d);
   });
@@ -50,11 +51,9 @@ module.exports = function handler(req, res) {
     return res.status(403).json({ error: 'Domínio não autorizado: ' + hostname, allowed: ALLOWED });
   }
 
-  // Remove _t (cache-busting) sem reprocessar o search com URLSearchParams
-  // (URLSearchParams re-encoda %2F → %252F, quebrando datas DD/MM/YYYY)
-  const rawSearch = search.replace(/^\?/, '');
+  // Remove _t (cache-busting) preservando o restante do search INTACTO
   const cleanSearch = rawSearch
-    ? '?' + rawSearch.split('&').filter(function(p) { return !p.startsWith('_t='); }).join('&')
+    ? '?' + rawSearch.replace(/^\?/, '').split('&').filter(function(p) { return !p.startsWith('_t='); }).join('&')
     : '';
   const cleanPath = pathname + cleanSearch;
 
@@ -75,17 +74,20 @@ module.exports = function handler(req, res) {
     reqHeaders['Content-Length'] = Buffer.byteLength(bodyToSend);
   }
 
+  const defaultPort = protocol === 'https:' ? 443 : 80;
+  const port = portStr ? parseInt(portStr, 10) : defaultPort;
+
   const lib = protocol === 'https:' ? https : http;
   const options = {
     hostname,
-    port: protocol === 'https:' ? 443 : 80,
+    port,
     path: cleanPath,
     method: req.method,
     headers: reqHeaders,
     timeout: 50000,
   };
 
-  // Log para depuração
+  // Log para depuração — mostra o path exato que será enviado à AASP
   console.log('[proxy] Chamando:', hostname + cleanPath);
 
   return new Promise(function(resolve) {
