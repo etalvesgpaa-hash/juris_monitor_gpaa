@@ -27,9 +27,19 @@ module.exports = function handler(req, res) {
     return res.status(400).json({ error: 'Parâmetro "url" obrigatório.' });
   }
 
+  // Decodifica a targetUrl antes de parsear — evita double-encoding
+  // quando o frontend manda encodeURIComponent(encodeURIComponent(data))
+  let decodedUrl = targetUrl;
+  try {
+    // Decodifica apenas uma vez se detectar double-encoding (%25 = %)
+    if (targetUrl.includes('%25')) {
+      decodedUrl = decodeURIComponent(targetUrl);
+    }
+  } catch (_) { decodedUrl = targetUrl; }
+
   let parsedUrl;
   try {
-    parsedUrl = new URL(targetUrl);
+    parsedUrl = new URL(decodedUrl);
   } catch (e) {
     return res.status(400).json({ error: 'URL inválida.', url: targetUrl });
   }

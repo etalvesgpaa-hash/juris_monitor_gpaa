@@ -9,6 +9,10 @@
       "memory": 128,
       "maxDuration": 30
     },
+    "api/aasp-test.js": {
+      "memory": 128,
+      "maxDuration": 30
+    },
     "api/send-email.js": {
       "memory": 256,
       "maxDuration": 10
@@ -17,6 +21,7 @@
   "rewrites": [
     { "source": "/api/proxy",     "destination": "/api/proxy"     },
     { "source": "/api/diag-aasp", "destination": "/api/diag-aasp" },
+    { "source": "/api/aasp-test", "destination": "/api/aasp-test" },
     { "source": "/api/send-email","destination": "/api/send-email" }
   ],
   "headers": [

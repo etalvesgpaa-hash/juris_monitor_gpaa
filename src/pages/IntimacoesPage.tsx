@@ -321,38 +321,30 @@ export function IntimacoesPage() {
   }, []);
 
   /**
-   * aaspFetchRaw — faz uma chamada ao proxy com dataParam já formatado.
-   * Igual ao aaspFetch() do projeto de referência.
+   * aaspFetchRaw — chama APENAS /api/proxy (único proxy permitido pelo CSP do Vercel).
+   * Constrói a URL sem double-encoding: URLSearchParams encoda '/' em '%2F',
+   * depois encodeURIComponent encodaria '%2F' em '%252F' — por isso montamos manualmente.
    */
   const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
     const chave = aaspKeyRef.current;
     if (!chave) throw new Error("Chave AASP não configurada.");
 
-    // NUNCA envia diferencial — queremos sempre a lista completa do dia
-    const qs = new URLSearchParams({ chave, data: dataParam }).toString();
-    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
+    // Monta endpoint sem URLSearchParams para evitar double-encoding da data BR (DD/MM/YYYY)
+    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${encodeURIComponent(dataParam)}`;
 
-    const proxies = [
-      { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
-      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
-    ];
+    // Apenas /api/proxy — corsproxy.io e allorigins são bloqueados pelo CSP do Vercel
+    const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
 
-    const erros: string[] = [];
-    for (const p of proxies) {
-      try {
-        const resp = await fetchComTimeout(p.url, 12000);
-        if (!resp.ok) { erros.push(`${p.nome}: HTTP ${resp.status}`); continue; }
-        const text = await resp.text();
-        if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
-        try { return JSON.parse(text); } catch (_) {}
-        try { const w = JSON.parse(text); if ((w as any)?.contents) return JSON.parse((w as any).contents); } catch (_) {}
-        erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`);
-      } catch (e: any) {
-        erros.push(`${p.nome}: ${e.message}`);
+    try {
+      const resp = await fetchComTimeout(proxyUrl, 20000);
+      const text = await resp.text();
+      if (!text || text.trim() === "") throw new Error("Resposta vazia do proxy");
+      try { return JSON.parse(text); } catch (_) {
+        throw new Error(`JSON inválido: ${text.slice(0, 120)}`);
       }
+    } catch (e: any) {
+      throw new Error(`/api/proxy: ${e.message}`);
     }
-    throw new Error("Todos os proxies falharam:\n" + erros.join("\n"));
   }, [fetchComTimeout]);
 
   /**
@@ -428,13 +420,12 @@ export function IntimacoesPage() {
           console.log(`[AASP] ${dataStr}: ${total} intimações em ${totalPags} páginas.`);
           for (let pag = 2; pag <= totalPags; pag++) {
             try {
+              const chave = aaspKeyRef.current;
               const fmt = fmtPreferidoRef.current || "ISO";
               const [a, m, d] = dataStr.split("-");
               const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
-              const chave = aaspKeyRef.current;
-              const qs2 = new URLSearchParams({ chave, data: dataParam, pagina: String(pag) }).toString();
-              const endpoint2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs2}`;
-              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(endpoint2)}`, 12000);
+              const endpoint2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${encodeURIComponent(dataParam)}&pagina=${pag}`;
+              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(endpoint2)}`, 20000);
               const raw2 = JSON.parse(await resp2.text());
               todasItens = [...todasItens, ...normalizar(raw2)];
               console.log(`[AASP] Pág ${pag}/${totalPags}: +${normalizar(raw2).length}`);
