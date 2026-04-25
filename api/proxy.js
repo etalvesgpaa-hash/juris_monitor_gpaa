@@ -50,11 +50,13 @@ module.exports = function handler(req, res) {
     return res.status(403).json({ error: 'Domínio não autorizado: ' + hostname, allowed: ALLOWED });
   }
 
-  // Remove _t (cache-busting)
-  const sp = new URLSearchParams(search.replace(/^\?/, ''));
-  sp.delete('_t');
-  const cleanSearch = sp.toString() ? '?' + sp.toString() : '';
-  const cleanPath   = pathname + cleanSearch;
+  // Remove _t (cache-busting) sem reprocessar o search com URLSearchParams
+  // (URLSearchParams re-encoda %2F → %252F, quebrando datas DD/MM/YYYY)
+  const rawSearch = search.replace(/^\?/, '');
+  const cleanSearch = rawSearch
+    ? '?' + rawSearch.split('&').filter(function(p) { return !p.startsWith('_t='); }).join('&')
+    : '';
+  const cleanPath = pathname + cleanSearch;
 
   const isPost = req.method === 'POST';
   let bodyToSend = '';

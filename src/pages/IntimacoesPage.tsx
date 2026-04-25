@@ -340,14 +340,24 @@ export function IntimacoesPage() {
 
   /**
    * aaspFetchRaw — chama /api/proxy com fallback para proxies públicos em dev.
-   * Idêntico ao aaspFetch() do projeto de referência.
+   *
+   * ATENÇÃO — encoding da data:
+   * A data no formato BR (DD/MM/YYYY) contém barras "/".
+   * Se usarmos URLSearchParams, ele encoda "/" → "%2F".
+   * Depois, encodeURIComponent da URL inteira encoda "%" → "%25", resultando em "%252F".
+   * O proxy decodifica uma vez: "%252F" → "%2F" — e a AASP recebe "%2F" em vez de "/", gerando erro 500.
+   *
+   * Solução: montar a URL da AASP com encodeURIComponent APENAS na chave
+   * (que pode ter caracteres especiais), e a data concatenada RAW (sem encode extra).
+   * O encodeURIComponent único acontece no parâmetro ?url= do proxy,
+   * que o proxy decodifica uma vez, entregando a URL correta para a AASP.
    */
   const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
     const chave = aaspKeyRef.current;
     if (!chave) throw new Error("Chave AASP não configurada.");
 
-    const qs = new URLSearchParams({ chave, data: dataParam }).toString();
-    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
+    // Monta a URL da AASP: chave encodada, data concatenada SEM encode extra
+    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
 
     // Lista de proxies — tenta em ordem, igual ao projeto de referência
     const proxies = [
@@ -454,8 +464,8 @@ export function IntimacoesPage() {
               const fmt = fmtPreferidoRef.current || "ISO";
               const [a, m, d] = dataStr.split("-");
               const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
-              const qs2 = new URLSearchParams({ chave, data: dataParam, pagina: String(pag) }).toString();
-              const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs2}`;
+              // data concatenada RAW — sem URLSearchParams para evitar double-encoding
+              const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}&pagina=${pag}`;
               const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(aaspUrl2)}`, 20000);
               const raw2 = JSON.parse(await resp2.text());
               todasItens = [...todasItens, ...normalizar(raw2)];
