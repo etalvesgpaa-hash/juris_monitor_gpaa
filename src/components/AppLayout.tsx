@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { TopNav } from "./TopNav";
 import { BottomNav } from "./BottomNav";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -16,6 +17,9 @@ export type PageId = "dashboard" | "processos" | "intimacoes" | "notificacoes" |
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const { user, signOut } = useAuth();
+
+  // ✅ Busca automática de intimações logo após o login (uma vez por sessão)
+  useAutoFetchIntimacoes();
 
   const renderPage = () => {
     switch (activePage) {
