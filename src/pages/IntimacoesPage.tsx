@@ -304,10 +304,11 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
-  // ── Formato de data preferido — detectado pelo diagnóstico/testar, persiste em localStorage
-  const fmtPreferidoRef = useRef<"ISO" | "BR">(
-    (localStorage.getItem("jurismonitor_aasp_fmt") as "ISO" | "BR") || "ISO"
+  // ── Formato de data — detectado automaticamente na primeira busca e salvo
+  const fmtPreferidoRef = useRef<"ISO" | "BR" | null>(
+    (localStorage.getItem("jurismonitor_aasp_fmt") as "ISO" | "BR") || null
   );
+  const detectandoFmtRef = useRef(false);
 
   /** fetchComTimeout — idêntico ao fetchWithTimeout do projeto de referência */
   const fetchComTimeout = useCallback((url: string, ms: number): Promise<Response> => {
@@ -319,8 +320,11 @@ export function IntimacoesPage() {
     ]);
   }, []);
 
-  /** aaspFetch — idêntico ao do projeto de referência: tenta /api/proxy → corsproxy → allorigins */
-  const aaspFetch = useCallback(async (dataParam: string): Promise<unknown> => {
+  /**
+   * aaspFetchRaw — faz uma chamada ao proxy com dataParam já formatado.
+   * Igual ao aaspFetch() do projeto de referência.
+   */
+  const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
     const chave = aaspKeyRef.current;
     if (!chave) throw new Error("Chave AASP não configurada.");
 
@@ -342,7 +346,6 @@ export function IntimacoesPage() {
         const text = await resp.text();
         if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
         try { return JSON.parse(text); } catch (_) {}
-        // allorigins encapsula em { contents: "..." }
         try { const w = JSON.parse(text); if ((w as any)?.contents) return JSON.parse((w as any).contents); } catch (_) {}
         erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`);
       } catch (e: any) {
@@ -352,14 +355,52 @@ export function IntimacoesPage() {
     throw new Error("Todos os proxies falharam:\n" + erros.join("\n"));
   }, [fetchComTimeout]);
 
-  /** Converte dataStr YYYY-MM-DD para o formato preferido pela API */
-  const toDataParam = useCallback((dataStr: string): string => {
-    if (fmtPreferidoRef.current === "BR") {
-      const [a, m, d] = dataStr.split("-");
-      return `${d}/${m}/${a}`;
+  /**
+   * detectarFormato — testa ISO vs BR no primeiro dia útil e salva o resultado.
+   * Idêntico ao testarAasp() do projeto de referência.
+   */
+  const detectarFormato = useCallback(async (dataStr: string): Promise<"ISO" | "BR"> => {
+    const [a, m, d] = dataStr.split("-");
+    const fmtISO = dataStr;                    // YYYY-MM-DD
+    const fmtBR  = `${d}/${m}/${a}`;          // DD/MM/YYYY
+
+    const [resISO, resBR] = await Promise.all([
+      aaspFetchRaw(fmtISO).catch(() => null),
+      aaspFetchRaw(fmtBR).catch(() => null),
+    ]);
+
+    const listaISO = normalizar(resISO);
+    const listaBR  = normalizar(resBR);
+
+    const fmt = listaBR.length >= listaISO.length ? "BR" : "ISO";
+    localStorage.setItem("jurismonitor_aasp_fmt", fmt);
+    fmtPreferidoRef.current = fmt;
+    console.log(`[AASP] Formato detectado: ${fmt} (ISO: ${listaISO.length}, BR: ${listaBR.length})`);
+    return fmt;
+  }, [aaspFetchRaw]);
+
+  /**
+   * aaspFetch — converte dataStr para o formato correto e chama aaspFetchRaw.
+   * Se o formato ainda não foi detectado, detecta agora (igual ao projeto de referência).
+   */
+  const aaspFetch = useCallback(async (dataStr: string): Promise<unknown> => {
+    // Detecta formato na primeira chamada se ainda não detectado
+    if (!fmtPreferidoRef.current && !detectandoFmtRef.current) {
+      detectandoFmtRef.current = true;
+      await detectarFormato(dataStr);
+      detectandoFmtRef.current = false;
     }
-    return dataStr; // ISO
-  }, []);
+
+    // Converte para o formato correto
+    const fmt = fmtPreferidoRef.current || "ISO";
+    let dataParam = dataStr;
+    if (fmt === "BR") {
+      const [a, m, d] = dataStr.split("-");
+      dataParam = `${d}/${m}/${a}`;
+    }
+
+    return aaspFetchRaw(dataParam);
+  }, [aaspFetchRaw, detectarFormato]);
 
   /** Busca intimações de um dia — com suporte a paginação igual ao projeto de referência */
   const buscarDia = useCallback(
@@ -368,16 +409,16 @@ export function IntimacoesPage() {
 
       let raw: unknown;
       try {
-        raw = await aaspFetch(toDataParam(dataStr));
+        raw = await aaspFetch(dataStr);
       } catch (err: any) {
         if (!silencioso) console.warn(`[AASP] buscarDia ${dataStr}:`, err.message);
         return [];
       }
 
-      // Suporte a paginação (igual a aaspGetIntimacoes do projeto de referência)
+      // Suporte a paginação — igual a aaspGetIntimacoes() do projeto de referência
       const info: any = (!Array.isArray(raw) && raw && typeof raw === "object") ? raw : null;
-      const total = info?.TotalRegistros ?? info?.totalRegistros ?? info?.Total ?? info?.total ?? null;
-      const tamPag = info?.TamanhoPagina ?? info?.tamanhoPagina ?? info?.PageSize ?? info?.pageSize ?? null;
+      const total   = info?.TotalRegistros ?? info?.totalRegistros ?? info?.Total ?? info?.total ?? null;
+      const tamPag  = info?.TamanhoPagina  ?? info?.tamanhoPagina  ?? info?.PageSize ?? info?.pageSize ?? null;
 
       let todasItens = normalizar(raw);
 
@@ -387,21 +428,23 @@ export function IntimacoesPage() {
           console.log(`[AASP] ${dataStr}: ${total} intimações em ${totalPags} páginas.`);
           for (let pag = 2; pag <= totalPags; pag++) {
             try {
-              const qs2 = new URLSearchParams({ chave: aaspKeyRef.current, data: toDataParam(dataStr), pagina: String(pag) }).toString();
+              const fmt = fmtPreferidoRef.current || "ISO";
+              const [a, m, d] = dataStr.split("-");
+              const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
+              const chave = aaspKeyRef.current;
+              const qs2 = new URLSearchParams({ chave, data: dataParam, pagina: String(pag) }).toString();
               const endpoint2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs2}`;
-              const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint2)}`;
-              const resp2 = await fetchComTimeout(proxyUrl, 12000);
-              const txt2 = await resp2.text();
-              const raw2 = JSON.parse(txt2);
+              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(endpoint2)}`, 12000);
+              const raw2 = JSON.parse(await resp2.text());
               todasItens = [...todasItens, ...normalizar(raw2)];
-              console.log(`[AASP] Página ${pag}/${totalPags}: +${normalizar(raw2).length} (total: ${todasItens.length})`);
-            } catch (e) { break; }
+              console.log(`[AASP] Pág ${pag}/${totalPags}: +${normalizar(raw2).length}`);
+            } catch (_) { break; }
           }
         }
       }
 
       if (todasItens.length === 0) {
-        console.warn(`[AASP] Sem intimações em ${dataStr}. Raw:`, JSON.stringify(raw).slice(0, 300));
+        console.warn(`[AASP] ${dataStr} sem intimações. Raw:`, JSON.stringify(raw).slice(0, 300));
         return [];
       }
 
@@ -426,7 +469,7 @@ export function IntimacoesPage() {
       if (!silencioso) toast.success(`${arr.length} intimação(ões) em ${fmtData(dataStr)}`);
       return arr;
     },
-    [aaspFetch, toDataParam, fetchComTimeout]
+    [aaspFetch, fetchComTimeout]
   );
 
   /** Atualizar (últimos 7 dias úteis) — busca SEQUENCIAL igual ao projeto de referência */
