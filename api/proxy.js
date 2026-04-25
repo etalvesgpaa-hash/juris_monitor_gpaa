@@ -25,15 +25,10 @@ module.exports = function handler(req, res) {
     return res.status(400).json({ error: 'Parâmetro "url" obrigatório.' });
   }
 
-  // Decodifica até não ter mais %25 (double-encoding)
-  // Ex: %252F → %2F → /
+  // Decodifica o parâmetro url= uma única vez (ele vem encodado pelo frontend)
   let decoded = targetUrl;
   try {
-    // Decodifica no máximo 2 vezes para evitar loop infinito
-    for (let i = 0; i < 2; i++) {
-      if (!decoded.includes('%25')) break;
-      decoded = decodeURIComponent(decoded);
-    }
+    decoded = decodeURIComponent(targetUrl);
   } catch (_) { decoded = targetUrl; }
 
   // Valida hostname

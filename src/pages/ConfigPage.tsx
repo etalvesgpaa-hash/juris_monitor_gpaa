@@ -240,7 +240,8 @@ export function ConfigPage() {
       }
 
       async function fetchRaw(dataParam: string): Promise<any> {
-        const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
+        const qs = new URLSearchParams({ chave, data: dataParam }).toString();
+        const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
         const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
         const r = await fetchComTimeout(proxyUrl, 20000);
         const txt = await r.text();
@@ -366,7 +367,8 @@ export function ConfigPage() {
     }
 
     async function fetchRaw(dataParam: string): Promise<any> {
-      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
+      const qs = new URLSearchParams({ chave, data: dataParam }).toString();
+      const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
       try {
         const r = await fetchComTimeout(proxyUrl, 20000);
