@@ -304,97 +304,129 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
-  /** Busca intimações de um dia */
+  // ── Formato de data preferido — detectado pelo diagnóstico/testar, persiste em localStorage
+  const fmtPreferidoRef = useRef<"ISO" | "BR">(
+    (localStorage.getItem("jurismonitor_aasp_fmt") as "ISO" | "BR") || "ISO"
+  );
+
+  /** fetchComTimeout — idêntico ao fetchWithTimeout do projeto de referência */
+  const fetchComTimeout = useCallback((url: string, ms: number): Promise<Response> => {
+    return Promise.race([
+      fetch(url, { headers: { Accept: "application/json" } }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
+      ),
+    ]);
+  }, []);
+
+  /** aaspFetch — idêntico ao do projeto de referência: tenta /api/proxy → corsproxy → allorigins */
+  const aaspFetch = useCallback(async (dataParam: string): Promise<unknown> => {
+    const chave = aaspKeyRef.current;
+    if (!chave) throw new Error("Chave AASP não configurada.");
+
+    // NUNCA envia diferencial — queremos sempre a lista completa do dia
+    const qs = new URLSearchParams({ chave, data: dataParam }).toString();
+    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
+
+    const proxies = [
+      { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
+      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+    ];
+
+    const erros: string[] = [];
+    for (const p of proxies) {
+      try {
+        const resp = await fetchComTimeout(p.url, 12000);
+        if (!resp.ok) { erros.push(`${p.nome}: HTTP ${resp.status}`); continue; }
+        const text = await resp.text();
+        if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
+        try { return JSON.parse(text); } catch (_) {}
+        // allorigins encapsula em { contents: "..." }
+        try { const w = JSON.parse(text); if ((w as any)?.contents) return JSON.parse((w as any).contents); } catch (_) {}
+        erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`);
+      } catch (e: any) {
+        erros.push(`${p.nome}: ${e.message}`);
+      }
+    }
+    throw new Error("Todos os proxies falharam:\n" + erros.join("\n"));
+  }, [fetchComTimeout]);
+
+  /** Converte dataStr YYYY-MM-DD para o formato preferido pela API */
+  const toDataParam = useCallback((dataStr: string): string => {
+    if (fmtPreferidoRef.current === "BR") {
+      const [a, m, d] = dataStr.split("-");
+      return `${d}/${m}/${a}`;
+    }
+    return dataStr; // ISO
+  }, []);
+
+  /** Busca intimações de um dia — com suporte a paginação igual ao projeto de referência */
   const buscarDia = useCallback(
     async (dataStr: string, silencioso = false): Promise<AaspIntimacao[]> => {
-      // Lê sempre o valor atual via ref, evitando closure obsoleto
-      const chaveAtual = aaspKeyRef.current;
-      if (!chaveAtual) return [];
+      if (!aaspKeyRef.current) return [];
 
-      const params   = new URLSearchParams({ chave: chaveAtual, data: dataStr });
-      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
-
-      // /api/proxy (Vercel serverless) SEMPRE primeiro — igual ao projeto de referência.
-      // Proxies públicos apenas como fallback local/dev.
-      // NÃO usa AbortSignal.timeout (não existe em Node 16) — usa Promise.race igual ao fetchWithTimeout do projeto original.
-      const proxies = [
-        { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-        { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
-        { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
-      ];
-
-      /** fetchWithTimeout idêntico ao do projeto de referência — Promise.race sem AbortSignal */
-      function fetchComTimeout(url: string, ms: number): Promise<Response> {
-        return Promise.race([
-          fetch(url, { headers: { Accept: "application/json" } }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
-          ),
-        ]);
+      let raw: unknown;
+      try {
+        raw = await aaspFetch(toDataParam(dataStr));
+      } catch (err: any) {
+        if (!silencioso) console.warn(`[AASP] buscarDia ${dataStr}:`, err.message);
+        return [];
       }
 
-      const erros: string[] = [];
-      for (const p of proxies) {
-        try {
-          const resp = await fetchComTimeout(p.url, 12000);
-          if (!resp.ok) { erros.push(`${p.nome}: HTTP ${resp.status}`); continue; }
+      // Suporte a paginação (igual a aaspGetIntimacoes do projeto de referência)
+      const info: any = (!Array.isArray(raw) && raw && typeof raw === "object") ? raw : null;
+      const total = info?.TotalRegistros ?? info?.totalRegistros ?? info?.Total ?? info?.total ?? null;
+      const tamPag = info?.TamanhoPagina ?? info?.tamanhoPagina ?? info?.PageSize ?? info?.pageSize ?? null;
 
-          const text = await resp.text();
-          if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
+      let todasItens = normalizar(raw);
 
-          // Detecta respostas de erro de proxy
-          if (
-            text.includes("Free usage is limited") ||
-            text.includes("Error fetching") ||
-            text.includes("rate limit")
-          ) { erros.push(`${p.nome}: limitado — ${text.slice(0, 80)}`); continue; }
-
-          let raw: unknown = null;
-          try { raw = JSON.parse(text); } catch (_) {}
-          // allorigins encapsula em { contents: "..." }
-          if (!raw) {
-            try { const w = JSON.parse(text); if ((w as any)?.contents) raw = JSON.parse((w as any).contents); } catch (_) {}
+      if (total !== null && tamPag && Number(tamPag) > 0) {
+        const totalPags = Math.ceil(Number(total) / Number(tamPag));
+        if (totalPags > 1) {
+          console.log(`[AASP] ${dataStr}: ${total} intimações em ${totalPags} páginas.`);
+          for (let pag = 2; pag <= totalPags; pag++) {
+            try {
+              const qs2 = new URLSearchParams({ chave: aaspKeyRef.current, data: toDataParam(dataStr), pagina: String(pag) }).toString();
+              const endpoint2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs2}`;
+              const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint2)}`;
+              const resp2 = await fetchComTimeout(proxyUrl, 12000);
+              const txt2 = await resp2.text();
+              const raw2 = JSON.parse(txt2);
+              todasItens = [...todasItens, ...normalizar(raw2)];
+              console.log(`[AASP] Página ${pag}/${totalPags}: +${normalizar(raw2).length} (total: ${todasItens.length})`);
+            } catch (e) { break; }
           }
-
-          if (!raw) { erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`); continue; }
-
-          let arr = normalizar(raw);
-          if (arr.length === 0) {
-            console.warn(`[AASP] ${p.nome} respondeu mas sem intimações. Raw:`, JSON.stringify(raw).slice(0, 300));
-            // Não descarta — pode ser dia sem publicação (retorna lista vazia legitimamente)
-            if (!silencioso) toast.info(`Sem intimações em ${fmtData(dataStr)}.`);
-            return [];
-          }
-
-          arr = arr.map((it, idx) => {
-            const id = gerarId(it, idx);
-            const existente = intimacoesRef.current.find((x) => x._id === id);
-            return {
-              ...it,
-              _id: id,
-              _data: dataStr,
-              _lida: existente?._lida || false,
-              _status: existente?._status || "ativa",
-              _resumoIA: existente?._resumoIA || null,
-              _titulo: it.TituloAssunto || it.Assunto || (it as any).titulo || (it as any).cabecalho?.replace(/\r\n|\n/g, "").trim() || "Publicação AASP",
-              _numProc: extrairNumProc(it),
-              _orgaoPublicacao: extrairOrgaoPublicacao(it),
-              _partes: extrairPartes(it),
-              _orgaoJulgador: extrairOrgaoJulgador(it),
-            };
-          });
-
-          if (!silencioso) toast.success(`${arr.length} intimação(ões) encontrada(s) em ${fmtData(dataStr)}`);
-          return arr;
-        } catch (err) {
-          console.error(`[AASP] Erro ao buscar ${dataStr} via ${p.nome}:`, err);
         }
       }
 
-      if (!silencioso) toast.error(`Nenhuma intimação retornada para ${fmtData(dataStr)}.`);
-      return [];
+      if (todasItens.length === 0) {
+        console.warn(`[AASP] Sem intimações em ${dataStr}. Raw:`, JSON.stringify(raw).slice(0, 300));
+        return [];
+      }
+
+      const arr = todasItens.map((it: any, idx: number) => {
+        const id = gerarId(it, idx);
+        const existente = intimacoesRef.current.find((x) => x._id === id);
+        return {
+          ...it,
+          _id: id,
+          _data: dataStr,
+          _lida: existente?._lida || false,
+          _status: existente?._status || "ativa",
+          _resumoIA: existente?._resumoIA || null,
+          _titulo: it.TituloAssunto || it.Assunto || it.titulo || it.cabecalho?.replace(/\r\n|\n/g, "").trim() || "Publicação AASP",
+          _numProc: extrairNumProc(it),
+          _orgaoPublicacao: extrairOrgaoPublicacao(it),
+          _partes: extrairPartes(it),
+          _orgaoJulgador: extrairOrgaoJulgador(it),
+        };
+      });
+
+      if (!silencioso) toast.success(`${arr.length} intimação(ões) em ${fmtData(dataStr)}`);
+      return arr;
     },
-    [] // sem dependências: aaspKey e intimacoes são lidos via refs (aaspKeyRef / intimacoesRef)
+    [aaspFetch, toDataParam, fetchComTimeout]
   );
 
   /** Atualizar (últimos 7 dias úteis) — busca SEQUENCIAL igual ao projeto de referência */

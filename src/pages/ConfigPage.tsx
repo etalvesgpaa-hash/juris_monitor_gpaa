@@ -37,10 +37,16 @@ export function ConfigPage() {
   const [testingGroq, setTestingGroq] = useState(false);
 
   // Estado do diagnóstico AASP
-  type DiagRow = { data: string; diaSemana: string; retorno: string; quantidade: number; jsonPreview: string; erro?: string };
+  type DiagRow = {
+    data: string; diaSemana: string; retorno: string; quantidade: number;
+    jsonPreview: string; erro?: string;
+    rawObj?: any; // objeto raw completo para envelope/campos
+  };
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagRows, setDiagRows] = useState<DiagRow[]>([]);
   const [diagJsonAberto, setDiagJsonAberto] = useState<string | null>(null);
+  const [diagFmtDetectado, setDiagFmtDetectado] = useState<string>("");
+  const [diagStatus, setDiagStatus] = useState<string>("");
 
   useEffect(() => {
     if (!user) return;
@@ -226,78 +232,77 @@ export function ConfigPage() {
     try {
       const chave = apiKeys.aasp_chave.trim();
 
-      // Gera os últimos 7 dias úteis para testar (igual ao projeto de referência)
-      const diasUteis: string[] = [];
-      for (let i = 0; diasUteis.length < 7 && i < 14; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        if (d.getDay() === 0 || d.getDay() === 6) continue;
-        const ano = d.getFullYear();
-        const mes = String(d.getMonth() + 1).padStart(2, "0");
-        const dia = String(d.getDate()).padStart(2, "0");
-        diasUteis.push(`${ano}-${mes}-${dia}`);
-      }
-
-      /** fetchWithTimeout idêntico ao projeto de referência */
       function fetchComTimeout(url: string, ms: number): Promise<Response> {
         return Promise.race([
           fetch(url, { headers: { Accept: "application/json" } }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
-          ),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)),
         ]);
       }
 
-      async function fetchRaw(dataStr: string): Promise<any> {
-        const qs = new URLSearchParams({ chave, data: dataStr }).toString();
+      async function fetchRaw(dataParam: string): Promise<any> {
+        const qs = new URLSearchParams({ chave, data: dataParam }).toString();
         const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
         const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
-        const resp = await fetchComTimeout(proxyUrl, 20000);
-        const txt = await resp.text();
+        const r = await fetchComTimeout(proxyUrl, 20000);
+        const txt = await r.text();
         try { return JSON.parse(txt); } catch { return { _parseError: txt.slice(0, 200) }; }
       }
 
-      const erros: string[] = [];
-      let totalIntimacoes = 0;
-      let diasComDados = 0;
-
-      // Testa sequencialmente (igual ao projeto de referência) para evitar rate limiting
-      for (const dia of diasUteis) {
-        try {
-          const raw = await fetchRaw(dia);
-          if (raw?._parseError) { erros.push(`${dia}: JSON inválido`); continue; }
-
-          const lista = Array.isArray(raw) ? raw
-            : (raw?.Intimacoes ?? raw?.intimacoes ?? raw?.Data ?? []);
-
-          if (Array.isArray(lista) && lista.length > 0) {
-            totalIntimacoes += lista.length;
-            diasComDados++;
-          }
-        } catch (e: any) {
-          erros.push(`${dia}: ${e.message}`);
-        }
+      function aaspNorm(raw: any): any[] {
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.Intimacoes)) return raw.Intimacoes;
+        if (Array.isArray(raw?.Data)) return raw.Data;
+        if (Array.isArray(raw?.intimacoes)) return raw.intimacoes;
+        for (const v of Object.values(raw || {})) { if (Array.isArray(v)) return v as any[]; }
+        return [];
       }
 
-      if (erros.length === diasUteis.length) {
-        throw new Error(
-          `Falha em todos os dias testados:\n` + erros.join("\n") + "\n\n" +
-          "Verifique se sua chave AASP é válida em minha.aasp.org.br → Meu Painel → Intimações → API"
-        );
+      // Gera últimos 7 dias úteis
+      const diasUteis: Date[] = [];
+      for (let i = 0; diasUteis.length < 7 && i < 14; i++) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        if (d.getDay() !== 0 && d.getDay() !== 6) diasUteis.push(d);
+      }
+
+      // ── Testa ISO vs BR no primeiro dia útil (igual ao projeto de referência) ──
+      const d0 = diasUteis[0];
+      const fmtISO = d0.toISOString().split("T")[0];
+      const fmtBR  = `${String(d0.getDate()).padStart(2,"0")}/${String(d0.getMonth()+1).padStart(2,"0")}/${d0.getFullYear()}`;
+
+      const [resISO, resBR] = await Promise.all([fetchRaw(fmtISO), fetchRaw(fmtBR)]);
+      const listaISO = aaspNorm(resISO);
+      const listaBR  = aaspNorm(resBR);
+
+      const usarBR = listaBR.length >= listaISO.length;
+      const fmtLabel = usarBR ? "DD/MM/YYYY" : "YYYY-MM-DD";
+
+      // Persiste o formato correto para a IntimacoesPage usar
+      localStorage.setItem("jurismonitor_aasp_fmt", usarBR ? "BR" : "ISO");
+
+      // ── Busca os demais dias com o formato correto ──
+      let total = (usarBR ? listaBR : listaISO).length;
+      let diasComDados = total > 0 ? 1 : 0;
+
+      for (let i = 1; i < diasUteis.length; i++) {
+        const d = diasUteis[i];
+        const param = usarBR
+          ? `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`
+          : d.toISOString().split("T")[0];
+        try {
+          const raw = await fetchRaw(param);
+          const lista = aaspNorm(raw);
+          if (lista.length > 0) { total += lista.length; diasComDados++; }
+          await new Promise(r => setTimeout(r, 300));
+        } catch {}
       }
 
       toast({
         title: "✅ AASP conectada!",
-        description: `${totalIntimacoes} intimação(ões) encontrada(s) em ${diasComDados} de ${diasUteis.length} dias úteis testados.`,
+        description: `Formato: ${fmtLabel} · ${total} intimação(ões) em ${diasComDados}/7 dias úteis`,
       });
 
     } catch (err: any) {
-      console.error("Erro detalhado AASP:", err);
-      toast({
-        title: "❌ Erro ao conectar com AASP",
-        description: err.message?.slice(0, 400) ?? "Falha desconhecida ao testar conexão",
-        variant: "destructive",
-      });
+      toast({ title: "❌ Erro ao conectar com AASP", description: err.message?.slice(0, 400), variant: "destructive" });
     } finally {
       setTestingAasp(false);
     }
@@ -349,71 +354,111 @@ export function ConfigPage() {
     setDiagLoading(true);
     setDiagRows([]);
     setDiagJsonAberto(null);
-
-    // Gera últimos 10 dias úteis com data local
-    function dataLocalStr(d: Date) {
-      const a = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const dia = String(d.getDate()).padStart(2, "0");
-      return `${a}-${m}-${dia}`;
-    }
-    const diasUteis: string[] = [];
-    const cur = new Date();
-    while (diasUteis.length < 10) {
-      const dow = cur.getDay();
-      if (dow !== 0 && dow !== 6) diasUteis.push(dataLocalStr(cur));
-      cur.setDate(cur.getDate() - 1);
-    }
+    setDiagFmtDetectado("");
+    setDiagStatus("Detectando formato de data aceito pela API...");
 
     const chave = apiKeys.aasp_chave.trim();
 
-    // Busca SEQUENCIAL — evita rate limiting no /api/proxy
+    function fetchComTimeout(url: string, ms: number): Promise<Response> {
+      return Promise.race([
+        fetch(url, { headers: { Accept: "application/json" } }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms)),
+      ]);
+    }
+
+    async function fetchRaw(dataParam: string): Promise<any> {
+      const qs = new URLSearchParams({ chave, data: dataParam }).toString();
+      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
+      try {
+        const r = await fetchComTimeout(proxyUrl, 20000);
+        const txt = await r.text();
+        try { return { ok: true, raw: JSON.parse(txt), status: r.status }; }
+        catch { return { ok: false, raw: null, status: r.status, text: txt.slice(0, 300) }; }
+      } catch (e: any) {
+        return { ok: false, raw: null, status: 0, text: e.message };
+      }
+    }
+
+    function aaspNorm(raw: any): any[] {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw?.Intimacoes)) return raw.Intimacoes;
+      if (Array.isArray(raw?.Data)) return raw.Data;
+      if (Array.isArray(raw?.intimacoes)) return raw.intimacoes;
+      for (const v of Object.values(raw)) { if (Array.isArray(v)) return v as any[]; }
+      return [];
+    }
+
+    // Gera últimos 10 dias úteis
+    const diasUteis: Date[] = [];
+    const cur = new Date();
+    while (diasUteis.length < 10) {
+      if (cur.getDay() !== 0 && cur.getDay() !== 6) diasUteis.push(new Date(cur));
+      cur.setDate(cur.getDate() - 1);
+    }
+
+    // ── Detecta formato ISO vs BR no primeiro dia ──
+    const d0 = diasUteis[0];
+    const fmtISO0 = d0.toISOString().split("T")[0];
+    const fmtBR0  = `${String(d0.getDate()).padStart(2,"0")}/${String(d0.getMonth()+1).padStart(2,"0")}/${d0.getFullYear()}`;
+
+    setDiagStatus(`Testando formatos ISO (${fmtISO0}) e BR (${fmtBR0})...`);
+    const [resISO0, resBR0] = await Promise.all([fetchRaw(fmtISO0), fetchRaw(fmtBR0)]);
+    const listaISO0 = aaspNorm(resISO0.raw);
+    const listaBR0  = aaspNorm(resBR0.raw);
+
+    const usarBR = listaBR0.length >= listaISO0.length;
+    const fmtLabel = usarBR ? "DD/MM/YYYY (BR)" : "YYYY-MM-DD (ISO)";
+    localStorage.setItem("jurismonitor_aasp_fmt", usarBR ? "BR" : "ISO");
+    setDiagFmtDetectado(fmtLabel);
+    setDiagStatus(`Formato detectado: ${fmtLabel}. Buscando 10 dias úteis...`);
+
+    function toParam(d: Date): string {
+      if (usarBR) return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+      return d.toISOString().split("T")[0];
+    }
+
+    // ── Busca todos os 10 dias sequencialmente ──
     const resultados: DiagRow[] = [];
 
-    for (const dataStr of diasUteis) {
-      const [ano, mes, dia] = dataStr.split("-");
-      const diaSemana = new Date(`${dataStr}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+    for (let i = 0; i < diasUteis.length; i++) {
+      const d = diasUteis[i];
+      const iso = d.toISOString().split("T")[0];
+      const [ano, mes, dia] = iso.split("-");
       const dataFmt = `${dia}/${mes}/${ano}`;
+      const diaSemana = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
 
-      const params = new URLSearchParams({ chave, data: dataStr });
-      const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${params}`;
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
+      setDiagStatus(`Buscando ${dataFmt} (${i+1}/10)...`);
 
-      try {
-        const resp = await Promise.race([
-          fetch(proxyUrl, { headers: { Accept: "application/json" } }),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000)),
-        ]);
-        const text = await resp.text();
+      const res = i === 0
+        ? (usarBR ? resBR0 : resISO0)
+        : await fetchRaw(toParam(d));
 
-        let raw: any = null;
-        try { raw = JSON.parse(text); } catch { /* ok */ }
+      const lista = aaspNorm(res.raw);
 
-        const lista = raw
-          ? (Array.isArray(raw) ? raw : (raw?.Intimacoes ?? raw?.intimacoes ?? raw?.Data ?? []))
-          : [];
+      let retorno = "Sem dados";
+      let erro: string | undefined;
+      if (!res.ok && res.status === 0) { retorno = "Erro de conexão"; erro = res.text; }
+      else if (!res.ok) { retorno = `HTTP ${res.status}`; erro = res.text; }
+      else if (lista.length > 0) { retorno = "Intimações"; }
 
-        resultados.push({
-          data: dataFmt,
-          diaSemana,
-          retorno: Array.isArray(lista) && lista.length > 0 ? "Intimações" : "Sem dados",
-          quantidade: Array.isArray(lista) ? lista.length : 0,
-          jsonPreview: JSON.stringify(raw, null, 2).slice(0, 3000),
-        });
-      } catch (e: any) {
-        resultados.push({
-          data: dataFmt,
-          diaSemana,
-          retorno: "Erro",
-          quantidade: 0,
-          jsonPreview: "",
-          erro: e.message,
-        });
-      }
+      resultados.push({
+        data: dataFmt,
+        diaSemana,
+        retorno,
+        quantidade: lista.length,
+        jsonPreview: JSON.stringify(res.raw, null, 2).slice(0, 4000),
+        rawObj: res.raw,
+        erro,
+      });
+
+      if (i < diasUteis.length - 1) await new Promise(r => setTimeout(r, 300));
     }
 
     setDiagRows(resultados);
     setDiagLoading(false);
+    setDiagStatus("");
   };
 
   const getConnectionStatus = () => {
@@ -839,13 +884,30 @@ export function ConfigPage() {
               </Alert>
             )}
 
+            {/* Status em tempo real */}
+            {diagLoading && diagStatus && (
+              <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground animate-pulse">
+                <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                {diagStatus}
+              </div>
+            )}
+
+            {/* Formato detectado */}
+            {diagFmtDetectado && !diagLoading && (
+              <div className="mb-4 flex items-center gap-2 text-sm px-3 py-2 rounded-lg" style={{ background: "rgba(26,107,58,0.1)", border: "1px solid rgba(26,107,58,0.3)" }}>
+                <span className="text-green-700 font-bold">✅ Formato de data detectado:</span>
+                <span className="font-mono font-bold">{diagFmtDetectado}</span>
+                <span className="text-muted-foreground text-xs ml-1">(salvo e aplicado automaticamente nas buscas)</span>
+              </div>
+            )}
+
             {diagRows.length > 0 && (
               <>
                 <div className="overflow-x-auto rounded-lg border border-border mb-4">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/40 border-b border-border">
                       <tr>
-                        {["DATA ENVIADA PARA API", "RETORNO", "QUANTIDADE", "ENVELOPE JSON"].map((h) => (
+                        {["DATA ENVIADA PARA API", "RETORNO", "QUANTIDADE"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                             {h}
                           </th>
@@ -862,29 +924,17 @@ export function ConfigPage() {
                           <td className="px-4 py-3">
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                               row.retorno === "Intimações"
-                                ? "bg-green-ok/10 text-green-ok"
-                                : row.retorno === "Erro"
-                                ? "bg-red-alert/10 text-red-alert"
+                                ? "bg-green-500/10 text-green-700"
+                                : row.retorno.startsWith("Erro") || row.retorno.startsWith("HTTP")
+                                ? "bg-red-500/10 text-red-600"
                                 : "bg-muted text-muted-foreground"
                             }`}>
                               {row.retorno}
                             </span>
-                            {row.erro && <span className="text-xs text-red-alert ml-2">{row.erro}</span>}
+                            {row.erro && <span className="text-xs text-red-500 ml-2 opacity-70">{row.erro.slice(0, 60)}</span>}
                           </td>
                           <td className="px-4 py-3 font-mono text-xs font-bold text-accent">
                             {row.quantidade > 0 ? row.quantidade : "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            {row.jsonPreview ? (
-                              <button
-                                onClick={() => setDiagJsonAberto(diagJsonAberto === row.data ? null : row.data)}
-                                className="text-xs text-accent hover:underline font-semibold"
-                              >
-                                {diagJsonAberto === row.data ? "▲ Fechar" : "▼ Ver JSON"}
-                              </button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
                           </td>
                         </tr>
                       ))}
@@ -892,20 +942,83 @@ export function ConfigPage() {
                   </table>
                 </div>
 
-                {/* JSON expandido */}
-                {diagJsonAberto && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        Envelope JSON — {diagJsonAberto}
-                      </span>
-                      <button onClick={() => setDiagJsonAberto(null)} className="text-xs text-muted-foreground hover:text-foreground">✕ Fechar</button>
+                {/* Envelope JSON — mostra o rawObj do 1º dia com dados */}
+                {(() => {
+                  const primeiroCom = diagRows.find(r => r.quantidade > 0 && r.rawObj);
+                  const primeiroErro = diagRows.find(r => r.rawObj);
+                  const alvo = primeiroCom || primeiroErro;
+                  if (!alvo?.rawObj) return null;
+
+                  const lista: any[] = Array.isArray(alvo.rawObj) ? alvo.rawObj
+                    : (alvo.rawObj?.Intimacoes ?? alvo.rawObj?.Data ?? alvo.rawObj?.intimacoes ?? []);
+                  const primeiroItem = lista[0];
+                  const isArray = Array.isArray(alvo.rawObj);
+                  const chaves = !isArray ? Object.keys(alvo.rawObj).filter(k => !Array.isArray((alvo.rawObj as any)[k])) : [];
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Envelope / wrapper */}
+                      <div className="rounded-xl border border-border overflow-hidden">
+                        <div className="bg-muted/40 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-widest text-muted-foreground">
+                          ▼ Envelope JSON (estrutura do retorno da API) — {alvo.data}
+                        </div>
+                        <div className="p-4 text-xs font-mono text-foreground space-y-1">
+                          {isArray ? (
+                            <div><span className="text-accent">tipo:</span> Array direto com <span className="font-bold">{lista.length}</span> item(s)</div>
+                          ) : (
+                            chaves.map(k => (
+                              <div key={k}>
+                                <span className="text-accent">{k}:</span>{" "}
+                                <span className="opacity-80">{JSON.stringify((alvo.rawObj as any)[k]).slice(0, 120)}</span>
+                              </div>
+                            ))
+                          )}
+                          {lista.length > 0 && (
+                            <div><span className="text-accent">{isArray ? "length" : (alvo.rawObj?.Intimacoes ? "Intimacoes" : alvo.rawObj?.Data ? "Data" : "lista")}:</span>{" "}
+                              <span className="font-bold text-green-600">[{lista.length} item(s)]</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Campos do 1º item */}
+                      {primeiroItem && (
+                        <div className="rounded-xl border border-border overflow-hidden">
+                          <div className="bg-muted/40 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-widest text-muted-foreground">
+                            ▼ Campos do 1º item com dados ({alvo.data})
+                          </div>
+                          <div className="p-4 text-xs font-mono text-foreground space-y-1 max-h-64 overflow-y-auto">
+                            {Object.entries(primeiroItem).map(([k, v]) => (
+                              <div key={k}>
+                                <span className="text-accent">{k}:</span>{" "}
+                                <span className="opacity-80 break-all">
+                                  {typeof v === "string"
+                                    ? v.replace(/\r\n|\n/g, "↵").slice(0, 200)
+                                    : JSON.stringify(v).slice(0, 200)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* JSON bruto expansível */}
+                      <div className="rounded-xl border border-border overflow-hidden">
+                        <button
+                          className="w-full bg-muted/40 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-widest text-muted-foreground text-left hover:bg-muted/60"
+                          onClick={() => setDiagJsonAberto(diagJsonAberto === alvo.data ? null : alvo.data)}
+                        >
+                          {diagJsonAberto === alvo.data ? "▲" : "▼"} JSON bruto do dia com dados ({alvo.data} · {alvo.jsonPreview.length} chars)
+                        </button>
+                        {diagJsonAberto === alvo.data && (
+                          <pre className="p-4 text-[0.68rem] text-foreground overflow-x-auto max-h-96 leading-relaxed whitespace-pre-wrap break-all bg-muted/20">
+                            {alvo.jsonPreview}
+                          </pre>
+                        )}
+                      </div>
                     </div>
-                    <pre className="text-[0.7rem] text-foreground overflow-x-auto max-h-80 leading-relaxed whitespace-pre-wrap break-all">
-                      {diagRows.find(r => r.data === diagJsonAberto)?.jsonPreview}
-                    </pre>
-                  </div>
-                )}
+                  );
+                })()}
               </>
             )}
 
@@ -913,6 +1026,7 @@ export function ConfigPage() {
               <div className="text-center py-12 text-muted-foreground">
                 <FlaskConical className="h-10 w-10 mx-auto mb-3 opacity-30" />
                 <p className="text-sm">Clique em "Executar Diagnóstico" para consultar os últimos 10 dias úteis na API AASP.</p>
+                <p className="text-xs mt-1 opacity-60">O diagnóstico detecta automaticamente o formato de data aceito pela API e salva para uso nas buscas.</p>
               </div>
             )}
           </div>
