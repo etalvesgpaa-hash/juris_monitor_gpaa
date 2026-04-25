@@ -483,12 +483,25 @@ export function IntimacoesPage() {
       const arr = todasItens.map((it: any, idx: number) => {
         const id = gerarId(it, idx);
         const existente = intimacoesRef.current.find((x) => x._id === id);
-        // Data real: prioriza jornal.dataDisponibilizacao_Publicacao (campo real da API AASP)
-        const dataReal = (
+
+        // Extrai a data bruta do JSON — pode vir como ISO "2026-04-23T00:00:00", "2026-04-23",
+        // ou BR "23/04/2026". Normaliza SEMPRE para YYYY-MM-DD para bater com dataStr.
+        const dataBruta = (
           (it.jornal && (it.jornal.dataDisponibilizacao_Publicacao || it.jornal.dataTratamento)) ||
           it.DataDisponibilizacao || it.dataDisponibilizacao ||
           it.Data || it.data || ""
-        ).slice(0, 10) || dataStr;
+        ) as string;
+
+        let dataReal = dataStr; // fallback seguro
+        if (dataBruta) {
+          const isoMatch = dataBruta.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          const brMatch  = dataBruta.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+          if (isoMatch) {
+            dataReal = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`; // já é YYYY-MM-DD
+          } else if (brMatch) {
+            dataReal = `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`; // DD/MM/YYYY → YYYY-MM-DD
+          }
+        }
         return {
           ...it,
           _id: id,
