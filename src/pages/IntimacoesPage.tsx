@@ -86,17 +86,35 @@ function extrairNumerosCNJ(texto: string): string[] {
   return (texto.match(regex) || []).map((m) => m.replace(/\D/g, ""));
 }
 
-/** Gera ID determinístico para uma intimação */
+/** Gera ID para uma intimação — prioriza codigoRelacionamento (campo real e único da API AASP) */
 function gerarId(intim: AaspIntimacao, idx = 0): string {
+  // Prioridade 1: codigoRelacionamento — campo real e único da API AASP
+  const codRel = (intim as any).codigoRelacionamento || (intim as any).CodigoRelacionamento;
+  if (codRel && String(codRel) !== "0") return "aasp_" + String(codRel);
+
+  // Prioridade 2: outros IDs explícitos da API
+  const idApi =
+    (intim as any).Id || (intim as any).id ||
+    (intim as any).CodigoIntimacao || (intim as any).codigoIntimacao ||
+    (intim as any).IdIntimacao || (intim as any).idIntimacao ||
+    (intim as any).Protocolo || (intim as any).protocolo;
+  if (idApi && String(idApi) !== "0") return String(idApi);
+
+  // Fallback determinístico — usa campos reais do JSON AASP (jornal.* + numeroUnicoProcesso)
+  const jornal = (intim as any).jornal;
   const numProc =
+    (intim as any).numeroUnicoProcesso || (intim as any).NumeroUnicoProcesso ||
     intim.NumeroProcesso || intim.numeroProcesso || intim.Processo || intim.processo || "";
   const data =
-    intim.DataDisponibilizacao || intim.dataDisponibilizacao || intim.Data || intim.data || "";
-  const titulo = intim.TituloAssunto || intim.Assunto || "";
-  const jornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
-  const meio = (intim.Meio || intim.meio || "") as string;
-  const texto = (intim.textoPublicacao || intim.Texto || intim.texto || "").slice(0, 120);
-  const raw = `${numProc}|${String(data).slice(0, 10)}|${titulo}|${jornal}|${meio}|${idx}|${texto}`;
+    (jornal && (jornal.dataDisponibilizacao_Publicacao || jornal.dataTratamento)) ||
+    intim.DataDisponibilizacao || intim.dataDisponibilizacao || intim.Data || (intim as any).data || "";
+  const jornalNome = (jornal && jornal.nomeJornal) || intim.NomeJornal || intim.nomeJornal || "";
+  const numPub = (intim as any).numeroPublicacao || (intim as any).NumeroPublicacao || "";
+  const numArq = (intim as any).numeroArquivo || (intim as any).NumeroArquivo || "";
+  const titulo = (intim as any).titulo || intim.TituloAssunto || intim.Assunto || "";
+  const texto = (intim.textoPublicacao || intim.Texto || intim.texto || "").slice(0, 400);
+
+  const raw = `${numProc}|${String(data).slice(0, 19)}|${jornalNome}|${numPub}|${numArq}|${titulo}|${idx}|${texto}`;
   let hash = 5381;
   for (let i = 0; i < raw.length; i++) hash = ((hash << 5) + hash + raw.charCodeAt(i)) | 0;
   return "det_" + Math.abs(hash).toString(36);
@@ -149,8 +167,8 @@ function extrairOrgaoPublicacao(intim: AaspIntimacao): string {
   if (jornal?.nomeJornal) return String(jornal.nomeJornal).toUpperCase();
 
   // Fallbacks para outros formatos
-  const nomeJornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
   const meio = (intim.Meio || intim.meio || "") as string;
+  const nomeJornal = (intim.NomeJornal || intim.nomeJornal || "") as string;
   if (meio) return meio.toUpperCase();
   if (nomeJornal) return nomeJornal.toUpperCase();
 
@@ -321,36 +339,40 @@ export function IntimacoesPage() {
   }, []);
 
   /**
-   * aaspFetchRaw — chama /api/proxy sem double-encoding.
-   * A data (ISO ou BR) é concatenada direto na query string sem encode extra,
-   * pois encodeURIComponent numa data com '/' já gera %2F, e encodar de novo
-   * geraria %252F que a API da AASP rejeita com HTTP 500.
+   * aaspFetchRaw — chama /api/proxy com fallback para proxies públicos em dev.
+   * Idêntico ao aaspFetch() do projeto de referência.
    */
   const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
     const chave = aaspKeyRef.current;
     if (!chave) throw new Error("Chave AASP não configurada.");
 
-    // Monta a URL da AASP — data concatenada sem encode extra
-    const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
+    const qs = new URLSearchParams({ chave, data: dataParam }).toString();
+    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs}`;
 
-    // Encoda a URL completa uma única vez para o parâmetro ?url= do proxy
-    const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+    // Lista de proxies — tenta em ordem, igual ao projeto de referência
+    const proxies = [
+      { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
+      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
+      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+    ];
 
     console.log(`[AASP] Buscando: data="${dataParam}"`);
 
-    try {
-      const resp = await fetchComTimeout(proxyUrl, 20000);
-      const text = await resp.text();
-      if (!text || text.trim() === "") throw new Error("Resposta vazia do proxy");
-      const parsed = JSON.parse(text);
-      // Detecta erro retornado pela própria AASP
-      if (parsed?.error?.code === "500" || parsed?.erro === true) {
-        throw new Error(`AASP retornou erro: ${JSON.stringify(parsed).slice(0, 200)}`);
+    const erros: string[] = [];
+    for (const p of proxies) {
+      try {
+        const resp = await fetchComTimeout(p.url, 20000);
+        if (!resp.ok) { erros.push(`${p.nome}: HTTP ${resp.status}`); continue; }
+        const text = await resp.text();
+        if (!text || text.trim() === "") { erros.push(`${p.nome}: resposta vazia`); continue; }
+        try { return JSON.parse(text); } catch (_) {}
+        try { const w = JSON.parse(text); if ((w as any)?.contents) return JSON.parse((w as any).contents); } catch (_) {}
+        erros.push(`${p.nome}: JSON inválido — ${text.slice(0, 120)}`);
+      } catch (e: any) {
+        erros.push(`${p.nome}: ${e.message}`);
       }
-      return parsed;
-    } catch (e: any) {
-      throw new Error(`/api/proxy: ${e.message}`);
     }
+    throw new Error(`Todos os proxies falharam:\n${erros.join("\n")}`);
   }, [fetchComTimeout]);
 
   /**
@@ -359,9 +381,10 @@ export function IntimacoesPage() {
    */
   const detectarFormato = useCallback(async (dataStr: string): Promise<"ISO" | "BR"> => {
     const [a, m, d] = dataStr.split("-");
-    const fmtISO = dataStr;                    // YYYY-MM-DD
-    const fmtBR  = `${d}/${m}/${a}`;          // DD/MM/YYYY
+    const fmtISO = dataStr;           // YYYY-MM-DD
+    const fmtBR  = `${d}/${m}/${a}`; // DD/MM/YYYY
 
+    // Usa aaspFetchRaw que já passa a data como string (sem reencodar)
     const [resISO, resBR] = await Promise.all([
       aaspFetchRaw(fmtISO).catch(() => null),
       aaspFetchRaw(fmtBR).catch(() => null),
@@ -379,6 +402,7 @@ export function IntimacoesPage() {
 
   /**
    * aaspFetch — converte dataStr para o formato correto e chama aaspFetchRaw.
+   * Usa URLSearchParams para evitar problema de double-encoding com datas BR (DD/MM/YYYY).
    * Se o formato ainda não foi detectado, detecta agora (igual ao projeto de referência).
    */
   const aaspFetch = useCallback(async (dataStr: string): Promise<unknown> => {
@@ -430,7 +454,8 @@ export function IntimacoesPage() {
               const fmt = fmtPreferidoRef.current || "ISO";
               const [a, m, d] = dataStr.split("-");
               const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
-              const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}&pagina=${pag}`;
+              const qs2 = new URLSearchParams({ chave, data: dataParam, pagina: String(pag) }).toString();
+              const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?${qs2}`;
               const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(aaspUrl2)}`, 20000);
               const raw2 = JSON.parse(await resp2.text());
               todasItens = [...todasItens, ...normalizar(raw2)];
@@ -448,10 +473,16 @@ export function IntimacoesPage() {
       const arr = todasItens.map((it: any, idx: number) => {
         const id = gerarId(it, idx);
         const existente = intimacoesRef.current.find((x) => x._id === id);
+        // Data real: prioriza jornal.dataDisponibilizacao_Publicacao (campo real da API AASP)
+        const dataReal = (
+          (it.jornal && (it.jornal.dataDisponibilizacao_Publicacao || it.jornal.dataTratamento)) ||
+          it.DataDisponibilizacao || it.dataDisponibilizacao ||
+          it.Data || it.data || ""
+        ).slice(0, 10) || dataStr;
         return {
           ...it,
           _id: id,
-          _data: dataStr,
+          _data: dataReal,
           _lida: existente?._lida || false,
           _status: existente?._status || "ativa",
           _resumoIA: existente?._resumoIA || null,
