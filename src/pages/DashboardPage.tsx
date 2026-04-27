@@ -147,19 +147,25 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
     }
   };
 
+  // Verifica se AASP tem dados carregados
+  const aaspConectada = intimacoes.length > 0;
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Visão geral dos seus processos e prazos</p>
+
+      {/* ── Banners de status das APIs ── */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-ok/[0.08] border border-green-ok/20 text-green-ok whitespace-nowrap">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse inline-block" />
+          Datajud CNJ — conectado e operacional
+        </div>
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${ aaspConectada ? "bg-green-ok/[0.08] border border-green-ok/20 text-green-ok" : "bg-muted border border-border text-muted-foreground" }`}>
+          <span className={`w-1.5 h-1.5 rounded-full inline-block ${ aaspConectada ? "bg-green-ok animate-pulse" : "bg-muted-foreground" }`} />
+          AASP — {aaspConectada ? `${intimacoes.length} intimação(ões) carregada(s)` : "aguardando sincronização"}
+        </div>
       </div>
 
-      {/* Status Banner */}
-      <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold mb-5 bg-green-ok/[0.08] border border-green-ok/20 text-green-ok">
-        <span>✅</span> API Datajud conectada e operacional
-      </div>
-
-      {/* Stats Grid */}
+      {/* ── Stats Grid ── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <StatCard label="Processos" value={processos.length} sub="cadastrados" accent="gold" />
         <StatCard label="Pendentes" value={pendentes} sub="revisão humana" accent="green" />
@@ -168,7 +174,67 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <StatCard label="Tarefas Vencidas" value={tarefasVencidas.length} sub="prazo expirado" accent="red" />
       </div>
 
-      {/* Últimas Intimações + Agenda de Tarefas */}
+      {/* ── Gráficos (primeiro!) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+            <div className="w-[18px] h-0.5 bg-accent" />
+            Processos por Status
+          </div>
+          <ResponsiveContainer width="100%" height={150}>
+            <PieChart>
+              <Pie
+                data={[
+                  { name: "Ativo",     value: processos.filter((p) => p.status === "ativo").length,     color: "#10b981" },
+                  { name: "Arquivado", value: processos.filter((p) => p.status === "arquivado").length, color: "#6b7280" },
+                  { name: "Pendente",  value: processos.filter((p) => p.status === "pendente").length,  color: "#f59e0b" },
+                ]}
+                cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2} dataKey="value"
+              >
+                {[{ color: "#10b981" }, { color: "#6b7280" }, { color: "#f59e0b" }].map((entry, index) => (
+                  <Cell key={index} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: "12px" }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+            <div className="w-[18px] h-0.5 bg-accent" />
+            Intimações por Mês
+          </div>
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={intimacoesPorMes.length > 0 ? intimacoesPorMes : [{ month: "—", total: 0 }]}>
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="total" fill="#c9a84c" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-card rounded-xl p-5 border border-border">
+          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+            <div className="w-[18px] h-0.5 bg-accent" />
+            Tarefas — Concluídas x Abertas
+          </div>
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={tarefasPorMes.length > 0 ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]}>
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: "12px" }} />
+              <Line type="monotone" dataKey="Concluídas" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="Abertas"    stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 4 }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── Últimas Intimações + Agenda de Tarefas ── */}
       <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-3.5 mb-5">
         {/* Últimas Intimações */}
         <div className="bg-card rounded-xl p-5 border border-border">
@@ -269,82 +335,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </div>
         </div>
       )}
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            Processos por Status
-          </div>
-          <ResponsiveContainer width="100%" height={150}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: "Ativo", value: processos.filter((p) => p.status === "ativo").length, color: "#10b981" },
-                  { name: "Arquivado", value: processos.filter((p) => p.status === "arquivado").length, color: "#6b7280" },
-                  { name: "Pendente", value: processos.filter((p) => p.status === "pendente").length, color: "#f59e0b" },
-                ]}
-                cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2} dataKey="value"
-              >
-                {[
-                  { color: "#10b981" }, { color: "#6b7280" }, { color: "#f59e0b" },
-                ].map((entry, index) => (
-                  <Cell key={index} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            Intimações por Mês
-          </div>
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={intimacoesPorMes.length > 0 ? intimacoesPorMes : [{ month: "—", total: 0 }]}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="total" fill="#c9a84c" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-card rounded-xl p-5 border border-border">
-          <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            Tarefas — Concluídas x Abertas
-          </div>
-          <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={tarefasPorMes.length > 0 ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line 
-                type="monotone" 
-                dataKey="Concluídas" 
-                stroke="#10b981" 
-                strokeWidth={2}
-                dot={{ fill: "#10b981", r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="Abertas" 
-                stroke="#f59e0b" 
-                strokeWidth={2}
-                dot={{ fill: "#f59e0b", r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
 
       {/* Modal de Criação de Tarefas */}
       <CreateTaskModal
