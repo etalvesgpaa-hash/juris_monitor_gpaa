@@ -60,9 +60,15 @@
     @apply border-border;
   }
 
+  html {
+    overflow-x: hidden; /* impede scroll horizontal ao aumentar zoom */
+  }
+
   body {
     @apply bg-background text-foreground font-body antialiased;
     min-height: 100vh;
+    overflow-x: hidden; /* reforço: sem scroll horizontal */
+    width: 100%;
   }
 
   body::before {
