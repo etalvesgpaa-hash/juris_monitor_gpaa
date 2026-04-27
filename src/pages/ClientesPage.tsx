@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import type { Cliente } from "../hooks/useClientes";
 import { supabase } from "@/lib/supabase";
+import { INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { useAuth } from "@/hooks/useAuth";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -320,7 +321,7 @@ export function ClientesPage() {
   const buscarResumoIA = async (numProc: string): Promise<string | null> => {
     try {
       // Busca intimações do localStorage (mesma chave usada em IntimacoesPage)
-      const storeKey = `jurismonitor_intimacoes_${user?.id}`;
+      const storeKey = INTIMACOES_STORE_KEY;
       const stored = localStorage.getItem(storeKey);
       if (!stored) return null;
 
@@ -487,7 +488,7 @@ export function ClientesPage() {
       const idsEnviados = new Set((jaEnviadas || []).map((n: any) => n.intimacao_id).filter(Boolean));
 
       // Busca intimações do localStorage
-      const storeKey = `jurismonitor_intimacoes_${user?.id}`;
+      const storeKey = INTIMACOES_STORE_KEY;
       const stored = localStorage.getItem(storeKey);
       if (!stored) {
         toast({ title: "Nenhuma intimação no cache local. Sincronize primeiro.", variant: "default" });
