@@ -55,12 +55,7 @@ module.exports = function handler(req, res) {
   const cleanSearch = rawSearch
     ? '?' + rawSearch.replace(/^\?/, '').split('&').filter(function(p) { return !p.startsWith('_t='); }).join('&')
     : '';
-  // CRÍTICO: a AASP espera barras reais em parâmetros de data (ex: data=28/04/2026).
-  // O frontend encoda a URL com encodeURIComponent, que transforma "/" em "%2F".
-  // O rawSearch preserva esse %2F intacto. Aqui decodificamos APENAS o search string
-  // (não o pathname) para que a AASP receba as barras reais e não retorne HTTP 500.
-  const cleanSearchDecoded = cleanSearch.replace(/%2F/gi, '/');
-  const cleanPath = pathname + cleanSearchDecoded;
+  const cleanPath = pathname + cleanSearch;
 
   const isPost = req.method === 'POST';
   let bodyToSend = '';
