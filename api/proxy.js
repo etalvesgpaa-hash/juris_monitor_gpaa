@@ -1,8 +1,11 @@
-// proxy.js — Vercel Serverless Function
-// Usa módulo nativo https/http do Node — compatível com Node 16, 18 e 20.
-
-const https = require('https');
-const http  = require('http');
+/**
+ * /api/proxy — Vercel Serverless Function
+ *
+ * Usa fetch() nativo (Node 18+) em vez de https.request()
+ * para garantir compatibilidade com qualquer runtime da Vercel.
+ *
+ * Uso: GET /api/proxy?url=https%3A%2F%2Fintimacaoapi.aasp.org.br%2F...
+ */
 
 const ALLOWED = [
   'intimacaoapi.aasp.org.br',
@@ -12,112 +15,75 @@ const ALLOWED = [
   'api.groq.com',
 ];
 
-module.exports = function handler(req, res) {
+export default async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-  let targetUrl = req.query.url;
+  // Extrai e decodifica a URL alvo
+  let targetUrl = req.query?.url || new URL(req.url, 'http://localhost').searchParams.get('url');
   if (!targetUrl) {
     return res.status(400).json({ error: 'Parâmetro "url" obrigatório.' });
   }
 
-  // Decodifica o parâmetro url= uma única vez (ele vem encodado pelo frontend via encodeURIComponent)
   let decoded = targetUrl;
   try { decoded = decodeURIComponent(targetUrl); } catch (_) {}
 
-  // ─── CRÍTICO: NÃO usar new URL() aqui ───────────────────────────────────────
-  // new URL() normaliza %2F → "/" no search, quebrando datas DD/MM/YYYY passadas
-  // como data=24%2F04%2F2026. Em vez disso, extraímos hostname e path com regex,
-  // preservando o search string exatamente como veio.
-  // ─────────────────────────────────────────────────────────────────────────────
-  const urlMatch = decoded.match(/^(https?):\/\/([^\/]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
-  if (!urlMatch) {
+  // Valida hostname sem usar new URL() (evita normalizar %2F em barras)
+  const hostMatch = decoded.match(/^https?:\/\/([^/?#]+)/);
+  if (!hostMatch) {
     return res.status(400).json({ error: 'URL inválida.', url: decoded.slice(0, 200) });
   }
-  const protocol = urlMatch[1] + ':';
-  const hostname  = urlMatch[2].split(':')[0]; // remove porta se houver
-  const portStr   = urlMatch[2].includes(':') ? urlMatch[2].split(':')[1] : null;
-  const pathname  = urlMatch[3] || '/';
-  const rawSearch = urlMatch[4] || ''; // preservado EXATAMENTE — sem re-encode
+  const hostname = hostMatch[1].split(':')[0];
 
-  // Valida hostname
-  const isAllowed = ALLOWED.some(function(d) {
-    return hostname === d || hostname.endsWith('.' + d);
-  });
+  const isAllowed = ALLOWED.some(d => hostname === d || hostname.endsWith('.' + d));
   if (!isAllowed) {
-    return res.status(403).json({ error: 'Domínio não autorizado: ' + hostname, allowed: ALLOWED });
+    return res.status(403).json({ error: 'Domínio não autorizado.', hostname, allowed: ALLOWED });
   }
 
-  // Remove _t (cache-busting) preservando o restante do search INTACTO
-  const cleanSearch = rawSearch
-    ? '?' + rawSearch.replace(/^\?/, '').split('&').filter(function(p) { return !p.startsWith('_t='); }).join('&')
-    : '';
-  const cleanPath = pathname + cleanSearch;
+  // Remove cache-busting _t= da URL alvo
+  const cleanUrl = decoded.replace(/([?&])_t=[^&]*/g, '').replace(/([?&])$/, '');
 
-  const isPost = req.method === 'POST';
-  let bodyToSend = '';
-  if (isPost) {
-    if (typeof req.body === 'string') bodyToSend = req.body;
-    else if (req.body && typeof req.body === 'object') bodyToSend = JSON.stringify(req.body);
+  console.log('[proxy] →', cleanUrl.replace(/chave=[^&]+/, 'chave=***'));
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 50000);
+
+    const upstream = await fetch(cleanUrl, {
+      method: req.method === 'POST' ? 'POST' : 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0; +https://jurismonitoredson.vercel.app)',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        ...(req.headers['authorization'] ? { 'Authorization': req.headers['authorization'] } : {}),
+      },
+      signal: controller.signal,
+      ...(req.method === 'POST' && req.body ? { body: JSON.stringify(req.body) } : {}),
+    });
+
+    clearTimeout(timer);
+
+    const text = await upstream.text();
+    const ct = upstream.headers.get('content-type') || 'application/json';
+
+    res.setHeader('Content-Type', ct.includes('json') ? 'application/json' : ct);
+    res.setHeader('X-Upstream-Status', String(upstream.status));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status');
+
+    return res.status(upstream.status).send(text);
+
+  } catch (err) {
+    const isAbort = err.name === 'AbortError';
+    console.error('[proxy] Erro:', err.message);
+    return res.status(isAbort ? 504 : 502).json({
+      error: isAbort ? 'Timeout — API não respondeu em 50s.' : 'Erro ao chamar API externa.',
+      detail: err.message,
+    });
   }
-
-  const reqHeaders = {
-    'Accept': 'application/json',
-    'User-Agent': 'JurisMonitor/1.0',
-  };
-  if (req.headers['authorization']) reqHeaders['Authorization'] = req.headers['authorization'];
-  if (isPost && bodyToSend) {
-    reqHeaders['Content-Type']   = 'application/json';
-    reqHeaders['Content-Length'] = Buffer.byteLength(bodyToSend);
-  }
-
-  const defaultPort = protocol === 'https:' ? 443 : 80;
-  const port = portStr ? parseInt(portStr, 10) : defaultPort;
-
-  const lib = protocol === 'https:' ? https : http;
-  const options = {
-    hostname,
-    port,
-    path: cleanPath,
-    method: req.method,
-    headers: reqHeaders,
-    timeout: 50000,
-  };
-
-  // Log para depuração — mostra o path exato que será enviado à AASP
-  console.log('[proxy] Chamando:', hostname + cleanPath);
-
-  return new Promise(function(resolve) {
-    const upstream = lib.request(options, function(upstreamRes) {
-      let data = '';
-      upstreamRes.on('data', function(chunk) { data += chunk; });
-      upstreamRes.on('end', function() {
-        const ct = upstreamRes.headers['content-type'] || 'application/json';
-        res.setHeader('Content-Type', ct.includes('json') ? 'application/json' : ct);
-        res.setHeader('X-Upstream-Status', String(upstreamRes.statusCode));
-        res.setHeader('X-Upstream-Body-Preview', encodeURIComponent(data.slice(0, 300)));
-        res.setHeader('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Body-Preview');
-        res.status(upstreamRes.statusCode).send(data);
-        resolve();
-      });
-    });
-
-    upstream.on('timeout', function() {
-      upstream.destroy();
-      res.status(504).json({ error: 'Timeout', detail: 'API não respondeu em 50s.' });
-      resolve();
-    });
-
-    upstream.on('error', function(err) {
-      console.error('[proxy] Erro:', err.code, err.message);
-      res.status(500).json({ error: 'Erro ao chamar API externa.', detail: err.message, code: err.code || '' });
-      resolve();
-    });
-
-    if (isPost && bodyToSend) upstream.write(bodyToSend);
-    upstream.end();
-  });
-};
+}

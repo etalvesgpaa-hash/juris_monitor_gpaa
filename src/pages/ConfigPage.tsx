@@ -351,8 +351,6 @@ export function ConfigPage() {
   };
 
   const runDiagnostico = async () => {
-    // Usa o estado React OU o localStorage como fallback (garante que funcione
-    // mesmo que o Supabase ainda não tenha carregado o estado)
     const chaveResolvida = apiKeys.aasp_chave.trim() || localStorage.getItem("jurismonitor_aasp_key")?.trim() || "";
 
     if (!chaveResolvida) {
@@ -363,7 +361,7 @@ export function ConfigPage() {
     setDiagRows([]);
     setDiagJsonAberto(null);
     setDiagFmtDetectado("");
-    setDiagStatus("Detectando formato de data aceito pela API...");
+    setDiagStatus("Testando conectividade do servidor com a AASP...");
 
     const chave = chaveResolvida;
 
@@ -374,15 +372,41 @@ export function ConfigPage() {
       ]);
     }
 
+    // ── Teste de conectividade via /api/diag-aasp ─────────────────────────────
+    // Este endpoint faz a chamada DIRETAMENTE do servidor Vercel para a AASP
+    // e retorna diagnóstico detalhado, incluindo se a AASP bloqueou o IP da Vercel.
+    try {
+      const diagRes = await fetchComTimeout(`/api/diag-aasp?chave=${encodeURIComponent(chave)}`, 30000);
+      const diagData = await diagRes.json().catch(() => null);
+      if (diagData) {
+        const regiao = diagData.vercel_region || "desconhecida";
+        const brOk = diagData.resultados?.BR?.ok;
+        const brStatus = diagData.resultados?.BR?.httpStatus;
+        const brQtd = diagData.resultados?.BR?.quantidadeIntimacoes ?? 0;
+        if (!brOk && brStatus === 403) {
+          setDiagStatus(`⚠️ Servidor Vercel (região: ${regiao}) está bloqueado pela AASP (HTTP 403). Buscando mesmo assim via proxy...`);
+        } else if (brOk) {
+          setDiagStatus(`✅ Servidor conectado à AASP (região: ${regiao}). ${brQtd} intimação(ões) hoje. Buscando 7 dias...`);
+          setDiagFmtDetectado(diagData.formatoRecomendado === "BR" ? "DD/MM/YYYY (BR)" : "YYYY-MM-DD (ISO)");
+          localStorage.setItem("jurismonitor_aasp_fmt", diagData.formatoRecomendado);
+        } else {
+          setDiagStatus(`⚠️ Servidor (${regiao}): HTTP ${brStatus}. Buscando via proxy...`);
+        }
+      }
+    } catch (_) {
+      setDiagStatus("Teste de conectividade falhou. Tentando busca direta...");
+    }
+
+    await new Promise(r => setTimeout(r, 800));
+
     async function fetchRaw(dataParam: string): Promise<any> {
-      // /api/proxy funciona em produção (Vercel Serverless) E em dev local
-      // (roteado pelo proxy do Vite configurado em vite.config.ts → AASP direto)
       const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
       try {
         const r = await fetchComTimeout(proxyUrl, 25000);
         const txt = await r.text();
-        if (!txt?.trim()) return { ok: false, raw: null, status: r.status, text: "Resposta vazia", proxy: "/api/proxy" };
+        if (!txt?.trim()) return { ok: false, raw: null, status: r.status, text: `Resposta vazia (HTTP ${r.status})`, proxy: "/api/proxy" };
+        if (!r.ok) return { ok: false, raw: null, status: r.status, text: `HTTP ${r.status}: ${txt.slice(0, 200)}`, proxy: "/api/proxy" };
         try {
           const parsed = JSON.parse(txt);
           return { ok: true, raw: parsed, status: r.status, proxy: "/api/proxy" };

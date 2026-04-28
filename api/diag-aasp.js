@@ -1,83 +1,85 @@
-const https = require('https');
-const { URL } = require('url');
+/**
+ * /api/diag-aasp?chave=SUA_CHAVE
+ * Testa a conectividade com a API AASP diretamente do servidor Vercel.
+ * Usa fetch() nativo (Node 18+).
+ */
 
-module.exports = function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
-  const chave = req.query.chave;
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const chave = req.query?.chave;
   if (!chave) {
-    return res.status(400).json({ error: 'Parâmetro "chave" obrigatório. Ex: /api/diag-aasp?chave=SUA_CHAVE' });
+    return res.status(400).json({ error: 'Parâmetro "chave" obrigatório.' });
   }
 
-  const hoje = new Date().toISOString().split('T')[0];
-  const params = new URLSearchParams({ chave: chave.trim(), data: hoje });
-  const endpoint = 'https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?' + params.toString();
-  const parsedUrl = new URL(endpoint);
+  // Data de hoje no horário de Brasília
+  const now = new Date();
+  const brt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const d  = String(brt.getDate()).padStart(2, '0');
+  const m  = String(brt.getMonth() + 1).padStart(2, '0');
+  const a  = brt.getFullYear();
+  const hojeBR  = `${d}/${m}/${a}`;
+  const hojeISO = `${a}-${m}-${d}`;
 
-  const resultado = {
-    timestamp: new Date().toISOString(),
-    vercel_region: process.env.VERCEL_REGION || process.env.AWS_REGION || 'desconhecida',
-    endpoint_testado: endpoint.replace(chave.trim(), '***'),
-    data_testada: hoje,
-  };
+  const BASE = 'https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json';
 
-  const options = {
-    hostname: parsedUrl.hostname,
-    port: 443,
-    path: parsedUrl.pathname + parsedUrl.search,
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json, text/plain, */*',
-      'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0)',
-      'Accept-Language': 'pt-BR,pt;q=0.9',
-    },
-    timeout: 25000,
-  };
-
-  const start = Date.now();
-
-  const upstream = https.request(options, function(upstreamRes) {
-    let data = '';
-    upstreamRes.on('data', function(chunk) { data += chunk; });
-    upstreamRes.on('end', function() {
-      resultado.status_http = upstreamRes.statusCode;
-      resultado.tempo_ms = Date.now() - start;
-      resultado.content_type = upstreamRes.headers['content-type'] || '';
-      resultado.body_preview = data.slice(0, 800);
+  async function testar(dataParam) {
+    const url = `${BASE}?chave=${encodeURIComponent(chave.trim())}&data=${dataParam}`;
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const r = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; JurisMonitor/2.0)',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const body = await r.text();
+      const tempo_ms = Date.now() - start;
 
       let parsed = null;
-      try { parsed = JSON.parse(data); } catch (e) {}
+      try { parsed = JSON.parse(body); } catch (_) {}
 
-      const lista = parsed
-        ? (Array.isArray(parsed) ? parsed
-          : (parsed.Intimacoes || parsed.intimacoes || parsed.Data || null))
-        : null;
+      let lista = [];
+      if (parsed) {
+        if (Array.isArray(parsed)) lista = parsed;
+        else for (const v of Object.values(parsed)) { if (Array.isArray(v)) { lista = v; break; } }
+      }
 
-      resultado.intimacoes_encontradas = Array.isArray(lista) ? lista.length : null;
-      resultado.diagnostico = upstreamRes.statusCode === 200
-        ? (Array.isArray(lista) && lista.length > 0
-            ? '✅ Sucesso! ' + lista.length + ' intimação(ões) para hoje.'
-            : '⚠️ API respondeu 200 mas sem intimações. Pode ser normal (sem publicações hoje).')
-        : '❌ API retornou HTTP ' + upstreamRes.statusCode + '. Verifique a chave AASP.';
+      return {
+        dataEnviada: dataParam,
+        httpStatus: r.status,
+        tempo_ms,
+        bodyLength: body.length,
+        bodyPreview: body.slice(0, 400),
+        quantidadeIntimacoes: lista.length,
+        ok: r.ok,
+      };
+    } catch (err) {
+      return {
+        dataEnviada: dataParam,
+        httpStatus: 0,
+        tempo_ms: Date.now() - start,
+        erro: err.message,
+        ok: false,
+      };
+    }
+  }
 
-      res.status(200).json(resultado);
-    });
+  const [resBR, resISO] = await Promise.all([testar(hojeBR), testar(hojeISO)]);
+
+  return res.status(200).json({
+    timestamp: new Date().toISOString(),
+    vercel_region: process.env.VERCEL_REGION || process.env.AWS_REGION || 'desconhecida',
+    hojeBR,
+    hojeISO,
+    formatoRecomendado: resBR.quantidadeIntimacoes >= resISO.quantidadeIntimacoes ? 'BR' : 'ISO',
+    resultados: { BR: resBR, ISO: resISO },
   });
-
-  upstream.on('timeout', function() {
-    upstream.destroy();
-    resultado.erro = 'Timeout (25s)';
-    resultado.diagnostico = '❌ Timeout — a AASP não respondeu em 25s.';
-    res.status(200).json(resultado);
-  });
-
-  upstream.on('error', function(err) {
-    resultado.erro = err.message;
-    resultado.code = err.code || '';
-    resultado.diagnostico = '❌ Erro de conexão: ' + err.message;
-    resultado.sugestao = 'Certifique-se que vercel.json tem "regions": ["gru1"] (São Paulo).';
-    res.status(200).json(resultado);
-  });
-
-  upstream.end();
-};
+}
