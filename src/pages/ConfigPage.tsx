@@ -241,21 +241,15 @@ export function ConfigPage() {
 
       async function fetchRaw(dataParam: string): Promise<any> {
         const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
-        const proxies = [
-          `/api/proxy?url=${encodeURIComponent(aaspUrl)}`,
-          `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}`,
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}`,
-        ];
-        for (const url of proxies) {
-          try {
-            const r = await fetchComTimeout(url, 20000);
-            const txt = await r.text();
-            if (!txt?.trim()) continue;
-            const parsed = JSON.parse(txt);
-            return parsed?.contents ? JSON.parse(parsed.contents) : parsed;
-          } catch (_) {}
+        const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+        try {
+          const r = await fetchComTimeout(proxyUrl, 25000);
+          const txt = await r.text();
+          if (!txt?.trim()) return { _parseError: "Resposta vazia" };
+          return JSON.parse(txt);
+        } catch (e: any) {
+          return { _parseError: e.message };
         }
-        return { _parseError: "Todos os proxies falharam" };
       }
 
       function aaspNorm(raw: any): any[] {
@@ -381,31 +375,23 @@ export function ConfigPage() {
     }
 
     async function fetchRaw(dataParam: string): Promise<any> {
+      // /api/proxy funciona em produção (Vercel Serverless) E em dev local
+      // (roteado pelo proxy do Vite configurado em vite.config.ts → AASP direto)
       const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
-      // Tenta múltiplos proxies — /api/proxy só existe na Vercel (produção)
-      const proxies = [
-        { nome: "/api/proxy",   url: `/api/proxy?url=${encodeURIComponent(aaspUrl)}` },
-        { nome: "corsproxy.io", url: `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}` },
-        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}` },
-      ];
-      const erros: string[] = [];
-      for (const proxy of proxies) {
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
+      try {
+        const r = await fetchComTimeout(proxyUrl, 25000);
+        const txt = await r.text();
+        if (!txt?.trim()) return { ok: false, raw: null, status: r.status, text: "Resposta vazia", proxy: "/api/proxy" };
         try {
-          const r = await fetchComTimeout(proxy.url, 20000);
-          const txt = await r.text();
-          if (!txt?.trim()) { erros.push(`${proxy.nome}: vazio`); continue; }
-          try {
-            const parsed = JSON.parse(txt);
-            const final = parsed?.contents ? JSON.parse(parsed.contents) : parsed;
-            return { ok: true, raw: final, status: r.status, proxy: proxy.nome };
-          } catch {
-            erros.push(`${proxy.nome}: JSON inválido`);
-          }
-        } catch (e: any) {
-          erros.push(`${proxy.nome}: ${e.message}`);
+          const parsed = JSON.parse(txt);
+          return { ok: true, raw: parsed, status: r.status, proxy: "/api/proxy" };
+        } catch {
+          return { ok: false, raw: null, status: r.status, text: `JSON inválido: ${txt.slice(0, 200)}`, proxy: "/api/proxy" };
         }
+      } catch (e: any) {
+        return { ok: false, raw: null, status: 0, text: e.message, proxy: "/api/proxy" };
       }
-      return { ok: false, raw: null, status: 0, text: erros.join(" | ") };
     }
 
     function aaspNorm(raw: any): any[] {
