@@ -357,8 +357,12 @@ export function ConfigPage() {
   };
 
   const runDiagnostico = async () => {
-    if (!apiKeys.aasp_chave) {
-      toast({ title: "Chave AASP não configurada", variant: "destructive" });
+    // Usa o estado React OU o localStorage como fallback (garante que funcione
+    // mesmo que o Supabase ainda não tenha carregado o estado)
+    const chaveResolvida = apiKeys.aasp_chave.trim() || localStorage.getItem("jurismonitor_aasp_key")?.trim() || "";
+
+    if (!chaveResolvida) {
+      toast({ title: "Chave AASP não configurada", description: "Salve a chave AASP na aba API Keys primeiro.", variant: "destructive" });
       return;
     }
     setDiagLoading(true);
@@ -367,7 +371,7 @@ export function ConfigPage() {
     setDiagFmtDetectado("");
     setDiagStatus("Detectando formato de data aceito pela API...");
 
-    const chave = apiKeys.aasp_chave.trim();
+    const chave = chaveResolvida;
 
     function fetchComTimeout(url: string, ms: number): Promise<Response> {
       return Promise.race([
@@ -436,7 +440,7 @@ export function ConfigPage() {
     const fmtLabel = usarBR ? "DD/MM/YYYY (BR)" : "YYYY-MM-DD (ISO)";
     localStorage.setItem("jurismonitor_aasp_fmt", usarBR ? "BR" : "ISO");
     setDiagFmtDetectado(fmtLabel);
-    setDiagStatus(`Formato detectado: ${fmtLabel}. Buscando 10 dias úteis...`);
+    setDiagStatus(`Formato detectado: ${fmtLabel}. Buscando 7 dias úteis...`);
 
     function toParam(d: Date): string {
       if (usarBR) return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
@@ -885,13 +889,13 @@ export function ConfigPage() {
                   Diagnóstico AASP
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Consulta os últimos 10 dias úteis na API AASP e mostra o retorno de cada um
+                  Consulta os últimos 7 dias úteis na API AASP e mostra o retorno de cada um
                 </p>
               </div>
               <Button
                 variant="gold"
                 onClick={runDiagnostico}
-                disabled={diagLoading || !apiKeys.aasp_chave}
+                disabled={diagLoading || (!apiKeys.aasp_chave && !localStorage.getItem("jurismonitor_aasp_key"))}
               >
                 {diagLoading ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Consultando...</>
@@ -901,7 +905,7 @@ export function ConfigPage() {
               </Button>
             </div>
 
-            {!apiKeys.aasp_chave && (
+            {!apiKeys.aasp_chave && !localStorage.getItem("jurismonitor_aasp_key") && (
               <Alert className="mb-4">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>Configure a chave AASP na aba "API Keys" antes de executar o diagnóstico.</AlertDescription>
@@ -927,11 +931,20 @@ export function ConfigPage() {
 
             {diagRows.length > 0 && (
               <>
+                {/* Aviso quando todos os dias deram erro de conexão */}
+                {diagRows.every(r => r.retorno === "Erro de conexão") && (
+                  <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-600">
+                    <strong>⚠️ Todos os proxies falharam.</strong> Detalhes do erro:
+                    <pre className="mt-2 text-xs whitespace-pre-wrap break-all opacity-80">{diagRows[0]?.erro}</pre>
+                    <p className="mt-2 text-xs opacity-70">Em produção (Vercel) o /api/proxy funciona. Em desenvolvimento local, verifique se a rede permite conexões externas.</p>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto rounded-lg border border-border mb-4">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/40 border-b border-border">
                       <tr>
-                        {["DATA ENVIADA PARA API", "RETORNO", "QUANTIDADE"].map((h) => (
+                        {["DATA", "RETORNO", "QTD", "PROXY USADO"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                             {h}
                           </th>
@@ -955,10 +968,17 @@ export function ConfigPage() {
                             }`}>
                               {row.retorno}
                             </span>
-                            {row.erro && <span className="text-xs text-red-500 ml-2 opacity-70">{row.erro.slice(0, 60)}</span>}
+                            {row.erro && (
+                              <span className="block text-[0.65rem] text-red-500 mt-0.5 opacity-70 max-w-[300px] truncate" title={row.erro}>
+                                {row.erro}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 font-mono text-xs font-bold text-accent">
                             {row.quantidade > 0 ? row.quantidade : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-[0.68rem] text-muted-foreground font-mono">
+                            {(row as any).proxy || "—"}
                           </td>
                         </tr>
                       ))}
@@ -1049,7 +1069,7 @@ export function ConfigPage() {
             {diagRows.length === 0 && !diagLoading && (
               <div className="text-center py-12 text-muted-foreground">
                 <FlaskConical className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">Clique em "Executar Diagnóstico" para consultar os últimos 10 dias úteis na API AASP.</p>
+                <p className="text-sm">Clique em "Executar Diagnóstico" para consultar os últimos 7 dias úteis na API AASP.</p>
                 <p className="text-xs mt-1 opacity-60">O diagnóstico detecta automaticamente o formato de data aceito pela API e salva para uso nas buscas.</p>
               </div>
             )}
