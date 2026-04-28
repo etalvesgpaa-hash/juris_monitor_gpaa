@@ -426,10 +426,10 @@ export function IntimacoesPage() {
    * que o proxy decodifica uma vez, entregando a URL correta para a AASP.
    */
   const aaspFetchUrl = useCallback(async (aaspUrl: string): Promise<unknown> => {
+    // Apenas /api/proxy é usado — corsproxy.io está bloqueado pelo CSP do Vercel e
+    // allorigins retorna 522. O fix real está no proxy.js (decodifica %2F → "/" no search string).
     const proxies = [
       { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(aaspUrl)}` },
-      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}` },
-      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}` },
     ];
 
     const erros: string[] = [];
