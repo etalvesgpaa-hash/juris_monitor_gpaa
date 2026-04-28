@@ -122,13 +122,45 @@ function gerarId(intim: AaspIntimacao, idx = 0): string {
 
 /** Normaliza resposta da AASP em array */
 function normalizar(raw: unknown): AaspIntimacao[] {
+  if (!raw) return [];
   if (Array.isArray(raw)) return raw as AaspIntimacao[];
-  if (Array.isArray((raw as any)?.Intimacoes)) return (raw as any).Intimacoes;
-  if (Array.isArray((raw as any)?.Data)) return (raw as any).Data;
-  if (Array.isArray((raw as any)?.intimacoes)) return (raw as any).intimacoes;
-  for (const v of Object.values(raw as object || {})) {
-    if (Array.isArray(v)) return v as AaspIntimacao[];
+
+  const obj = raw as Record<string, unknown>;
+
+  // Campos conhecidos da API AASP (case-sensitive e case-insensitive)
+  const camposConhecidos = [
+    "Intimacoes", "intimacoes",
+    "Data", "data",
+    "Publicacoes", "publicacoes",
+    "Registros", "registros",
+    "Items", "items",
+    "Results", "results",
+    "Result", "result",
+    "Itens", "itens",
+  ];
+  for (const campo of camposConhecidos) {
+    if (Array.isArray(obj[campo])) return obj[campo] as AaspIntimacao[];
   }
+
+  // Fix: varredura genérica — cobre estruturas aninhadas e nomes de campo não documentados.
+  // Percorre um nível de profundidade para encontrar qualquer array de objetos.
+  for (const v of Object.values(obj)) {
+    if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object") {
+      return v as AaspIntimacao[];
+    }
+  }
+
+  // Tenta um nível a mais de profundidade (ex: { resultado: { publicacoes: [...] } })
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const vv of Object.values(v as object)) {
+        if (Array.isArray(vv) && vv.length > 0 && typeof vv[0] === "object") {
+          return vv as AaspIntimacao[];
+        }
+      }
+    }
+  }
+
   return [];
 }
 
@@ -376,7 +408,11 @@ export function IntimacoesPage() {
   }, []);
 
   /**
-   * aaspFetchRaw — chama /api/proxy com fallback para proxies públicos em dev.
+   * aaspFetchUrl — tenta a URL da AASP em TODOS os proxies disponíveis com fallback completo.
+   *
+   * Esta função centraliza o fallback de proxies para ser usada tanto na 1ª página
+   * quanto nas páginas seguintes (paginação) — garantindo que nenhuma página seja
+   * perdida silenciosamente por falha de um proxy específico.
    *
    * ATENÇÃO — encoding da data:
    * A data no formato BR (DD/MM/YYYY) contém barras "/".
@@ -389,21 +425,12 @@ export function IntimacoesPage() {
    * O encodeURIComponent único acontece no parâmetro ?url= do proxy,
    * que o proxy decodifica uma vez, entregando a URL correta para a AASP.
    */
-  const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
-    const chave = aaspKeyRef.current;
-    if (!chave) throw new Error("Chave AASP não configurada.");
-
-    // Monta a URL da AASP: chave encodada, data concatenada SEM encode extra
-    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
-
-    // Lista de proxies — tenta em ordem, igual ao projeto de referência
+  const aaspFetchUrl = useCallback(async (aaspUrl: string): Promise<unknown> => {
     const proxies = [
-      { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(endpoint)}` },
-      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(endpoint)}` },
-      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}` },
+      { nome: "backend (/api/proxy)", url: `/api/proxy?url=${encodeURIComponent(aaspUrl)}` },
+      { nome: "corsproxy.io",         url: `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}` },
+      { nome: "allorigins",           url: `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}` },
     ];
-
-    console.log(`[AASP] Buscando: data="${dataParam}"`);
 
     const erros: string[] = [];
     for (const p of proxies) {
@@ -422,6 +449,18 @@ export function IntimacoesPage() {
     throw new Error(`Todos os proxies falharam:\n${erros.join("\n")}`);
   }, [fetchComTimeout]);
 
+  /** aaspFetchRaw — monta a URL da AASP e delega para aaspFetchUrl (com todos os fallbacks) */
+  const aaspFetchRaw = useCallback(async (dataParam: string): Promise<unknown> => {
+    const chave = aaspKeyRef.current;
+    if (!chave) throw new Error("Chave AASP não configurada.");
+
+    // Monta a URL da AASP: chave encodada, data concatenada SEM encode extra
+    const endpoint = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
+
+    console.log(`[AASP] Buscando: data="${dataParam}"`);
+    return aaspFetchUrl(endpoint);
+  }, [aaspFetchUrl]);
+
   /**
    * detectarFormato — testa ISO vs BR no primeiro dia útil e salva o resultado.
    * Idêntico ao testarAasp() do projeto de referência.
@@ -439,6 +478,13 @@ export function IntimacoesPage() {
 
     const listaISO = normalizar(resISO);
     const listaBR  = normalizar(resBR);
+
+    // Fix: se ambos retornaram 0, não salvar formato — evita fixar "BR" errado
+    // e retornar zero resultados em todas as buscas seguintes
+    if (listaISO.length === 0 && listaBR.length === 0) {
+      console.warn(`[AASP] Não foi possível detectar formato — sem resultados em ambos os formatos. Usando ISO como padrão temporário.`);
+      return "ISO"; // padrão seguro, sem salvar no localStorage
+    }
 
     const fmt = listaBR.length >= listaISO.length ? "BR" : "ISO";
     localStorage.setItem("jurismonitor_aasp_fmt", fmt);
@@ -501,13 +547,20 @@ export function IntimacoesPage() {
               const fmt = fmtPreferidoRef.current || "ISO";
               const [a, m, d] = dataStr.split("-");
               const dataParam = fmt === "BR" ? `${d}/${m}/${a}` : dataStr;
+              // Fix: usa aaspFetchUrl (com fallback em todos os proxies) em vez de
+              // chamar apenas /api/proxy diretamente — evita perder páginas 2, 3, N
+              // silenciosamente quando o proxy principal falha.
               // data concatenada RAW — sem URLSearchParams para evitar double-encoding
               const aaspUrl2 = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}&pagina=${pag}`;
-              const resp2 = await fetchComTimeout(`/api/proxy?url=${encodeURIComponent(aaspUrl2)}`, 20000);
-              const raw2 = JSON.parse(await resp2.text());
-              todasItens = [...todasItens, ...normalizar(raw2)];
-              console.log(`[AASP] Pág ${pag}/${totalPags}: +${normalizar(raw2).length}`);
-            } catch (_) { break; }
+              const raw2 = await aaspFetchUrl(aaspUrl2);
+              const paginaItens = normalizar(raw2);
+              todasItens = [...todasItens, ...paginaItens];
+              console.log(`[AASP] Pág ${pag}/${totalPags}: +${paginaItens.length}`);
+            } catch (e: any) {
+              // Fix: log detalhado em vez de catch silencioso — facilita diagnóstico
+              console.error(`[AASP] Erro ao buscar página ${pag}/${totalPags} de ${dataStr}:`, e.message);
+              break;
+            }
           }
         }
       }
@@ -557,7 +610,7 @@ export function IntimacoesPage() {
       if (!silencioso) toast.success(`${arr.length} intimação(ões) em ${fmtData(dataStr)}`);
       return arr;
     },
-    [aaspFetch, fetchComTimeout]
+    [aaspFetch, aaspFetchUrl, fetchComTimeout]
   );
 
   /** Atualizar (últimos 7 dias úteis) — busca SEQUENCIAL igual ao projeto de referência */
