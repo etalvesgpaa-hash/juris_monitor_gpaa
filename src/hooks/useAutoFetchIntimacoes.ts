@@ -1,14 +1,12 @@
 /**
  * useAutoFetchIntimacoes
  *
- * 1. Busca intimações AASP automaticamente no login (uma vez por userId).
- * 2. Após salvar, cruza com clientes cadastrados e dispara e-mail automático
- *    para cada cliente que:
- *      - tem notificacoes_email = true
- *      - tem e-mail cadastrado
- *      - tem status_monitoramento = "ativo"
- *      - possui número de processo que bate com a intimação nova
- *      - ainda não recebeu notificação desta intimação (cheque via Supabase)
+ * 1. Busca intimações AASP no login (uma vez por userId em memória).
+ * 2. Salva no localStorage E no Supabase → qualquer dispositivo do mesmo
+ *    usuário vê as mesmas intimações.
+ * 3. Ao inicializar, carrega do Supabase se o localStorage local estiver vazio
+ *    (resolve o problema mobile vs desktop).
+ * 4. Após salvar, cruza com clientes e dispara e-mails automáticos.
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -16,10 +14,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-// ── Chave ÚNICA de localStorage — usada em todo o projeto ─────
+// ── Chave ÚNICA de localStorage — exportada para todos os arquivos ──
 export const INTIMACOES_STORE_KEY = "jm_aasp_intimacoes";
 
-interface AaspIntimacao {
+export interface AaspIntimacao {
   _id: string;
   _data: string;
   _lida: boolean;
@@ -33,10 +31,10 @@ interface AaspIntimacao {
   [key: string]: unknown;
 }
 
-// ── Controle de sessão em memória (reset automático no logout) ─
+// ── Controle em memória (reset automático no logout) ──────────
 let ultimoUserIdFetched: string | null = null;
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
 function dataLocalStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
@@ -79,7 +77,8 @@ function normalizar(raw: unknown): any[] {
 
 function extrairNumProc(intim: any): string {
   const regex = /\d{7}[-.]?\d{2}[-.]?\d{4}[-.]?\d{1}[-.]?\d{1,2}[-.]?\d{4,5}/g;
-  const campos = [intim.NumeroProcesso, intim.numeroProcesso, intim.Processo, intim.processo, intim.numeroUnicoProcesso, intim.Texto || intim.texto || ""].filter(Boolean).join(" ");
+  const campos = [intim.NumeroProcesso, intim.numeroProcesso, intim.Processo, intim.processo,
+    intim.numeroUnicoProcesso, intim.Texto || intim.texto || ""].filter(Boolean).join(" ");
   const nums = (campos.match(regex) || []).map((m: string) => m.replace(/\D/g, ""));
   if (!nums.length) return "";
   const n = nums[0];
@@ -118,6 +117,7 @@ function fmtDataBR(iso: string): string {
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
 }
 
+// ── localStorage ─────────────────────────────────────────────
 export function loadStore(): AaspIntimacao[] {
   try { return JSON.parse(localStorage.getItem(INTIMACOES_STORE_KEY) || "[]"); } catch { return []; }
 }
@@ -125,16 +125,79 @@ function saveStore(items: AaspIntimacao[]) {
   localStorage.setItem(INTIMACOES_STORE_KEY, JSON.stringify(items.slice(0, 1000)));
 }
 
-// ── Notificação automática por e-mail ─────────────────────────
-async function dispararNotificacoesAutomaticas(
-  novasIntimacoes: AaspIntimacao[],
-  userId: string
-) {
-  if (novasIntimacoes.length === 0) return;
+// ── Supabase sync ─────────────────────────────────────────────
+/**
+ * Salva/atualiza intimações na tabela `intimacoes` do Supabase.
+ * Usa upsert pelo campo `id` (= _id da intimação AASP).
+ */
+async function syncParaSupabase(items: AaspIntimacao[], userId: string) {
+  if (!items.length) return;
+  const rows = items.map(it => ({
+    id:              it._id,
+    user_id:         userId,
+    origem:          "aasp",
+    data_publicacao: it._data || null,
+    numero_processo: it._numProc || null,
+    tipo:            it._titulo || null,
+    partes:          it._partes || null,
+    orgao_julgador:  it._orgaoJulgador || null,
+    resumo_ia:       it._resumoIA || null,
+    status:          it._status || "ativa",
+    dados_raw:       it as any,
+  }));
 
+  // Upsert em lotes de 50 para não estourar limites
+  for (let i = 0; i < rows.length; i += 50) {
+    await supabase
+      .from("intimacoes")
+      .upsert(rows.slice(i, i + 50), { onConflict: "id" })
+      .then(({ error }) => {
+        if (error) console.warn("[Supabase sync] upsert parcial falhou:", error.message);
+      });
+  }
+}
+
+/**
+ * Carrega intimações do Supabase e preenche o localStorage local.
+ * Chamado quando o localStorage está vazio (ex: primeiro acesso no celular).
+ */
+async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
+  const { data, error } = await supabase
+    .from("intimacoes")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("origem", "aasp")
+    .order("data_publicacao", { ascending: false })
+    .limit(500);
+
+  if (error || !data?.length) return [];
+
+  const items: AaspIntimacao[] = data.map((row: any) => {
+    const raw = (row.dados_raw as AaspIntimacao) || {};
+    return {
+      ...raw,
+      _id:             row.id,
+      _data:           row.data_publicacao || raw._data || "",
+      _lida:           raw._lida || false,
+      _status:         (row.status as any) || "ativa",
+      _resumoIA:       row.resumo_ia || raw._resumoIA || null,
+      _titulo:         row.tipo || raw._titulo || "Publicação AASP",
+      _numProc:        row.numero_processo || raw._numProc || "",
+      _orgaoPublicacao:raw._orgaoPublicacao || "",
+      _partes:         row.partes || raw._partes || "",
+      _orgaoJulgador:  row.orgao_julgador || raw._orgaoJulgador || "",
+    };
+  });
+
+  saveStore(items);
+  return items;
+}
+
+// ── Notificações automáticas por e-mail ──────────────────────
+async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: string) {
+  if (!novas.length) return;
   try {
-    // 1. Busca todos os clientes ativos com e-mail e monitoramento ativo
-    const { data: clientes, error } = await supabase
+    const { data: clientes } = await supabase
       .from("clientes")
       .select("id, nome, email, numeros_processo, notificacoes_email, status_monitoramento")
       .eq("user_id", userId)
@@ -143,115 +206,85 @@ async function dispararNotificacoesAutomaticas(
       .not("email", "is", null)
       .not("numeros_processo", "is", null);
 
-    if (error || !clientes || clientes.length === 0) return;
+    if (!clientes?.length) return;
 
-    // 2. Busca IDs de intimações já notificadas (evita duplicatas)
     const { data: jaEnviadas } = await supabase
       .from("notificacoes_enviadas")
       .select("intimacao_id, cliente_id")
       .eq("user_id", userId)
       .eq("status", "enviado")
-      .in("intimacao_id", novasIntimacoes.map(i => i._id));
+      .in("intimacao_id", novas.map(i => i._id));
 
     const enviados = new Set(
       (jaEnviadas || []).map((n: any) => `${n.cliente_id}::${n.intimacao_id}`)
     );
 
-    // 3. Cruza intimações novas com clientes
-    let totalEmailsEnviados = 0;
+    let totalEnviados = 0;
 
     for (const cliente of clientes) {
       if (!cliente.email || !cliente.numeros_processo?.length) continue;
+      const procLimpas = (cliente.numeros_processo as string[]).map(p => p.replace(/\D/g, ""));
 
-      const procLimpas = (cliente.numeros_processo as string[]).map((p: string) => p.replace(/\D/g, ""));
-
-      for (const intim of novasIntimacoes) {
+      for (const intim of novas) {
         if (!intim._numProc) continue;
-        const intimProcLimpo = intim._numProc.replace(/\D/g, "");
-        if (!intimProcLimpo) continue;
+        const intimLimpo = intim._numProc.replace(/\D/g, "");
+        if (!intimLimpo) continue;
 
-        // Verifica correspondência de número de processo
-        const bate = procLimpas.some(
-          (p: string) => intimProcLimpo.includes(p) || p.includes(intimProcLimpo)
-        );
+        const bate = procLimpas.some(p => intimLimpo.includes(p) || p.includes(intimLimpo));
         if (!bate) continue;
 
-        // Verifica se já foi notificado
         const chave = `${cliente.id}::${intim._id}`;
         if (enviados.has(chave)) continue;
 
-        // 4. Dispara e-mail
         try {
-          const payload = {
-            destinatario: cliente.email,
-            nomeCliente: cliente.nome,
-            numeroProcesso: intim._numProc,
-            dataPublicacao: fmtDataBR(intim._data),
-            assunto: intim._titulo || "Nova Publicação AASP",
-            resumoIA: intim._resumoIA || null,
-            textoCompleto: "",
-          };
-
           const res = await fetch("/api/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+              destinatario:  cliente.email,
+              nomeCliente:   cliente.nome,
+              numeroProcesso: intim._numProc,
+              dataPublicacao: fmtDataBR(intim._data),
+              assunto:       intim._titulo || "Nova Publicação AASP",
+              resumoIA:      intim._resumoIA || null,
+              textoCompleto: "",
+            }),
+          });
+
+          const status = res.ok ? "enviado" : "falha";
+          await supabase.from("notificacoes_enviadas").insert({
+            user_id:        userId,
+            cliente_id:     cliente.id,
+            intimacao_id:   intim._id,
+            numero_processo: intim._numProc || "",
+            assunto:        intim._titulo || "Nova Publicação AASP",
+            resumo_ia:      intim._resumoIA || null,
+            email_destino:  cliente.email,
+            status,
           });
 
           if (res.ok) {
-            // 5. Registra no Supabase
-            await supabase.from("notificacoes_enviadas").insert({
-              user_id: userId,
-              cliente_id: cliente.id,
-              intimacao_id: intim._id,
-              numero_processo: intim._numProc || "",
-              assunto: intim._titulo || "Nova Publicação AASP",
-              resumo_ia: intim._resumoIA || null,
-              email_destino: cliente.email,
-              status: "enviado",
-            });
-
-            // Atualiza última notificação do cliente
-            await supabase
-              .from("clientes")
+            enviados.add(chave);
+            totalEnviados++;
+            await supabase.from("clientes")
               .update({ ultima_notificacao: new Date().toISOString() })
               .eq("id", cliente.id);
-
-            totalEmailsEnviados++;
-            enviados.add(chave); // evita reenvio se mesmo cliente tem 2 processos que batem
-          } else {
-            const errBody = await res.json().catch(() => ({}));
-            console.error("[AutoNotif] Falha ao enviar e-mail:", errBody);
-
-            // Registra falha para auditoria
-            await supabase.from("notificacoes_enviadas").insert({
-              user_id: userId,
-              cliente_id: cliente.id,
-              intimacao_id: intim._id,
-              numero_processo: intim._numProc || "",
-              assunto: intim._titulo || "Nova Publicação AASP",
-              resumo_ia: null,
-              email_destino: cliente.email,
-              status: "falha",
-            });
           }
-        } catch (emailErr: any) {
-          console.error("[AutoNotif] Erro ao enviar e-mail para", cliente.email, emailErr.message);
+        } catch (e: any) {
+          console.error("[AutoNotif] Falha e-mail:", e.message);
         }
       }
     }
 
-    if (totalEmailsEnviados > 0) {
-      toast.success(`📧 ${totalEmailsEnviados} e-mail(s) enviado(s) automaticamente para clientes!`, {
-        duration: 6000,
-      });
+    if (totalEnviados > 0) {
+      toast.success(`📧 ${totalEnviados} e-mail(s) enviado(s) automaticamente!`, { duration: 6000 });
     }
-  } catch (err: any) {
-    console.error("[AutoNotif] Erro geral nas notificações automáticas:", err.message);
+  } catch (e: any) {
+    console.error("[AutoNotif] Erro geral:", e.message);
   }
 }
 
-// ── Hook principal ─────────────────────────────────────────────
+// ── Hook principal ────────────────────────────────────────────
 export function useAutoFetchIntimacoes() {
   const { user } = useAuth();
   const rodandoRef = useRef(false);
@@ -263,17 +296,28 @@ export function useAutoFetchIntimacoes() {
     ]);
   }, []);
 
+  // ── Ao montar com usuário: garante que localStorage está populado ─
   useEffect(() => {
-    // Sem usuário → zera flag para próximo login
+    if (!user) return;
+    const local = loadStore();
+    if (local.length === 0) {
+      // localStorage vazio (ex: celular acessando pela primeira vez)
+      // → tenta carregar do Supabase antes de buscar da AASP
+      carregarDoSupabase(user.id).then(items => {
+        if (items.length > 0) {
+          toast.info(`📱 ${items.length} intimação(ões) carregada(s) da nuvem.`, { duration: 4000 });
+        }
+      }).catch(() => {});
+    }
+  }, [user]);
+
+  // ── Busca AASP (uma vez por login) ───────────────────────────
+  useEffect(() => {
     if (!user) {
       ultimoUserIdFetched = null;
       return;
     }
-
-    // Já buscou para este userId
     if (ultimoUserIdFetched === user.id) return;
-
-    // Já está rodando (React StrictMode double-effect)
     if (rodandoRef.current) return;
 
     rodandoRef.current = true;
@@ -281,14 +325,11 @@ export function useAutoFetchIntimacoes() {
 
     (async () => {
       try {
-        // ── 1. Busca chave AASP ──────────────────────────────────
+        // 1. Chave AASP
         let aaspKey = localStorage.getItem("jurismonitor_aasp_key") || "";
         try {
           const { data } = await supabase
-            .from("api_keys")
-            .select("aasp_chave")
-            .eq("user_id", user.id)
-            .maybeSingle();
+            .from("api_keys").select("aasp_chave").eq("user_id", user.id).maybeSingle();
           if (data?.aasp_chave) {
             aaspKey = data.aasp_chave;
             localStorage.setItem("jurismonitor_aasp_key", aaspKey);
@@ -296,14 +337,13 @@ export function useAutoFetchIntimacoes() {
         } catch (_) {}
 
         if (!aaspKey) {
-          console.log("[AutoFetch] Chave AASP não configurada — pulando.");
+          console.log("[AutoFetch] Chave AASP não configurada.");
           return;
         }
 
-        // ── 2. Detecta formato de data ───────────────────────────
+        // 2. Formato de data
         const dias = diasUteisRecentes(7);
         const [ano, mes, dia] = dias[0].split("-");
-
         let fmtPreferido: "ISO" | "BR" =
           (localStorage.getItem("jurismonitor_aasp_fmt") as "ISO" | "BR") || "ISO";
 
@@ -322,7 +362,7 @@ export function useAutoFetchIntimacoes() {
 
         toast.info("Buscando intimações AASP…", { duration: 3500, id: "auto-fetch" });
 
-        // ── 3. Busca sequencial dos últimos 7 dias úteis ─────────
+        // 3. Busca os últimos 7 dias úteis
         const novas: AaspIntimacao[] = [];
         const storeAtual = loadStore();
 
@@ -336,12 +376,11 @@ export function useAutoFetchIntimacoes() {
             if (!resp.ok) continue;
             const text = await resp.text();
             if (!text?.trim()) continue;
-            const raw = JSON.parse(text);
-            const lista = normalizar(raw);
+            const lista = normalizar(JSON.parse(text));
 
             lista.forEach((it: any, idx: number) => {
               const id = gerarId(it, idx);
-              const existente = storeAtual.find((x) => x._id === id);
+              const existente = storeAtual.find(x => x._id === id);
               const dataBruta = String(it.jornal?.dataDisponibilizacao_Publicacao || it.DataDisponibilizacao || it.dataDisponibilizacao || it.Data || "");
               let dataReal = d;
               const isoM = dataBruta.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -351,22 +390,22 @@ export function useAutoFetchIntimacoes() {
 
               novas.push({
                 ...it,
-                _id: id,
-                _data: dataReal,
-                _lida: existente?._lida || false,
-                _status: existente?._status || "ativa",
-                _resumoIA: existente?._resumoIA || null,
-                _titulo: it.TituloAssunto || it.Assunto || it.titulo || "Publicação AASP",
-                _numProc: extrairNumProc(it),
+                _id:             id,
+                _data:           dataReal,
+                _lida:           existente?._lida || false,
+                _status:         existente?._status || "ativa",
+                _resumoIA:       existente?._resumoIA || null,
+                _titulo:         it.TituloAssunto || it.Assunto || it.titulo || "Publicação AASP",
+                _numProc:        extrairNumProc(it),
                 _orgaoPublicacao: extrairOrgaoPublicacao(it),
-                _partes: extrairPartes(it),
-                _orgaoJulgador: extrairOrgaoJulgador(it),
+                _partes:         extrairPartes(it),
+                _orgaoJulgador:  extrairOrgaoJulgador(it),
               });
             });
           } catch (_) {}
         }
 
-        // ── 4. Merge com deduplicação ────────────────────────────
+        // 4. Merge + dedup
         const merged = [...novas, ...storeAtual];
         const uniq: AaspIntimacao[] = [];
         const seen = new Set<string>();
@@ -375,7 +414,10 @@ export function useAutoFetchIntimacoes() {
         }
         saveStore(uniq);
 
-        // ── 5. Calcula intimações realmente novas ────────────────
+        // 5. Sincroniza para Supabase (todas — para que outros dispositivos vejam)
+        syncParaSupabase(uniq, user.id).catch(() => {});
+
+        // 6. Toast
         const idsAntigos = new Set(storeAtual.map(i => i._id));
         const recentementeNovas = novas.filter(n => !idsAntigos.has(n._id));
 
@@ -386,16 +428,13 @@ export function useAutoFetchIntimacoes() {
           toast.success("Intimações atualizadas — nenhuma novidade.", { duration: 3000 });
         }
 
-        // ── 6. Notificações automáticas por e-mail ───────────────
-        // Roda em background — não bloqueia o toast acima
+        // 7. Notificações automáticas por e-mail
         if (recentementeNovas.length > 0) {
-          dispararNotificacoesAutomaticas(recentementeNovas, user.id).catch(
-            (err) => console.error("[AutoNotif] Erro inesperado:", err)
-          );
+          dispararNotificacoesAutomaticas(recentementeNovas, user.id).catch(() => {});
         }
 
       } catch (err: any) {
-        console.error("[AutoFetch] Erro inesperado:", err);
+        console.error("[AutoFetch] Erro:", err.message);
         toast.dismiss("auto-fetch");
       } finally {
         rodandoRef.current = false;

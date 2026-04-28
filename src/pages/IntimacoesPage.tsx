@@ -277,6 +277,43 @@ export function IntimacoesPage() {
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
 
+  // ── Carrega do Supabase se localStorage estiver vazio (ex: celular) ────────
+  useEffect(() => {
+    if (!user) return;
+    const local = loadStore();
+    if (local.length > 0) return; // localStorage já tem dados → não precisa buscar
+
+    supabase
+      .from("intimacoes")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("origem", "aasp")
+      .order("data_publicacao", { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (!data?.length) return;
+        const items: AaspIntimacao[] = data.map((row: any) => {
+          const raw = (row.dados_raw as AaspIntimacao) || {};
+          return {
+            ...raw,
+            _id:              row.id,
+            _data:            row.data_publicacao || raw._data || "",
+            _lida:            raw._lida || false,
+            _status:          (row.status as any) || "ativa",
+            _resumoIA:        row.resumo_ia || raw._resumoIA || null,
+            _titulo:          row.tipo || raw._titulo || "Publicação AASP",
+            _numProc:         row.numero_processo || raw._numProc || "",
+            _orgaoPublicacao: raw._orgaoPublicacao || "",
+            _partes:          row.partes || raw._partes || "",
+            _orgaoJulgador:   row.orgao_julgador || raw._orgaoJulgador || "",
+          };
+        });
+        saveStore(items);
+        setIntimacoes(items);
+      })
+      .catch(() => {});
+  }, [user]);
+
   // Refs para evitar stale closures nos callbacks assíncronos
   const aaspKeyRef = useRef(aaspKey);
   const intimacoesRef = useRef(intimacoes);

@@ -240,12 +240,22 @@ export function ConfigPage() {
       }
 
       async function fetchRaw(dataParam: string): Promise<any> {
-        // data concatenada RAW — sem URLSearchParams para evitar double-encoding das barras DD/MM/YYYY
         const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
-        const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
-        const r = await fetchComTimeout(proxyUrl, 20000);
-        const txt = await r.text();
-        try { return JSON.parse(txt); } catch { return { _parseError: txt.slice(0, 200) }; }
+        const proxies = [
+          `/api/proxy?url=${encodeURIComponent(aaspUrl)}`,
+          `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}`,
+        ];
+        for (const url of proxies) {
+          try {
+            const r = await fetchComTimeout(url, 20000);
+            const txt = await r.text();
+            if (!txt?.trim()) continue;
+            const parsed = JSON.parse(txt);
+            return parsed?.contents ? JSON.parse(parsed.contents) : parsed;
+          } catch (_) {}
+        }
+        return { _parseError: "Todos os proxies falharam" };
       }
 
       function aaspNorm(raw: any): any[] {
@@ -367,17 +377,31 @@ export function ConfigPage() {
     }
 
     async function fetchRaw(dataParam: string): Promise<any> {
-      // data concatenada RAW — sem URLSearchParams para evitar double-encoding das barras DD/MM/YYYY
       const aaspUrl = `https://intimacaoapi.aasp.org.br/api/Associado/intimacao/json?chave=${encodeURIComponent(chave)}&data=${dataParam}`;
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(aaspUrl)}`;
-      try {
-        const r = await fetchComTimeout(proxyUrl, 20000);
-        const txt = await r.text();
-        try { return { ok: true, raw: JSON.parse(txt), status: r.status }; }
-        catch { return { ok: false, raw: null, status: r.status, text: txt.slice(0, 300) }; }
-      } catch (e: any) {
-        return { ok: false, raw: null, status: 0, text: e.message };
+      // Tenta múltiplos proxies — /api/proxy só existe na Vercel (produção)
+      const proxies = [
+        { nome: "/api/proxy",   url: `/api/proxy?url=${encodeURIComponent(aaspUrl)}` },
+        { nome: "corsproxy.io", url: `https://corsproxy.io/?url=${encodeURIComponent(aaspUrl)}` },
+        { nome: "allorigins",   url: `https://api.allorigins.win/raw?url=${encodeURIComponent(aaspUrl)}` },
+      ];
+      const erros: string[] = [];
+      for (const proxy of proxies) {
+        try {
+          const r = await fetchComTimeout(proxy.url, 20000);
+          const txt = await r.text();
+          if (!txt?.trim()) { erros.push(`${proxy.nome}: vazio`); continue; }
+          try {
+            const parsed = JSON.parse(txt);
+            const final = parsed?.contents ? JSON.parse(parsed.contents) : parsed;
+            return { ok: true, raw: final, status: r.status, proxy: proxy.nome };
+          } catch {
+            erros.push(`${proxy.nome}: JSON inválido`);
+          }
+        } catch (e: any) {
+          erros.push(`${proxy.nome}: ${e.message}`);
+        }
       }
+      return { ok: false, raw: null, status: 0, text: erros.join(" | ") };
     }
 
     function aaspNorm(raw: any): any[] {
@@ -390,10 +414,10 @@ export function ConfigPage() {
       return [];
     }
 
-    // Gera últimos 10 dias úteis
+    // Gera últimos 7 dias úteis (igual à tela de Intimações)
     const diasUteis: Date[] = [];
     const cur = new Date();
-    while (diasUteis.length < 10) {
+    while (diasUteis.length < 7) {
       if (cur.getDay() !== 0 && cur.getDay() !== 6) diasUteis.push(new Date(cur));
       cur.setDate(cur.getDate() - 1);
     }
@@ -429,7 +453,7 @@ export function ConfigPage() {
       const dataFmt = `${dia}/${mes}/${ano}`;
       const diaSemana = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
 
-      setDiagStatus(`Buscando ${dataFmt} (${i+1}/10)...`);
+      setDiagStatus(`Buscando ${dataFmt} (${i+1}/7)...`);
 
       const res = i === 0
         ? (usarBR ? resBR0 : resISO0)
