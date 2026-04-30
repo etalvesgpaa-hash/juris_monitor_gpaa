@@ -52,7 +52,15 @@
     --sidebar-accent-foreground: 40 33% 93%;
     --sidebar-border: 43 50% 54% / 0.2;
     --sidebar-ring: 43 50% 54%;
+  
+  /* Helpers usados na ProcessosPage */
+  .field {
+    @apply mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all;
   }
+  .btn-outline-sm {
+    @apply text-xs border border-border rounded-lg px-3 py-1.5 font-semibold hover:bg-muted transition-colors;
+  }
+}
 }
 
 @layer base {
