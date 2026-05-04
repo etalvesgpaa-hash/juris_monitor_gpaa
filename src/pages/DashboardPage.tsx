@@ -81,20 +81,36 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   });
 
   // Gráficos
-  const intimacoesPorMes = (() => {
-    const meses: Record<string, number> = {};
-    intimacoes.forEach((i: any) => {
-      if (!i._data) return;
-      const key = i._data.slice(0, 7);
-      meses[key] = (meses[key] || 0) + 1;
+  
+  // Intimações nos últimos 7 dias úteis (como na IntimacoesPage)
+  const intimacoesUltimos7Dias = (() => {
+    const dias: string[] = [];
+    const d = new Date();
+    // Gera os últimos 7 dias ÚTEIS (seg-sex)
+    while (dias.length < 7) {
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) {
+        const diaStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        dias.push(diaStr);
+      }
+      d.setDate(d.getDate() - 1);
+    }
+    
+    // Conta intimações por dia
+    const contagemPorDia = intimacoes.reduce<Record<string, number>>((acc, it: any) => {
+      acc[it._data] = (acc[it._data] || 0) + 1;
+      return acc;
+    }, {});
+    
+    // Formata para o gráfico (ordem crescente de data)
+    return dias.reverse().map(dia => {
+      const [ano, mes, d] = dia.split("-");
+      const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+      return {
+        day: `${dow} ${d}/${mes}`,
+        total: contagemPorDia[dia] || 0
+      };
     });
-    return Object.entries(meses)
-      .sort(([a], [b]) => a.localeCompare(b)).slice(-6)
-      .map(([key]) => {
-        const [, m] = key.split("-");
-        const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-        return { month: nomes[parseInt(m)-1], total: meses[key] };
-      });
   })();
 
   const tarefasPorMes = (() => {
@@ -158,15 +174,15 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Intimações de HOJE */}
         <div
           onClick={() => onNavigate?.("intimacoes")}
-          className="bg-card border border-accent/40 rounded-xl p-4 cursor-pointer hover:border-accent transition-colors group"
+          className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-2 border-amber-500/40 rounded-xl p-4 cursor-pointer hover:border-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transition-all group"
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-accent mb-1">Intimações Hoje</div>
-          <div className="font-display text-3xl font-black text-accent group-hover:scale-105 transition-transform">
+          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-amber-600 mb-1">Intimações Hoje</div>
+          <div className="font-display text-3xl font-black text-amber-600 group-hover:scale-105 transition-transform">
             {intimacoesHoje.length}
           </div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">publicações do dia</div>
           {intimacoesNaoLidas.length > 0 && (
-            <div className="mt-1.5 text-[0.6rem] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold inline-block">
+            <div className="mt-1.5 text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
               {intimacoesNaoLidas.length} não lida(s)
             </div>
           )}
@@ -175,12 +191,12 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Processos */}
         <div
           onClick={() => onNavigate?.("processos")}
-          className="bg-card border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+          className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-2 border-blue-500/40 rounded-xl p-4 cursor-pointer hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 transition-all"
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground mb-1">Processos</div>
-          <div className="font-display text-3xl font-black">{processos.length}</div>
+          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-blue-600 mb-1">Processos</div>
+          <div className="font-display text-3xl font-black text-blue-600">{processos.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
-          <div className="mt-1.5 text-[0.6rem] text-muted-foreground">
+          <div className="mt-1.5 text-[0.6rem] bg-blue-500/20 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
             {processos.filter(p => p.status === "ativo").length} ativos
           </div>
         </div>
@@ -188,13 +204,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Clientes */}
         <div
           onClick={() => onNavigate?.("clientes")}
-          className="bg-card border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+          className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-2 border-purple-500/40 rounded-xl p-4 cursor-pointer hover:border-purple-500 hover:shadow-lg hover:shadow-purple-500/20 transition-all"
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground mb-1">Clientes</div>
-          <div className="font-display text-3xl font-black">{clientes.length}</div>
+          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-purple-600 mb-1">Clientes</div>
+          <div className="font-display text-3xl font-black text-purple-600">{clientes.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
           {clientesNotificadosHoje > 0 && (
-            <div className="mt-1.5 text-[0.6rem] bg-green-ok/10 text-green-ok px-1.5 py-0.5 rounded font-bold inline-block">
+            <div className="mt-1.5 text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
               {clientesNotificadosHoje} notificado(s) hoje
             </div>
           )}
@@ -203,12 +219,12 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Tarefas pendentes */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className="bg-card border border-border rounded-xl p-4 cursor-pointer hover:border-accent/40 transition-colors"
+          className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-2 border-cyan-500/40 rounded-xl p-4 cursor-pointer hover:border-cyan-500 hover:shadow-lg hover:shadow-cyan-500/20 transition-all"
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground mb-1">Tarefas</div>
-          <div className="font-display text-3xl font-black">{tarefasPendentes.length}</div>
+          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-cyan-600 mb-1">Tarefas</div>
+          <div className="font-display text-3xl font-black text-cyan-600">{tarefasPendentes.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">pendentes</div>
-          <div className="mt-1.5 text-[0.6rem] text-muted-foreground">
+          <div className="mt-1.5 text-[0.6rem] bg-cyan-500/20 text-cyan-700 px-1.5 py-0.5 rounded font-bold inline-block">
             {tarefas.filter(t => t.status === "concluida").length} concluídas
           </div>
         </div>
@@ -216,14 +232,14 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* A vencer (3 dias) */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border cursor-pointer transition-colors ${
+          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
             tarefasAVencer.length > 0
-              ? "bg-accent/5 border-accent/40 hover:border-accent"
+              ? "bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/40 hover:border-orange-500 hover:shadow-lg hover:shadow-orange-500/20"
               : "bg-card border-border hover:border-accent/40"
           }`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-accent mb-1">A Vencer</div>
-          <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-accent" : ""}`}>
+          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>A Vencer</div>
+          <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
             {tarefasAVencer.length}
           </div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">próximos 3 dias</div>
@@ -232,14 +248,14 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Vencidas */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border cursor-pointer transition-colors ${
+          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
             tarefasVencidas.length > 0
-              ? "bg-red-alert/5 border-red-alert/40 hover:border-red-alert"
+              ? "bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/40 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20"
               : "bg-card border-border hover:border-accent/40"
           }`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-red-alert mb-1">Vencidas</div>
-          <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-alert" : ""}`}>
+          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasVencidas.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Vencidas</div>
+          <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-600" : ""}`}>
             {tarefasVencidas.length}
           </div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">prazo expirado</div>
@@ -281,13 +297,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Intimações por Mês">
+        <ChartCard title="Intimações — Últimos 7 Dias Úteis">
           <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={intimacoesPorMes.length ? intimacoesPorMes : [{ month: "—", total: 0 }]}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+            <BarChart data={intimacoesUltimos7Dias.length ? intimacoesUltimos7Dias : [{ day: "—", total: 0 }]}>
+              <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-15} textAnchor="end" height={60} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
-              <Bar dataKey="total" fill="#c9a84c" radius={[4,4,0,0]} />
+              <Bar dataKey="total" fill="#d97706" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
