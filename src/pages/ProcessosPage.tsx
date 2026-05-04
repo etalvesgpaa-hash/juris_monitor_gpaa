@@ -5,7 +5,8 @@ import { useClientes } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw, X, Sparkles } from "lucide-react";
+import { useGroqIA } from "@/hooks/useGroqIA";
 import type { Processo } from "@/hooks/useProcessos";
 
 // ── Mapa completo de tribunais (igual ao HTML de referência) ──────────────────
@@ -243,6 +244,7 @@ interface ProcessoRico extends Processo {
 export function ProcessosPage() {
   const { data: rawProcessos = [], isLoading, refetch } = useProcessos();
   const { user } = useAuth();
+  const { loadingIA, progresso, gerarResumoProcesso, gerarTodosResumosProcessos } = useGroqIA();
   const createProcesso = useCreateProcesso();
   const deleteProcesso = useDeleteProcesso();
   const updateProcesso = useUpdateProcesso();
@@ -390,6 +392,36 @@ export function ProcessosPage() {
     }
   }, [getToken, updateProcesso, user, panelProcesso, toast]);
 
+  // ── Resumo IA de um processo ─────────────────────────────────────────────
+  const gerarResumoUmProcesso = useCallback(async (processo: ProcessoRico) => {
+    const movs = processo._movimentacoes || [];
+    const resumo = await gerarResumoProcesso(processo, movs);
+    if (!resumo) return;
+
+    // Salva no Supabase
+    await supabase.from("processos").update({ resumo_ia: resumo } as any).eq("id", processo.id);
+
+    // Atualiza estado local
+    setProcessos(prev => prev.map(p => p.id === processo.id ? { ...p, resumo_ia: resumo } : p));
+    if (panelProcesso?.id === processo.id) setPanelProcesso(p => p ? { ...p, resumo_ia: resumo } as ProcessoRico : p);
+    toast.success("✦ Resumo IA gerado e salvo!");
+  }, [gerarResumoProcesso, panelProcesso]);
+
+  // ── Gerar todos os resumos IA ───────────────────────────────────────────────
+  const gerarTodosResumos = useCallback(async () => {
+    await gerarTodosResumosProcessos(
+      processos,
+      async (id: string) => {
+        const p = processos.find(x => x.id === id);
+        return p?._movimentacoes || [];
+      },
+      async (id: string, resumo: string) => {
+        await supabase.from("processos").update({ resumo_ia: resumo } as any).eq("id", id);
+        setProcessos(prev => prev.map(p => p.id === id ? { ...p, resumo_ia: resumo } : p));
+      }
+    );
+  }, [gerarTodosResumosProcessos, processos]);
+
   const sincronizarTodos = async () => {
     if (!processos.length) return;
     setSyncingAll(true);
@@ -475,6 +507,14 @@ export function ProcessosPage() {
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? "animate-spin" : ""}`} />
             Sincronizar
+          </button>
+          <button
+            onClick={gerarTodosResumos}
+            disabled={loadingIA || processos.length === 0}
+            className="flex items-center gap-1.5 bg-purple-500/10 border border-purple-400/40 rounded-md text-purple-600 text-xs font-bold px-3 py-2 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${loadingIA ? "animate-pulse" : ""}`} />
+            {loadingIA && progresso.total > 0 ? `Resumindo ${progresso.atual}/${progresso.total}…` : "✦ Resumir Todos"}
           </button>
           <Button variant="gold" onClick={() => { setEditId(null); setShowForm(true); }}>
             + Cadastrar Processo
@@ -646,6 +686,8 @@ export function ProcessosPage() {
             onClose={() => setPanelProcesso(null)}
             onDelete={handleDelete}
             onSincronizar={sincronizar}
+            onResumoIA={gerarResumoUmProcesso}
+            loadingIA={loadingIA}
             syncing={syncing}
             statusBadge={statusBadge}
           />
@@ -656,11 +698,13 @@ export function ProcessosPage() {
 }
 
 // ── Painel de Detalhe ──────────────────────────────────────────────────────────
-function DetailPanel({ processo, onClose, onDelete, onSincronizar, syncing, statusBadge }: {
+function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, loadingIA, syncing, statusBadge }: {
   processo: ProcessoRico;
   onClose: () => void;
   onDelete: (id: string) => void;
   onSincronizar: (id: string, numero: string) => void;
+  onResumoIA: (processo: ProcessoRico) => void;
+  loadingIA: boolean;
   syncing: Set<string>;
   statusBadge: (s: string) => React.ReactNode;
 }) {
@@ -687,6 +731,14 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, syncing, stat
           >
             <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Sincronizando…" : "⟳ DataJud"}
+          </button>
+          <button
+            onClick={() => onResumoIA(processo)}
+            disabled={loadingIA}
+            className="flex items-center gap-1 text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
+          >
+            <Sparkles className={`h-3 w-3 ${loadingIA ? "animate-pulse" : ""}`} />
+            {loadingIA ? "Gerando…" : "✦ Resumo IA"}
           </button>
           <button onClick={onClose} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
             <X className="h-4 w-4" />
@@ -720,6 +772,42 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, syncing, stat
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Resumo IA */}
+        <div>
+          <div className="text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground border-b border-border pb-2 mb-3 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-purple-500" />
+            Resumo IA das Movimentações
+          </div>
+          {processo.resumo_ia ? (
+            <div className="bg-purple-500/5 border border-purple-400/20 rounded-lg p-4">
+              <p className="text-sm leading-relaxed text-foreground">{processo.resumo_ia as string}</p>
+              <button
+                onClick={() => onResumoIA(processo)}
+                disabled={loadingIA}
+                className="mt-2 text-[0.68rem] text-purple-600 hover:underline disabled:opacity-50"
+              >
+                {loadingIA ? "Atualizando…" : "↻ Atualizar resumo"}
+              </button>
+            </div>
+          ) : (
+            <div className="border border-dashed border-purple-300/40 rounded-lg p-4 text-center">
+              <p className="text-sm text-muted-foreground mb-2">
+                {movs.length > 0
+                  ? "Clique para gerar um resumo inteligente das movimentações."
+                  : "Sincronize com DataJud primeiro para gerar o resumo IA."}
+              </p>
+              <button
+                onClick={() => onResumoIA(processo)}
+                disabled={loadingIA || movs.length === 0}
+                className="flex items-center gap-1.5 mx-auto text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
+              >
+                <Sparkles className="h-3 w-3" />
+                {loadingIA ? "Gerando resumo…" : "✦ Gerar Resumo IA"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Movimentações */}

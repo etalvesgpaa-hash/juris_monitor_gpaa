@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useGroqIA } from "@/hooks/useGroqIA";
 import { useClientes } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
 import { useFeriados } from "@/hooks/useFeriados";
@@ -320,6 +321,7 @@ export function IntimacoesPage() {
   useEffect(() => { aaspKeyRef.current = aaspKey; }, [aaspKey]);
   useEffect(() => { intimacoesRef.current = intimacoes; }, [intimacoes]);
   const [groqKey, setGroqKey] = useState<string>("");
+  const { loadingIA: loadingIAHook, progresso, gerarResumoIntimacao: gerarResumoHook, gerarTodosResumosIntimacoes } = useGroqIA();
   const [loading, setLoading] = useState(false);
   const [loadingDia, setLoadingDia] = useState<string | null>(null);
   const [loadingIA, setLoadingIA] = useState(false);
@@ -688,7 +690,12 @@ export function IntimacoesPage() {
       );
       saveStore(updated);
 
-      toast.success("Resumo IA gerado com sucesso!");
+      // Salva no Supabase para sincronização cross-device
+      try {
+        await supabase.from("intimacoes").update({ resumo_ia: resumo } as any).eq("id", intimacao._id);
+      } catch (_) {}
+
+      toast.success("Resumo IA gerado e salvo!");
       return resumo;
     } catch (err: any) {
       console.error("Erro ao gerar resumo IA:", err);
@@ -699,41 +706,20 @@ export function IntimacoesPage() {
 
   /** Gerar resumos IA para todas as intimações ativas sem resumo */
   const gerarTodosResumosIA = async () => {
-    if (!groqKey) {
-      toast.error("Configure sua chave Groq nas Configurações para usar IA.");
-      return;
-    }
-
-    const semResumo = intimacoes.filter(
-      (it) => it._status === "ativa" && !it._resumoIA
-    );
-
-    if (semResumo.length === 0) {
-      toast.info("Todas as intimações ativas já possuem resumo IA.");
-      return;
-    }
-
-    if (!confirm(`Gerar resumo IA para ${semResumo.length} intimação(ões)? Isso pode levar alguns minutos.`)) {
-      return;
-    }
-
-    setLoadingIA(true);
-    let sucesso = 0;
-    let erro = 0;
-
-    for (const intimacao of semResumo) {
-      const resumo = await gerarResumoIA(intimacao);
-      if (resumo) {
-        sucesso++;
-      } else {
-        erro++;
+    await gerarTodosResumosIntimacoes(
+      intimacoes,
+      async (id: string, resumo: string) => {
+        // Atualiza estado local
+        setIntimacoes(prev => prev.map(it => it._id === id ? { ...it, _resumoIA: resumo } : it));
+        // Salva no localStorage
+        const updated = intimacoesRef.current.map(it => it._id === id ? { ...it, _resumoIA: resumo } : it);
+        saveStore(updated);
+        // Salva no Supabase (tabela intimacoes se existir)
+        try {
+          await supabase.from("intimacoes").update({ resumo_ia: resumo } as any).eq("id", id);
+        } catch (_) {}
       }
-      // Pequeno delay para evitar rate limit
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    setLoadingIA(false);
-    toast.success(`${sucesso} resumos gerados com sucesso${erro > 0 ? `, ${erro} com erro` : ''}.`);
+    );
   };
 
   /** Criar tarefa a partir de uma intimação */
@@ -1029,8 +1015,11 @@ export function IntimacoesPage() {
           <Button variant="outline" size="sm" onClick={atualizar} disabled={loading || !aaspKey}>
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-          <Button variant="outline" size="sm" onClick={gerarTodosResumosIA} disabled={loadingIA || !groqKey}>
-            {loadingIA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          <Button variant="outline" size="sm" onClick={gerarTodosResumosIA} disabled={loadingIA || loadingIAHook || !groqKey}
+            title="Gerar resumo IA para todas as intimações sem resumo">
+            {(loadingIA || loadingIAHook)
+              ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />{progresso.total > 0 ? `${progresso.atual}/${progresso.total}` : "..."}</span>
+              : <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Resumir Todos</span>}
           </Button>
           <Button variant="destructive" size="sm" onClick={limparTudo}>
             <RotateCcw className="w-4 h-4" />
