@@ -85,14 +85,18 @@ export function useUpdateProcesso() {
     mutationFn: async ({ id, ...input }: TablesUpdate<"processos"> & { id: string }) => {
       const { data, error } = await supabase
         .from("processos")
-        .update(input)
+        .update(input as any)
         .eq("id", id)
         .select()
         .single();
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["processos"] }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["processos"] });
+      qc.invalidateQueries({ queryKey: ["processo", vars.id] });
+      qc.invalidateQueries({ queryKey: ["movimentacoes"] });
+    },
   });
 }
 
