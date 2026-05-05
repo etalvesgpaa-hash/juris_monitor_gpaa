@@ -181,13 +181,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   return (
     <div>
-      {/* ── Banners de status ── */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        <StatusBadge ok label="Datajud CNJ — conectado e operacional" />
-        <StatusBadge ok={aaspConectada}
-          label={aaspConectada ? `AASP — ${intimacoes.length} intimação(ões) carregada(s)` : "AASP — aguardando sincronização"} />
-      </div>
-
       {/* ── Cards de estatísticas — linha 1 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         {/* Intimações de HOJE */}

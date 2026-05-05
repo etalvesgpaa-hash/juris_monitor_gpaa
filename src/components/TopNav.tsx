@@ -4,6 +4,8 @@ import { RefreshCw, Bell, LogOut, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
+const STORE_KEY = "jm_aasp_intimacoes";
+
 const tabs: { id: PageId; label: string }[] = [
   { id: "dashboard",    label: "Dashboard"      },
   { id: "processos",    label: "Processos"      },
@@ -27,6 +29,23 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef                  = useRef<HTMLDivElement>(null);
 
+  // Lê intimações do localStorage para o badge AASP
+  const [intimacoesCount, setIntimacoesCount] = useState<number>(() => {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length; } catch { return 0; }
+  });
+
+  useEffect(() => {
+    // Atualiza contagem ao focar a aba ou após sincronização
+    const update = () => {
+      try { setIntimacoesCount(JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length); } catch { /* noop */ }
+    };
+    window.addEventListener("focus", update);
+    window.addEventListener("storage", update);
+    return () => { window.removeEventListener("focus", update); window.removeEventListener("storage", update); };
+  }, []);
+
+  const aaspConectada = intimacoesCount > 0;
+
   const initials = user?.user_metadata?.full_name
     ? user.user_metadata.full_name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
     : "?";
@@ -34,7 +53,12 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
   const handleSync = async () => {
     setSyncing(true);
     toast.info("Sincronizando com DataJud CNJ...");
-    setTimeout(() => { setSyncing(false); toast.success("Sincronização concluída!"); }, 2000);
+    setTimeout(() => {
+      setSyncing(false);
+      toast.success("Sincronização concluída!");
+      // Reatualiza contagem após sync
+      try { setIntimacoesCount(JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length); } catch { /* noop */ }
+    }, 2000);
   };
 
   useEffect(() => {
@@ -50,7 +74,7 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
   return (
     <nav className="sticky top-0 z-50 bg-primary border-b border-accent/20 w-full">
 
-      {/* ── Barra principal ── */}
+      {/* ── Barra principal (desktop: tudo numa linha) ── */}
       <div className="flex items-center gap-2 px-3 md:px-6 h-14 min-w-0 w-full">
 
         {/* Logo */}
@@ -68,17 +92,49 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
           </div>
         </div>
 
-        {/* Espaçador */}
-        <div className="flex-1 min-w-0" />
+        {/* Separador vertical */}
+        <div className="hidden lg:block w-px h-6 bg-white/10 shrink-0 mx-1" />
 
-        {/* Ações direita — nunca quebram linha */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* ── Abas desktop (lg+) — inline na barra principal ── */}
+        <div className="hidden lg:flex items-center gap-0 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => onPageChange(tab.id)}
+              className={`shrink-0 px-3 h-14 text-[0.74rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
+                activePage === tab.id
+                  ? "border-accent text-accent font-bold"
+                  : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Badge online — só aparece em tela grande */}
-          <div className="hidden xl:flex items-center gap-1.5 text-[0.68rem] bg-green-ok/10 border border-green-ok/25 px-2.5 py-1 rounded-full text-green-ok font-semibold whitespace-nowrap">
+        {/* Espaçador (só mobile, quando as abas não aparecem) */}
+        <div className="lg:hidden flex-1 min-w-0" />
+
+        {/* ── Badges de status das APIs (desktop xl+) ── */}
+        <div className="hidden xl:flex items-center gap-1.5 shrink-0">
+          {/* Datajud CNJ */}
+          <div className="flex items-center gap-1.5 text-[0.63rem] bg-green-ok/10 border border-green-ok/25 px-2 py-1 rounded-full text-green-ok font-semibold whitespace-nowrap">
             <div className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse" />
-            Datajud CNJ Online
+            Datajud CNJ
           </div>
+          {/* AASP */}
+          <div className={`flex items-center gap-1.5 text-[0.63rem] border px-2 py-1 rounded-full font-semibold whitespace-nowrap ${
+            aaspConectada
+              ? "bg-green-ok/10 border-green-ok/25 text-green-ok"
+              : "bg-muted border-border text-muted-foreground"
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-green-ok animate-pulse" : "bg-muted-foreground"}`} />
+            {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
+          </div>
+        </div>
+
+        {/* ── Ações direita ── */}
+        <div className="flex items-center gap-1 shrink-0">
 
           {/* Sincronizar */}
           <button
@@ -118,27 +174,7 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
         </div>
       </div>
 
-      {/* ── Abas desktop (lg+) — rola horizontal se zoom alto ── */}
-      <div className="hidden lg:block border-t border-white/5 bg-primary/95">
-        <div className="flex items-center gap-0 px-3 md:px-6 overflow-x-auto"
-             style={{ scrollbarWidth: "none" }}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => onPageChange(tab.id)}
-              className={`shrink-0 px-3.5 py-2.5 text-[0.76rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
-                activePage === tab.id
-                  ? "border-accent text-accent font-bold"
-                  : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Dropdown mobile / zoom alto ── */}
+      {/* ── Dropdown mobile / zoom alto (lg-) ── */}
       <div className="lg:hidden border-t border-white/5 px-3 py-1.5" ref={menuRef}>
         <button
           onClick={() => setMenuOpen(v => !v)}
