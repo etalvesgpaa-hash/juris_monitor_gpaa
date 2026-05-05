@@ -94,16 +94,18 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
 
         {/* Badges de status — visíveis em telas md+ */}
         <div className="hidden md:flex items-center gap-1.5 shrink-0">
-          <div className="flex items-center gap-1.5 text-[0.62rem] bg-green-ok/10 border border-green-ok/25 px-2 py-0.5 rounded-full text-green-ok font-semibold whitespace-nowrap">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse" />
+          {/* Datajud — sempre verde pois é API pública */}
+          <div className="flex items-center gap-1.5 text-[0.62rem] bg-emerald-400/15 border border-emerald-400/40 px-2.5 py-1 rounded-full text-emerald-300 font-semibold whitespace-nowrap">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Datajud CNJ
           </div>
-          <div className={`flex items-center gap-1.5 text-[0.62rem] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${
+          {/* AASP — verde se conectada, acinzentado se não */}
+          <div className={`flex items-center gap-1.5 text-[0.62rem] border px-2.5 py-1 rounded-full font-semibold whitespace-nowrap ${
             aaspConectada
-              ? "bg-green-ok/10 border-green-ok/25 text-green-ok"
-              : "bg-white/5 border-white/10 text-primary-foreground/40"
+              ? "bg-emerald-400/15 border-emerald-400/40 text-emerald-300"
+              : "bg-white/5 border-white/15 text-white/40"
           }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-green-ok animate-pulse" : "bg-white/20"}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-emerald-400 animate-pulse" : "bg-white/25"}`} />
             {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
           </div>
         </div>

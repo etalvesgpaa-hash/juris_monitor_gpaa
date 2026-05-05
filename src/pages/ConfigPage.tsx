@@ -204,20 +204,43 @@ export function ConfigPage() {
 
     setTestingDatajud(true);
     try {
-      // Testa com um processo fictício — qualquer resposta válida da API confirma conectividade
-      const res = await fetch("https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search", {
+      // Usa proxy para evitar bloqueio de CORS no browser
+      const targetUrl = "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search";
+      const proxyUrl  = `/api/proxy?url=${encodeURIComponent(targetUrl)}&method=POST&token=${encodeURIComponent(token)}`;
+      const res = await fetch(proxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `ApiKey ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(20000),
       });
       if (res.ok || res.status === 200) {
         toast({ title: "✅ DataJud CNJ conectado!", description: `HTTP ${res.status} — API respondendo normalmente.` });
+      } else if (res.status === 401 || res.status === 403) {
+        toast({ title: `❌ Token inválido (HTTP ${res.status})`, description: "Verifique se o token do DataJud está correto e ativo.", variant: "destructive" });
       } else {
-        toast({ title: `❌ DataJud retornou HTTP ${res.status}`, description: "Verifique se o token está correto.", variant: "destructive" });
+        toast({ title: `⚠️ DataJud retornou HTTP ${res.status}`, description: "A API respondeu mas com erro. Verifique o token.", variant: "destructive" });
       }
     } catch (err: any) {
-      toast({ title: "❌ Erro ao conectar ao DataJud", description: err.message, variant: "destructive" });
+      // Fallback: fetch direto (funciona em alguns ambientes sem CORS restrito)
+      try {
+        const res = await fetch("https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `ApiKey ${token}` },
+          body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok || res.status === 200) {
+          toast({ title: "✅ DataJud CNJ conectado!", description: `HTTP ${res.status} — API respondendo normalmente.` });
+        } else {
+          toast({ title: `❌ DataJud retornou HTTP ${res.status}`, description: "Verifique se o token está correto.", variant: "destructive" });
+        }
+      } catch {
+        toast({
+          title: "❌ Não foi possível conectar ao DataJud",
+          description: "Em desenvolvimento local o proxy pode não estar disponível. Em produção (Vercel) a conexão funciona normalmente.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setTestingDatajud(false);
     }
