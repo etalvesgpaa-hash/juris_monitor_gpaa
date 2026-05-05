@@ -40,8 +40,8 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
 
-  // Clientes que receberam email automático hoje sobre novas publicações
-  const [clientesNotificadosEmailHoje, setClientesNotificadosEmailHoje] = useState(0);
+  // Clientes que receberam notificação hoje
+  const [clientesNotificadosHoje, setClientesNotificadosHoje] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -55,9 +55,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       .lte("created_at", `${hoje}T23:59:59`)
       .then(({ data }) => {
         if (!data) return;
-        // Conta clientes únicos que receberam email hoje
+        // Conta clientes únicos
         const uniq = new Set((data as any[]).map((n: any) => n.cliente_id));
-        setClientesNotificadosEmailHoje(uniq.size);
+        setClientesNotificadosHoje(uniq.size);
       });
   }, [user]);
 
@@ -73,25 +73,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
     const clienteIds = new Set<string>();
     
     intimacoesAtivas.forEach((intimacao: any) => {
-      const numProc = intimacao._numProc || "";
-      // Encontra o processo correspondente
-      const processo = processos.find(p => 
-        p.numero_cnj && numProc.includes(p.numero_cnj.replace(/\D/g, ""))
-      );
-      
-      if (processo && processo.cliente_id) {
-        clienteIds.add(processo.cliente_id);
-      }
-    });
-    
-    return clienteIds.size;
-  })();
-
-  // Calcula clientes únicos que receberam publicações HOJE
-  const clientesComPublicacoesHoje = (() => {
-    const clienteIds = new Set<string>();
-    
-    intimacoesHoje.forEach((intimacao: any) => {
       const numProc = intimacao._numProc || "";
       // Encontra o processo correspondente
       const processo = processos.find(p => 
@@ -253,14 +234,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                 {clientesComPublicacoes} com publicações
               </div>
             )}
-            {clientesComPublicacoesHoje > 0 && (
-              <div className="text-[0.6rem] bg-blue-500/20 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                {clientesComPublicacoesHoje} publicações hoje
-              </div>
-            )}
-            {clientesNotificadosEmailHoje > 0 && (
+            {clientesNotificadosHoje > 0 && (
               <div className="text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                {clientesNotificadosEmailHoje} emails enviados
+                {clientesNotificadosHoje} notificado(s) hoje
               </div>
             )}
           </div>
