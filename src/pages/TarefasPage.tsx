@@ -31,7 +31,7 @@ export function TarefasPage() {
   const [showFeriados, setShowFeriados] = useState(false);
   const [showFormFeriado, setShowFormFeriado] = useState(false);
   const [filter, setFilter] = useState<FilterType>("todas");
-  const [viewMode, setViewMode] = useState<"lista" | "agenda">("lista");
+  const [viewMode, setViewMode] = useState<"lista" | "agenda">("agenda");
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
@@ -535,7 +535,7 @@ export function TarefasPage() {
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
       ) : viewMode === "agenda" ? (
-        <AgendaCalendario tarefas={tarefas} />
+        <AgendaCalendario tarefas={tarefas} onEditTarefa={handleEdit} />
       ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-8 text-center">
           <p className="text-muted-foreground text-sm">Nenhuma tarefa encontrada.</p>
@@ -583,7 +583,10 @@ export function TarefasPage() {
                     </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <div className={`font-semibold text-sm ${t.status === "concluida" ? "line-through" : ""}`}>
+                        <div 
+                          className={`font-semibold text-sm cursor-pointer hover:text-accent transition-colors ${t.status === "concluida" ? "line-through" : ""}`}
+                          onClick={() => handleEdit(t)}
+                        >
                           {t.titulo}
                         </div>
                         <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${statusTarefaColor(t.status)}`}>
@@ -664,7 +667,7 @@ function InputField({
 }
 
 // ── Componente de Agenda / Calendário Mensal ────────────────────────────────
-function AgendaCalendario({ tarefas }: { tarefas: any[] }) {
+function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTarefa?: (t: any) => void }) {
   const hoje = new Date();
   const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
 
@@ -784,7 +787,8 @@ function AgendaCalendario({ tarefas }: { tarefas: any[] }) {
                   <div
                     key={t.id}
                     title={t.titulo}
-                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug ${corTarefa(t)}`}
+                    onClick={() => onEditTarefa?.(t)}
+                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug cursor-pointer hover:opacity-80 transition-opacity ${corTarefa(t)}`}
                   >
                     {t.titulo}
                   </div>
