@@ -204,43 +204,37 @@ export function ConfigPage() {
 
     setTestingDatajud(true);
     try {
-      // Usa proxy para evitar bloqueio de CORS no browser
+      // Passa pelo proxy (evita CORS) e envia o token como header Authorization
+      // O proxy.js repassa req.headers['authorization'] para a API do Datajud
       const targetUrl = "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search";
-      const proxyUrl  = `/api/proxy?url=${encodeURIComponent(targetUrl)}&method=POST&token=${encodeURIComponent(token)}`;
+      const proxyUrl  = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
       const res = await fetch(proxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `ApiKey ${token}`,
+        },
         body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
         signal: AbortSignal.timeout(20000),
       });
-      if (res.ok || res.status === 200) {
-        toast({ title: "✅ DataJud CNJ conectado!", description: `HTTP ${res.status} — API respondendo normalmente.` });
-      } else if (res.status === 401 || res.status === 403) {
-        toast({ title: `❌ Token inválido (HTTP ${res.status})`, description: "Verifique se o token do DataJud está correto e ativo.", variant: "destructive" });
+
+      // Lê o status real vindo do upstream (proxy devolve como header)
+      const upstreamStatus = Number(res.headers.get("X-Upstream-Status") || res.status);
+
+      if (upstreamStatus === 200 || upstreamStatus === 404) {
+        // 404 = processo não encontrado (esperado), mas a API respondeu = token OK
+        toast({ title: "✅ DataJud CNJ conectado!", description: `Token válido — API respondendo normalmente.` });
+      } else if (upstreamStatus === 401 || upstreamStatus === 403) {
+        toast({ title: `❌ Token inválido (HTTP ${upstreamStatus})`, description: "O token foi recusado pelo DataJud. Verifique se está correto e ativo.", variant: "destructive" });
       } else {
-        toast({ title: `⚠️ DataJud retornou HTTP ${res.status}`, description: "A API respondeu mas com erro. Verifique o token.", variant: "destructive" });
+        toast({ title: `⚠️ DataJud retornou HTTP ${upstreamStatus}`, description: "Resposta inesperada da API. Tente novamente.", variant: "destructive" });
       }
     } catch (err: any) {
-      // Fallback: fetch direto (funciona em alguns ambientes sem CORS restrito)
-      try {
-        const res = await fetch("https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `ApiKey ${token}` },
-          body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (res.ok || res.status === 200) {
-          toast({ title: "✅ DataJud CNJ conectado!", description: `HTTP ${res.status} — API respondendo normalmente.` });
-        } else {
-          toast({ title: `❌ DataJud retornou HTTP ${res.status}`, description: "Verifique se o token está correto.", variant: "destructive" });
-        }
-      } catch {
-        toast({
-          title: "❌ Não foi possível conectar ao DataJud",
-          description: "Em desenvolvimento local o proxy pode não estar disponível. Em produção (Vercel) a conexão funciona normalmente.",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "❌ Não foi possível conectar ao DataJud",
+        description: "Verifique sua conexão. Em desenvolvimento local o proxy pode não estar ativo.",
+        variant: "destructive",
+      });
     } finally {
       setTestingDatajud(false);
     }
