@@ -68,6 +68,25 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const intimacoesNaoLidas = intimacoesAtivas.filter((i: any) => !i._lida);
   const ultimasIntimacoes  = intimacoesAtivas.slice(0, 5);
 
+  // Calcula clientes únicos que receberam publicações (intimações ativas)
+  const clientesComPublicacoes = (() => {
+    const clienteIds = new Set<string>();
+    
+    intimacoesAtivas.forEach((intimacao: any) => {
+      const numProc = intimacao._numProc || "";
+      // Encontra o processo correspondente
+      const processo = processos.find(p => 
+        p.numero_cnj && numProc.includes(p.numero_cnj.replace(/\D/g, ""))
+      );
+      
+      if (processo && processo.cliente_id) {
+        clienteIds.add(processo.cliente_id);
+      }
+    });
+    
+    return clienteIds.size;
+  })();
+
   const now = new Date();
   const tarefasPendentes  = tarefas.filter(t => t.status !== "concluida");
   const tarefasVencidas   = tarefas.filter(t => {
@@ -209,11 +228,18 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           <div className="text-[0.65rem] font-bold uppercase tracking-widest text-purple-600 mb-1">Clientes</div>
           <div className="font-display text-3xl font-black text-purple-600">{clientes.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
-          {clientesNotificadosHoje > 0 && (
-            <div className="mt-1.5 text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
-              {clientesNotificadosHoje} notificado(s) hoje
-            </div>
-          )}
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {clientesComPublicacoes > 0 && (
+              <div className="text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
+                {clientesComPublicacoes} com publicações
+              </div>
+            )}
+            {clientesNotificadosHoje > 0 && (
+              <div className="text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
+                {clientesNotificadosHoje} notificado(s) hoje
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tarefas pendentes */}
