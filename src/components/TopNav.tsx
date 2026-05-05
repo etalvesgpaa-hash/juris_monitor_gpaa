@@ -29,13 +29,11 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef                  = useRef<HTMLDivElement>(null);
 
-  // Lê intimações do localStorage para o badge AASP
   const [intimacoesCount, setIntimacoesCount] = useState<number>(() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length; } catch { return 0; }
   });
 
   useEffect(() => {
-    // Atualiza contagem ao focar a aba ou após sincronização
     const update = () => {
       try { setIntimacoesCount(JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length); } catch { /* noop */ }
     };
@@ -56,7 +54,6 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
     setTimeout(() => {
       setSyncing(false);
       toast.success("Sincronização concluída!");
-      // Reatualiza contagem após sync
       try { setIntimacoesCount(JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length); } catch { /* noop */ }
     }, 2000);
   };
@@ -74,34 +71,87 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
   return (
     <nav className="sticky top-0 z-50 bg-primary border-b border-accent/20 w-full">
 
-      {/* ── Barra principal (desktop: tudo numa linha) ── */}
+      {/* ── Linha 1: Logo · Badges · Ações ── */}
       <div className="flex items-center gap-2 px-3 md:px-6 h-14 min-w-0 w-full">
 
-        {/* Logo */}
+        {/* Logo — texto sempre visível */}
         <div className="flex items-center gap-2 shrink-0">
           <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-xs font-extrabold text-primary font-display select-none">
             JM
           </div>
-          <div className="hidden sm:block leading-none">
-            <div className="font-display font-semibold text-primary-foreground text-[0.95rem] tracking-wide">
+          <div className="leading-none">
+            <div className="font-display font-semibold text-primary-foreground text-[0.9rem] tracking-wide">
               JurisMonitor
             </div>
-            <div className="text-[0.52rem] text-accent/50 tracking-widest uppercase mt-0.5">
+            <div className="text-[0.5rem] text-accent/50 tracking-widest uppercase mt-0.5">
               EDSON TEODORO · Advocacia
             </div>
           </div>
         </div>
 
-        {/* Separador vertical */}
-        <div className="hidden lg:block w-px h-6 bg-white/10 shrink-0 mx-1" />
+        {/* Espaçador */}
+        <div className="flex-1 min-w-0" />
 
-        {/* ── Abas desktop (lg+) — inline na barra principal ── */}
-        <div className="hidden lg:flex items-center gap-0 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {/* Badges de status — visíveis em telas md+ */}
+        <div className="hidden md:flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 text-[0.62rem] bg-green-ok/10 border border-green-ok/25 px-2 py-0.5 rounded-full text-green-ok font-semibold whitespace-nowrap">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse" />
+            Datajud CNJ
+          </div>
+          <div className={`flex items-center gap-1.5 text-[0.62rem] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${
+            aaspConectada
+              ? "bg-green-ok/10 border-green-ok/25 text-green-ok"
+              : "bg-white/5 border-white/10 text-primary-foreground/40"
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-green-ok animate-pulse" : "bg-white/20"}`} />
+            {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
+          </div>
+        </div>
+
+        {/* Ações direita */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            title="Sincronizar com DataJud"
+            className="flex items-center gap-1 bg-accent/90 hover:bg-accent text-primary px-2 py-1.5 rounded-md text-xs font-semibold transition-all disabled:opacity-50 whitespace-nowrap"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${syncing ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Sincronizar</span>
+          </button>
+
+          <button
+            onClick={() => onPageChange("intimacoes")}
+            title="Intimações"
+            className="flex items-center gap-1 bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground px-2 py-1.5 rounded-md text-xs font-semibold transition-all border border-primary-foreground/20 whitespace-nowrap"
+          >
+            <Bell className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Intimações</span>
+          </button>
+
+          <div className="w-7 h-7 bg-accent/85 rounded-full flex items-center justify-center text-xs font-bold text-primary shrink-0 select-none">
+            {initials}
+          </div>
+
+          <button
+            onClick={onSignOut}
+            title="Sair"
+            className="flex items-center gap-1 text-[0.7rem] text-primary-foreground/70 border border-primary-foreground/20 rounded px-2 py-1 hover:bg-primary-foreground/10 transition-colors whitespace-nowrap"
+          >
+            <LogOut className="h-3 w-3 shrink-0" />
+            <span className="hidden sm:inline">Sair</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Linha 2 desktop (lg+): abas de navegação ── */}
+      <div className="hidden lg:block border-t border-white/5 bg-primary/95">
+        <div className="flex items-center gap-0 px-3 md:px-6 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onPageChange(tab.id)}
-              className={`shrink-0 px-3 h-14 text-[0.74rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
+              className={`shrink-0 px-3.5 py-2 text-[0.74rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
                 activePage === tab.id
                   ? "border-accent text-accent font-bold"
                   : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
@@ -111,70 +161,9 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             </button>
           ))}
         </div>
-
-        {/* Espaçador (só mobile, quando as abas não aparecem) */}
-        <div className="lg:hidden flex-1 min-w-0" />
-
-        {/* ── Badges de status das APIs (desktop xl+) ── */}
-        <div className="hidden xl:flex items-center gap-1.5 shrink-0">
-          {/* Datajud CNJ */}
-          <div className="flex items-center gap-1.5 text-[0.63rem] bg-green-ok/10 border border-green-ok/25 px-2 py-1 rounded-full text-green-ok font-semibold whitespace-nowrap">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-ok animate-pulse" />
-            Datajud CNJ
-          </div>
-          {/* AASP */}
-          <div className={`flex items-center gap-1.5 text-[0.63rem] border px-2 py-1 rounded-full font-semibold whitespace-nowrap ${
-            aaspConectada
-              ? "bg-green-ok/10 border-green-ok/25 text-green-ok"
-              : "bg-muted border-border text-muted-foreground"
-          }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-green-ok animate-pulse" : "bg-muted-foreground"}`} />
-            {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
-          </div>
-        </div>
-
-        {/* ── Ações direita ── */}
-        <div className="flex items-center gap-1 shrink-0">
-
-          {/* Sincronizar */}
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            title="Sincronizar com DataJud"
-            className="flex items-center gap-1 bg-accent/90 hover:bg-accent text-primary px-2 py-1.5 rounded-md text-xs font-semibold transition-all disabled:opacity-50 whitespace-nowrap"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${syncing ? "animate-spin" : ""}`} />
-            <span className="hidden md:inline">Sincronizar</span>
-          </button>
-
-          {/* Intimações */}
-          <button
-            onClick={() => onPageChange("intimacoes")}
-            title="Intimações"
-            className="flex items-center gap-1 bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground px-2 py-1.5 rounded-md text-xs font-semibold transition-all border border-primary-foreground/20 whitespace-nowrap"
-          >
-            <Bell className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden md:inline">Intimações</span>
-          </button>
-
-          {/* Avatar */}
-          <div className="w-7 h-7 bg-accent/85 rounded-full flex items-center justify-center text-xs font-bold text-primary shrink-0 select-none">
-            {initials}
-          </div>
-
-          {/* Sair */}
-          <button
-            onClick={onSignOut}
-            title="Sair"
-            className="flex items-center gap-1 text-[0.7rem] text-primary-foreground/70 border border-primary-foreground/20 rounded px-2 py-1 hover:bg-primary-foreground/10 transition-colors whitespace-nowrap"
-          >
-            <LogOut className="h-3 w-3 shrink-0" />
-            <span className="hidden md:inline">Sair</span>
-          </button>
-        </div>
       </div>
 
-      {/* ── Dropdown mobile / zoom alto (lg-) ── */}
+      {/* ── Dropdown mobile (< lg) ── */}
       <div className="lg:hidden border-t border-white/5 px-3 py-1.5" ref={menuRef}>
         <button
           onClick={() => setMenuOpen(v => !v)}
