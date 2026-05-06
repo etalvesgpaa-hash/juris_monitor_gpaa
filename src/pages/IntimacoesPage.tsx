@@ -828,7 +828,13 @@ export function IntimacoesPage() {
         </td>
         <td className="px-3 py-2.5 align-top">
           {intim._numProc ? (
-            <div className="font-mono text-xs font-bold text-accent break-all">{intim._numProc}</div>
+            <button
+              className="font-mono text-xs font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
+              title="Visualizar intimação"
+              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+            >
+              {intim._numProc}
+            </button>
           ) : (
             <span className="text-xs text-muted-foreground italic">—</span>
           )}
@@ -928,7 +934,13 @@ export function IntimacoesPage() {
               <span className="text-xs text-muted-foreground font-mono">{fmtData(intim._data)}</span>
             </div>
             {intim._numProc && (
-              <div className="font-mono text-sm font-bold text-accent break-all">{intim._numProc}</div>
+              <button
+                className="font-mono text-sm font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
+                title="Visualizar intimação"
+                onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+              >
+                {intim._numProc}
+              </button>
             )}
             <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
             
