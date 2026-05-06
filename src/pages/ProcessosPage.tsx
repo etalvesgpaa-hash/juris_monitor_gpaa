@@ -563,7 +563,7 @@ export function ProcessosPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["Número CNJ", "Tribunal", "Partes", "Advogado", "Última Mov.", "Status", "Ações"].map(h => (
+                  {["Número CNJ", "Tribunal / Classe", "Partes", "Assunto / Órgão", "Última Mov.", "Status", "Ações"].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -576,6 +576,7 @@ export function ProcessosPage() {
                   const isSyncing = syncing.has(p.id);
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                      {/* Número CNJ */}
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setPanelProcesso(rico)}
@@ -584,49 +585,85 @@ export function ProcessosPage() {
                         >
                           {p.numero_cnj}
                         </button>
-                        {p._pendente && <span className="text-[0.6rem] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold">pendente</span>}
+                        {p._pendente && <span className="text-[0.6rem] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold ml-1">pendente</span>}
+                        {p.advogados && <div className="text-[0.65rem] text-muted-foreground mt-0.5 truncate max-w-[180px]">{p.advogados}</div>}
                       </td>
-                      <td className="px-4 py-3 text-xs max-w-[140px]">
-                        {(rico.tribunalNome || p.tribunal || "—").split("—")[0].slice(0, 22)}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
+
+                      {/* Tribunal + Classe */}
+                      <td className="px-4 py-3 text-xs max-w-[160px]">
+                        <div className="font-medium text-foreground leading-snug">
+                          {(rico.tribunalNome || p.tribunal || "—").slice(0, 25)}
+                        </div>
                         {(() => {
-                          // Prioridade: estado local enriquecido > dados_datajud > campo partes do Supabase
+                          const djd = p.dados_datajud as any;
+                          const classe = rico.classe || p.classe || djd?.classe || null;
+                          return classe ? (
+                            <div className="text-[0.65rem] text-muted-foreground mt-0.5 leading-snug line-clamp-2">{classe}</div>
+                          ) : null;
+                        })()}
+                      </td>
+
+                      {/* Partes */}
+                      <td className="px-4 py-3 text-xs max-w-[180px]">
+                        {(() => {
                           const djd = p.dados_datajud as any;
                           const autorFinal = rico.autor || djd?.autor || null;
                           const reuFinal   = rico.reu   || djd?.reu   || null;
-
-                          // Fallback: tenta splittar o campo partes (salvo como "Nome A × Nome B")
-                          const partesStr = p.partes || "";
-                          const sepIdx = partesStr.indexOf("×");
+                          const partesStr  = p.partes || "";
+                          const sepIdx     = partesStr.indexOf("×");
                           const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
                           const reuFallback   = sepIdx > -1 ? partesStr.slice(sepIdx + 1).trim() : null;
-
-                          const autorExibir = autorFinal || autorFallback || "—";
-                          const reuExibir   = reuFinal   || reuFallback   || "—";
-
+                          const autorExibir   = autorFinal || autorFallback || "—";
+                          const reuExibir     = reuFinal   || reuFallback   || "—";
                           return (
                             <>
-                              <div className="font-medium text-foreground">{autorExibir}</div>
-                              <div className="text-muted-foreground">× {reuExibir}</div>
+                              <div className="font-medium text-foreground line-clamp-2">{autorExibir}</div>
+                              <div className="text-muted-foreground line-clamp-2">× {reuExibir}</div>
                             </>
                           );
                         })()}
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{p.advogados || "—"}</td>
+
+                      {/* Assunto + Órgão Julgador */}
+                      <td className="px-4 py-3 text-xs max-w-[180px]">
+                        {(() => {
+                          const djd = p.dados_datajud as any;
+                          const assunto = rico.assunto || p.assunto || djd?.assunto || null;
+                          const orgao   = rico.orgaoJulgador || p.vara || djd?.orgaoJulgador || null;
+                          return (
+                            <>
+                              {assunto && <div className="font-medium text-foreground line-clamp-2 leading-snug">{assunto}</div>}
+                              {orgao   && <div className="text-[0.65rem] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{orgao}</div>}
+                              {!assunto && !orgao && <span className="text-muted-foreground">—</span>}
+                            </>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Última Movimentação */}
                       <td className="px-4 py-3">
                         {m ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[0.68rem] text-blue-600 font-semibold">{m.data}</span>
                             <span className="text-xs font-semibold text-foreground leading-tight max-w-[160px] line-clamp-2">{m.tipo}</span>
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">{p.ultima_movimentacao ? new Date(p.ultima_movimentacao + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</span>
-                        )}
+                        ) : (() => {
+                          // Corrige Invalid Date: ultima_movimentacao pode ser "YYYY-MM-DD" ou ISO completo
+                          const raw = p.ultima_movimentacao;
+                          if (!raw) return <span className="text-muted-foreground text-xs">—</span>;
+                          const dataParte = raw.slice(0, 10); // "YYYY-MM-DD"
+                          const [ano, mes, dia] = dataParte.split("-");
+                          const dataBR = (ano && mes && dia) ? `${dia}/${mes}/${ano}` : "—";
+                          return <span className="text-muted-foreground text-xs">{dataBR}</span>;
+                        })()}
                       </td>
+
+                      {/* Status */}
                       <td className="px-4 py-3">
                         {statusBadge(p.status === "ativo" ? "Ativo" : p.status === "arquivado" ? "Arquivado" : p.status || "Ativo")}
                       </td>
+
+                      {/* Ações */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button onClick={() => setPanelProcesso(rico)} title="Ver detalhes"
