@@ -172,7 +172,9 @@ export function ConfigPage() {
         }
       }
 
-      // Persiste no localStorage para que IntimacoesPage leia mesmo sem nova query ao Supabase
+      // Persiste no localStorage para que as páginas leiam mesmo sem nova query ao Supabase
+      if (apiKeys.datajud_token) localStorage.setItem("jurismonitor_datajud_token", apiKeys.datajud_token);
+      else localStorage.removeItem("jurismonitor_datajud_token");
       if (apiKeys.aasp_chave) localStorage.setItem("jurismonitor_aasp_key", apiKeys.aasp_chave);
       else localStorage.removeItem("jurismonitor_aasp_key");
       if (apiKeys.groq_api_key) localStorage.setItem("jurismonitor_groq_key", apiKeys.groq_api_key);
@@ -603,6 +605,7 @@ export function ConfigPage() {
               API Keys & Credenciais
             </h2>
             
+            <form onSubmit={(e) => e.preventDefault()} autoComplete="off">
             <div className="space-y-4">
               {/* DataJud CNJ */}
               <div className="border border-border rounded-lg p-4">
@@ -626,6 +629,7 @@ export function ConfigPage() {
                     onChange={(e) => setApiKeys({ ...apiKeys, datajud_token: e.target.value })}
                     placeholder="Token CNJ DataJud"
                     className="pr-10 font-mono text-sm"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
@@ -684,6 +688,7 @@ export function ConfigPage() {
                         onChange={(e) => setApiKeys({ ...apiKeys, aasp_chave: e.target.value })}
                         placeholder="3D665015974749886C7525C75B53..."
                         className="pr-10 font-mono text-sm h-11"
+                        autoComplete="new-password"
                       />
                       <button
                         type="button"
@@ -781,6 +786,7 @@ export function ConfigPage() {
                     onChange={(e) => setApiKeys({ ...apiKeys, groq_api_key: e.target.value })}
                     placeholder="gsk_..."
                     className="pr-10 font-mono text-sm"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
@@ -842,6 +848,7 @@ export function ConfigPage() {
                     onChange={(e) => setApiKeys({ ...apiKeys, whatsapp_token: e.target.value })}
                     placeholder="EAAx..."
                     className="pr-10 font-mono text-sm"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
@@ -853,6 +860,7 @@ export function ConfigPage() {
                 </div>
               </div>
             </div>
+            </form>
 
             <div className="mt-6 flex justify-end">
               <Button 

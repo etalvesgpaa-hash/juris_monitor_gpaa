@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useProcessos, useCreateProcesso, useDeleteProcesso, useUpdateProcesso, useMovimentacoes } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
@@ -293,6 +293,22 @@ export function ProcessosPage() {
     return DEFAULT_TOKEN;
   }, [user]);
 
+  // Pré-carrega o token DataJud do Supabase no mount para não depender só do localStorage
+  useEffect(() => {
+    if (!user) return;
+    if (localStorage.getItem("jurismonitor_datajud_token")) return; // já está em cache
+    supabase
+      .from("api_keys")
+      .select("datajud_token")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.datajud_token) {
+          localStorage.setItem("jurismonitor_datajud_token", data.datajud_token);
+        }
+      });
+  }, [user]);
+
   const resetForm = () => {
     setForm({ numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: "Ativo", obs: "", cliente_id: "" });
     setEditId(null);
@@ -404,7 +420,7 @@ export function ProcessosPage() {
     // Atualiza estado local
     setProcessos(prev => prev.map(p => p.id === processo.id ? { ...p, resumo_ia: resumo } : p));
     if (panelProcesso?.id === processo.id) setPanelProcesso(p => p ? { ...p, resumo_ia: resumo } as ProcessoRico : p);
-    toast.success("✦ Resumo IA gerado e salvo!");
+    toast({ title: "✦ Resumo IA gerado e salvo!" });
   }, [gerarResumoProcesso, panelProcesso]);
 
   // ── Gerar todos os resumos IA ───────────────────────────────────────────────

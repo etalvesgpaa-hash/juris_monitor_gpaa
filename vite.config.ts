@@ -10,19 +10,12 @@ export default defineConfig(({ mode }) => ({
     hmr: { overlay: false },
 
     proxy: {
-      // Em dev: /api/proxy → Vercel Function local simulada
-      // Repassa GET e POST preservando body e headers (Authorization)
+      // Em dev: /api/proxy → mini-proxy que repassa para o host real extraído do ?url=
+      // Funciona para DataJud, AASP e qualquer outro host permitido
       "/api/proxy": {
-        target: "https://intimacaoapi.aasp.org.br",
+        target: "https://api-publica.datajud.cnj.jus.br",
         changeOrigin: true,
-        secure: true,
-        // Reescrita: extrai a URL do parâmetro ?url= e redireciona para o host alvo
-        // Suporta múltiplos hosts — usamos configure para lógica custom
-        bypass(req, _res, _options) {
-          // Para DataJud: o target muda dinamicamente — usamos um bypass custom
-          // que delega para o nosso mini-proxy Node.js inline
-          return null; // null = deixa o proxy padrão agir (será reescrito abaixo)
-        },
+        secure: false, // aceita qualquer cert upstream em dev
         configure(proxy, _options) {
           proxy.on("proxyReq", (proxyReq, req, _res) => {
             // Extrai URL do parâmetro ?url=
@@ -40,7 +33,7 @@ export default defineConfig(({ mode }) => ({
             const targetHost = hostMatch[1];
             const targetPath = hostMatch[2] || "/";
 
-            // Reescreve o host e path
+            // Reescreve o host e path para o destino real
             proxyReq.setHeader("host", targetHost);
             proxyReq.path = targetPath;
 
@@ -52,6 +45,12 @@ export default defineConfig(({ mode }) => ({
             if (req.method === "POST") {
               proxyReq.setHeader("content-type", "application/json");
             }
+          });
+
+          proxy.on("proxyRes", (proxyRes, _req, res: any) => {
+            // Expõe X-Upstream-Status para que o frontend leia corretamente
+            res.setHeader?.("Access-Control-Expose-Headers", "X-Upstream-Status, X-Proxy-Url");
+            res.setHeader?.("X-Upstream-Status", String(proxyRes.statusCode));
           });
 
           proxy.on("error", (err, _req, res: any) => {
