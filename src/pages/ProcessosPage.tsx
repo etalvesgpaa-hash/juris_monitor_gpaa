@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useProcessos, useCreateProcesso, useDeleteProcesso, useUpdateProcesso, useMovimentacoes } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
@@ -293,22 +293,6 @@ export function ProcessosPage() {
     return DEFAULT_TOKEN;
   }, [user]);
 
-  // Pré-carrega o token DataJud do Supabase no mount para não depender só do localStorage
-  useEffect(() => {
-    if (!user) return;
-    if (localStorage.getItem("jurismonitor_datajud_token")) return; // já está em cache
-    supabase
-      .from("api_keys")
-      .select("datajud_token")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.datajud_token) {
-          localStorage.setItem("jurismonitor_datajud_token", data.datajud_token);
-        }
-      });
-  }, [user]);
-
   const resetForm = () => {
     setForm({ numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: "Ativo", obs: "", cliente_id: "" });
     setEditId(null);
@@ -409,8 +393,9 @@ export function ProcessosPage() {
   }, [getToken, updateProcesso, user, panelProcesso, toast]);
 
   // ── Resumo IA de um processo ─────────────────────────────────────────────
-  const gerarResumoUmProcesso = useCallback(async (processo: ProcessoRico) => {
-    const movs = processo._movimentacoes || [];
+  const gerarResumoUmProcesso = useCallback(async (processo: ProcessoRico, movimentacoesDB?: any[]) => {
+    // Usa movimentações locais (pós-sync) ou as do banco como fallback
+    const movs = (processo._movimentacoes?.length ? processo._movimentacoes : movimentacoesDB) || [];
     const resumo = await gerarResumoProcesso(processo, movs);
     if (!resumo) return;
 
@@ -420,7 +405,7 @@ export function ProcessosPage() {
     // Atualiza estado local
     setProcessos(prev => prev.map(p => p.id === processo.id ? { ...p, resumo_ia: resumo } : p));
     if (panelProcesso?.id === processo.id) setPanelProcesso(p => p ? { ...p, resumo_ia: resumo } as ProcessoRico : p);
-    toast({ title: "✦ Resumo IA gerado e salvo!" });
+    toast.success("✦ Resumo IA gerado e salvo!");
   }, [gerarResumoProcesso, panelProcesso]);
 
   // ── Gerar todos os resumos IA ───────────────────────────────────────────────
@@ -589,19 +574,44 @@ export function ProcessosPage() {
                   const movs = rico._movimentacoes || [];
                   const m = movs[0];
                   const isSyncing = syncing.has(p.id);
-                  const djData = p.dados_datajud as any;
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-3">
-                        <div className="font-mono text-sm font-bold text-accent/90">{p.numero_cnj}</div>
+                        <button
+                          onClick={() => setPanelProcesso(rico)}
+                          className="font-mono text-sm font-bold text-accent/90 hover:text-accent hover:underline underline-offset-2 transition-colors text-left"
+                          title="Ver detalhes do processo"
+                        >
+                          {p.numero_cnj}
+                        </button>
                         {p._pendente && <span className="text-[0.6rem] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold">pendente</span>}
                       </td>
                       <td className="px-4 py-3 text-xs max-w-[140px]">
                         {(rico.tribunalNome || p.tribunal || "—").split("—")[0].slice(0, 22)}
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        <div>{rico.autor || djData?.autor || (p.partes?.split("×")[0]) || "—"}</div>
-                        <div className="text-muted-foreground">× {rico.reu || djData?.reu || (p.partes?.split("×")[1]) || "—"}</div>
+                        {(() => {
+                          // Prioridade: estado local enriquecido > dados_datajud > campo partes do Supabase
+                          const djd = p.dados_datajud as any;
+                          const autorFinal = rico.autor || djd?.autor || null;
+                          const reuFinal   = rico.reu   || djd?.reu   || null;
+
+                          // Fallback: tenta splittar o campo partes (salvo como "Nome A × Nome B")
+                          const partesStr = p.partes || "";
+                          const sepIdx = partesStr.indexOf("×");
+                          const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
+                          const reuFallback   = sepIdx > -1 ? partesStr.slice(sepIdx + 1).trim() : null;
+
+                          const autorExibir = autorFinal || autorFallback || "—";
+                          const reuExibir   = reuFinal   || reuFallback   || "—";
+
+                          return (
+                            <>
+                              <div className="font-medium text-foreground">{autorExibir}</div>
+                              <div className="text-muted-foreground">× {reuExibir}</div>
+                            </>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{p.advogados || "—"}</td>
                       <td className="px-4 py-3">
@@ -719,18 +729,26 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
   onClose: () => void;
   onDelete: (id: string) => void;
   onSincronizar: (id: string, numero: string) => void;
-  onResumoIA: (processo: ProcessoRico) => void;
+  onResumoIA: (processo: ProcessoRico, movimentacoesDB?: any[]) => void;
   loadingIA: boolean;
   syncing: Set<string>;
   statusBadge: (s: string) => React.ReactNode;
 }) {
   const { data: movimentacoesDB = [] } = useMovimentacoes(processo.id);
   const isSyncing = syncing.has(processo.id);
+  // Prioriza movimentações locais (pós-sync) sobre as do banco
   const movs = (processo._movimentacoes?.length ? processo._movimentacoes : movimentacoesDB) as any[];
+
   const djData = processo.dados_datajud as any;
-  const partes = processo.partes?.split("×").map(s => s.trim()) || [];
-  const autor = processo.autor || partes[0] || djData?.autor || "—";
-  const reu   = processo.reu   || partes[1] || djData?.reu   || "—";
+
+  // Extrai partes com fallback robusto
+  const partesStr = processo.partes || "";
+  const sepIdx = partesStr.indexOf("×");
+  const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
+  const reuFallback   = sepIdx > -1 ? partesStr.slice(sepIdx + 1).trim() : null;
+
+  const autor = processo.autor || djData?.autor || autorFallback || "—";
+  const reu   = processo.reu   || djData?.reu   || reuFallback   || "—";
 
   return (
     <>
@@ -749,7 +767,7 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
             {isSyncing ? "Sincronizando…" : "⟳ DataJud"}
           </button>
           <button
-            onClick={() => onResumoIA(processo)}
+            onClick={() => onResumoIA(processo, movimentacoesDB)}
             disabled={loadingIA}
             className="flex items-center gap-1 text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
           >
@@ -800,7 +818,7 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
             <div className="bg-purple-500/5 border border-purple-400/20 rounded-lg p-4">
               <p className="text-sm leading-relaxed text-foreground">{processo.resumo_ia as string}</p>
               <button
-                onClick={() => onResumoIA(processo)}
+                onClick={() => onResumoIA(processo, movimentacoesDB)}
                 disabled={loadingIA}
                 className="mt-2 text-[0.68rem] text-purple-600 hover:underline disabled:opacity-50"
               >
@@ -815,7 +833,7 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
                   : "Sincronize com DataJud primeiro para gerar o resumo IA."}
               </p>
               <button
-                onClick={() => onResumoIA(processo)}
+                onClick={() => onResumoIA(processo, movimentacoesDB)}
                 disabled={loadingIA || movs.length === 0}
                 className="flex items-center gap-1.5 mx-auto text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
               >
