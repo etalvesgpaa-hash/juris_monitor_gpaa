@@ -675,7 +675,11 @@ export function IntimacoesPage() {
       }
 
       const data = await resp.json();
-      const resumo = data.choices?.[0]?.message?.content?.trim() || "";
+      const resumoBruto = data.choices?.[0]?.message?.content?.trim() || "";
+      const resumo = resumoBruto
+        .replace(/^(aqui (está|estão|segue|seguem)[^:\n]*:\s*)/i, "")
+        .replace(/^(segue[^:\n]*:\s*)/i, "")
+        .trim();
 
       if (!resumo) {
         throw new Error("Resumo vazio retornado pela IA");
