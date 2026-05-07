@@ -282,12 +282,15 @@ export function IntimacoesPage() {
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
 
-  // ── Carrega do Supabase se localStorage estiver vazio (ex: celular) ────────
+  // ── Carrega do Supabase SEMPRE ao abrir (fonte de verdade cross-device) ─────
   useEffect(() => {
     if (!user) return;
-    const local = loadStore();
-    if (local.length > 0) return; // localStorage já tem dados → não precisa buscar
 
+    // Mostra o localStorage imediatamente (evita tela em branco)
+    const local = loadStore();
+    if (local.length > 0) setIntimacoes(local);
+
+    // Depois busca do Supabase e mescla
     supabase
       .from("intimacoes")
       .select("*")
@@ -297,7 +300,7 @@ export function IntimacoesPage() {
       .limit(500)
       .then(({ data }) => {
         if (!data?.length) return;
-        const items: AaspIntimacao[] = data.map((row: any) => {
+        const fromDB: AaspIntimacao[] = data.map((row: any) => {
           const raw = (row.dados_raw as AaspIntimacao) || {};
           return {
             ...raw,
@@ -313,8 +316,15 @@ export function IntimacoesPage() {
             _orgaoJulgador:   row.orgao_julgador || raw._orgaoJulgador || "",
           };
         });
-        saveStore(items);
-        setIntimacoes(items);
+
+        // Mescla: Supabase tem prioridade (tem resumoIA e status mais recentes)
+        // mas mantém itens locais que ainda não foram enviados ao Supabase
+        const dbIds = new Set(fromDB.map(i => i._id));
+        const apenasLocal = local.filter(i => !dbIds.has(i._id));
+        const merged = [...fromDB, ...apenasLocal];
+
+        saveStore(merged);
+        setIntimacoes(merged);
       })
       .catch(() => {});
   }, [user]);
@@ -598,6 +608,27 @@ export function IntimacoesPage() {
 
     setIntimacoes(uniq);
     saveStore(uniq);
+
+    // Persiste novas intimações no Supabase para sincronização cross-device
+    if (novas.length > 0) {
+      const rows = novas.map(it => ({
+        id:               it._id,
+        user_id:          user!.id,
+        origem:           "aasp",
+        numero_processo:  it._numProc || null,
+        tipo:             it._titulo || null,
+        data_publicacao:  it._data || null,
+        status:           it._status || "ativa",
+        partes:           it._partes || null,
+        orgao_julgador:   it._orgaoJulgador || null,
+        resumo_ia:        it._resumoIA || null,
+        dados_raw:        it,
+      }));
+      try {
+        await supabase.from("intimacoes").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      } catch (_) {}
+    }
+
     toast.success(`${novas.length} intimação(ões) encontrada(s) nos últimos 7 dias úteis.`);
   };
 
@@ -623,6 +654,26 @@ export function IntimacoesPage() {
 
     setIntimacoes(uniq);
     saveStore(uniq);
+
+    // Persiste no Supabase
+    if (arr.length > 0) {
+      const rows = arr.map(it => ({
+        id:               it._id,
+        user_id:          user!.id,
+        origem:           "aasp",
+        numero_processo:  it._numProc || null,
+        tipo:             it._titulo || null,
+        data_publicacao:  it._data || null,
+        status:           it._status || "ativa",
+        partes:           it._partes || null,
+        orgao_julgador:   it._orgaoJulgador || null,
+        resumo_ia:        it._resumoIA || null,
+        dados_raw:        it,
+      }));
+      try {
+        await supabase.from("intimacoes").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      } catch (_) {}
+    }
   };
 
   /** Gerar resumo IA para uma intimação */
@@ -765,6 +816,7 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
+    supabase.from("intimacoes").update({ dados_raw: { _lida: true } } as any).eq("id", id).catch(() => {});
   };
 
   const setStatus = (id: string, status: AaspIntimacao["_status"]) => {
@@ -773,6 +825,7 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
+    supabase.from("intimacoes").update({ status } as any).eq("id", id).catch(() => {});
     toast.success("Status atualizado.");
   };
 
@@ -783,6 +836,7 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
+    supabase.from("intimacoes").delete().eq("id", id).catch(() => {});
     toast.success("Intimação excluída.");
   };
 
