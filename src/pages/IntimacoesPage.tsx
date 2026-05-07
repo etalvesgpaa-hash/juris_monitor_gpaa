@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -782,87 +782,6 @@ export function IntimacoesPage() {
     toast.success("Intimação excluída.");
   };
 
-  // ── Reenvio manual de e-mail para clientes do processo ──────────────────────
-  const [enviandoEmail, setEnviandoEmail] = useState<Set<string>>(new Set());
-
-  const reenviarEmailManual = useCallback(async (intim: AaspIntimacao) => {
-    if (!intim._numProc) { toast.error("Intimação sem número de processo."); return; }
-
-    setEnviandoEmail(prev => new Set(prev).add(intim._id));
-    try {
-      const { data: clientes } = await supabase
-        .from("clientes")
-        .select("id, nome, email, numeros_processo, notificacoes_email, status_monitoramento")
-        .eq("user_id", user!.id)
-        .eq("notificacoes_email", true)
-        .eq("status_monitoramento", "ativo")
-        .not("email", "is", null)
-        .not("numeros_processo", "is", null);
-
-      if (!clientes?.length) { toast.info("Nenhum cliente com notificação ativa para este processo."); return; }
-
-      const intimLimpo = intim._numProc.replace(/\D/g, "");
-      const destinatarios = clientes.filter(c =>
-        (c.numeros_processo as string[]).some(p => {
-          const pl = p.replace(/\D/g, "");
-          return pl && intimLimpo && (pl.includes(intimLimpo) || intimLimpo.includes(pl));
-        })
-      );
-
-      if (!destinatarios.length) { toast.info("Nenhum cliente cadastrado para este processo."); return; }
-
-      const fmtDataBR = (iso: string) => {
-        const p = (iso || "").slice(0, 10).split("-");
-        return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
-      };
-
-      let ok = 0;
-      for (const cliente of destinatarios) {
-        try {
-          const res = await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              destinatario:   cliente.email,
-              nomeCliente:    cliente.nome,
-              numeroProcesso: intim._numProc,
-              dataPublicacao: fmtDataBR(intim._data),
-              assunto:        intim._titulo || "Nova Publicação AASP",
-              resumoIA:       intim._resumoIA || null,
-              textoCompleto:  "",
-            }),
-          });
-
-          const status = res.ok ? "enviado" : "falha";
-          await supabase.from("notificacoes_enviadas").insert({
-            user_id:         user!.id,
-            cliente_id:      cliente.id,
-            intimacao_id:    intim._id,
-            numero_processo: intim._numProc || "",
-            assunto:         intim._titulo || "Nova Publicação AASP",
-            resumo_ia:       intim._resumoIA || null,
-            email_destino:   cliente.email,
-            status,
-          });
-
-          if (res.ok) {
-            ok++;
-            await supabase.from("clientes").update({ ultima_notificacao: new Date().toISOString() }).eq("id", cliente.id);
-          }
-        } catch (e: any) {
-          console.error("[ReenvioManual]", e.message);
-        }
-      }
-
-      if (ok > 0) toast.success(`📧 ${ok} e-mail(s) enviado(s) com sucesso!`);
-      else toast.error("Falha ao enviar e-mails. Verifique as configurações.");
-    } catch (e: any) {
-      toast.error("Erro ao buscar clientes: " + e.message);
-    } finally {
-      setEnviandoEmail(prev => { const s = new Set(prev); s.delete(intim._id); return s; });
-    }
-  }, [user]);
-
   const limparTudo = () => {
     if (!confirm("Limpar TODAS as intimações? Esta ação não pode ser desfeita.")) return;
     setIntimacoes([]);
@@ -974,9 +893,6 @@ export function IntimacoesPage() {
             <ActionBtn title="Novo Cliente" onClick={() => setNovoClienteIntimacao(intim)} className="text-emerald-600">
               <UserPlus className="h-3.5 w-3.5" />
             </ActionBtn>
-            <ActionBtn title="Enviar e-mail ao cliente" onClick={() => reenviarEmailManual(intim)} className="text-blue-500" disabled={enviandoEmail.has(intim._id)}>
-              {enviandoEmail.has(intim._id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-            </ActionBtn>
             <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
               <Plus className="h-3.5 w-3.5" />
             </ActionBtn>
@@ -1076,11 +992,6 @@ export function IntimacoesPage() {
           </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs text-emerald-600 border-emerald-200" onClick={() => setNovoClienteIntimacao(intim)}>
             <UserPlus className="h-3 w-3 mr-1" /> Cliente
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs text-blue-500 border-blue-200"
-            onClick={() => reenviarEmailManual(intim)} disabled={enviandoEmail.has(intim._id)}>
-            {enviandoEmail.has(intim._id) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Mail className="h-3 w-3 mr-1" />}
-            E-mail
           </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs text-accent" onClick={() => criarTarefaDeIntimacao(intim)}>
             <Plus className="h-3 w-3 mr-1" /> Tarefa
@@ -1250,8 +1161,6 @@ export function IntimacoesPage() {
           onCriarTarefa={criarTarefaDeIntimacao}
           onGerarResumo={gerarResumoIA}
           onNovoCliente={(intim) => { setSelected(null); setNovoClienteIntimacao(intim); }}
-          onReenviarEmail={reenviarEmailManual}
-          enviandoEmail={enviandoEmail}
         />
       )}
 
@@ -1321,8 +1230,6 @@ function ModalDetalhe({
   onCriarTarefa,
   onGerarResumo,
   onNovoCliente,
-  onReenviarEmail,
-  enviandoEmail,
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
@@ -1331,8 +1238,6 @@ function ModalDetalhe({
   onCriarTarefa: (intim: AaspIntimacao) => void;
   onGerarResumo: (intim: AaspIntimacao) => void;
   onNovoCliente: (intim: AaspIntimacao) => void;
-  onReenviarEmail: (intim: AaspIntimacao) => void;
-  enviandoEmail: Set<string>;
 }) {
   const titulo =
     intim._titulo ||
@@ -1462,18 +1367,6 @@ function ModalDetalhe({
             onClick={() => onNovoCliente(intim)}
           >
             <UserPlus className="h-4 w-4 mr-1.5" /> Novo Cliente
-          </Button>
-          <Button
-            variant="outline" size="sm"
-            className="text-blue-500 border-blue-300/60 hover:bg-blue-50"
-            onClick={() => onReenviarEmail(intim)}
-            disabled={enviandoEmail.has(intim._id)}
-            title="Envia e-mail para os clientes que têm este processo cadastrado e notificação ativa"
-          >
-            {enviandoEmail.has(intim._id)
-              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-              : <Mail className="h-4 w-4 mr-1.5" />}
-            Enviar E-mail
           </Button>
           {(intim._status || "ativa") === "ativa" ? (
             <Button variant="outline" size="sm" className="text-green-ok border-green-ok/30"
