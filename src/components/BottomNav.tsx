@@ -1,13 +1,14 @@
 import type { PageId } from "./AppLayout";
 
 const items: { id: PageId; icon: string; label: string }[] = [
-  { id: "dashboard", icon: "📊", label: "Dashboard" },
-  { id: "processos", icon: "📁", label: "Processos" },
-  { id: "intimacoes", icon: "⚖️", label: "Intimações" },
-  { id: "tarefas", icon: "📋", label: "Tarefas" },
-  { id: "clientes", icon: "👤", label: "Clientes" },
-  { id: "honorarios", icon: "💰", label: "Honorários" },
-  { id: "config", icon: "⚙️", label: "Config" },
+  { id: "dashboard",    icon: "📊", label: "Dashboard"  },
+  { id: "clientes",     icon: "👤", label: "Clientes"   },
+  { id: "intimacoes",   icon: "⚖️", label: "Intimações" },
+  { id: "processos",    icon: "📁", label: "Processos"  },
+  { id: "tarefas",      icon: "📋", label: "Tarefas"    },
+  { id: "notificacoes", icon: "🔔", label: "Notif."     },
+  { id: "honorarios",   icon: "💰", label: "Honorários" },
+  { id: "config",       icon: "⚙️", label: "Config"     },
 ];
 
 interface BottomNavProps {

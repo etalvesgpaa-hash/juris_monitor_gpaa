@@ -8,12 +8,12 @@ const STORE_KEY = "jm_aasp_intimacoes";
 
 const tabs: { id: PageId; label: string }[] = [
   { id: "dashboard",    label: "Dashboard"      },
-  { id: "processos",    label: "Processos"      },
+  { id: "clientes",     label: "Clientes"       },
   { id: "intimacoes",   label: "Intimações"     },
+  { id: "processos",    label: "Processos"      },
+  { id: "tarefas",      label: "Tarefas"        },
   { id: "notificacoes", label: "Notificações"   },
   { id: "honorarios",   label: "Honorários"     },
-  { id: "tarefas",      label: "Tarefas"        },
-  { id: "clientes",     label: "Clientes"       },
   { id: "config",       label: "Configurações"  },
 ];
 
@@ -89,11 +89,8 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
           </div>
         </div>
 
-        {/* Espaçador */}
-        <div className="flex-1 min-w-0" />
-
-        {/* Badges de status — visíveis em telas md+ */}
-        <div className="hidden md:flex items-center gap-1.5 shrink-0">
+        {/* Badges de status — logo após o logo, à esquerda */}
+        <div className="hidden md:flex items-center gap-1.5 shrink-0 ml-3">
           {/* Datajud — sempre verde pois é API pública */}
           <div className="flex items-center gap-1.5 text-[0.62rem] bg-emerald-400/15 border border-emerald-400/40 px-2.5 py-1 rounded-full text-emerald-300 font-semibold whitespace-nowrap">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -109,6 +106,9 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
           </div>
         </div>
+
+        {/* Espaçador */}
+        <div className="flex-1 min-w-0" />
 
         {/* Ações direita */}
         <div className="flex items-center gap-1 shrink-0">
