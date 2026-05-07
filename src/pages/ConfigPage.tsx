@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical } from "lucide-react";
+import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical, CloudUpload, Database } from "lucide-react";
+import { loadStore, INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -539,11 +540,12 @@ export function ConfigPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[750px]">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[900px]">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
           <TabsTrigger value="diagnostico">Diagnóstico AASP</TabsTrigger>
+          <TabsTrigger value="sincronizacao">Sincronização</TabsTrigger>
         </TabsList>
 
         {/* ABA PERFIL */}
@@ -1110,7 +1112,161 @@ export function ConfigPage() {
             )}
           </div>
         </TabsContent>
+
+        <TabsContent value="sincronizacao" className="space-y-4">
+          <SyncPanel user={user} />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+
+// ── Painel de Sincronização ───────────────────────────────────────────────────
+function SyncPanel({ user }: { user: any }) {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<"idle" | "rodando" | "ok" | "erro">("idle");
+  const [log, setLog] = useState<string[]>([]);
+  const [stats, setStats] = useState<{ local: number; banco: number; resumos: number } | null>(null);
+
+  useEffect(() => {
+    const local = loadStore();
+    setStats({ local: local.length, banco: 0, resumos: local.filter(i => i._resumoIA).length });
+    if (!user) return;
+    supabase
+      .from("intimacoes")
+      .select("id, resumo_ia", { count: "exact" })
+      .eq("user_id", user.id)
+      .eq("origem", "aasp")
+      .then(({ count, data }) => {
+        const comResumo = (data || []).filter((r: any) => r.resumo_ia).length;
+        setStats(prev => prev ? { ...prev, banco: count || 0, resumos: comResumo } : prev);
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const addLog = (msg: string) => setLog(prev => [...prev, "[" + new Date().toLocaleTimeString("pt-BR") + "] " + msg]);
+
+  const forcarSync = async () => {
+    if (!user) { toast({ title: "Usuário não autenticado.", variant: "destructive" }); return; }
+    setStatus("rodando");
+    setLog([]);
+    addLog("Iniciando sincronização completa...");
+    try {
+      const local = loadStore();
+      addLog(local.length + " intimação(ões) encontrada(s) no cache local.");
+      if (local.length === 0) {
+        addLog("Nada para enviar. Cache local vazio.");
+        setStatus("ok");
+        return;
+      }
+      const ids = local.map(i => i._id);
+      const existentes = new Set<string>();
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data } = await supabase
+          .from("intimacoes").select("id").in("id", ids.slice(i, i + 100)).eq("user_id", user.id);
+        (data || []).forEach((r: any) => existentes.add(r.id));
+      }
+      const novas   = local.filter(it => !existentes.has(it._id));
+      const antigas = local.filter(it =>  existentes.has(it._id));
+      addLog("  → " + novas.length + " novas para inserir, " + antigas.length + " existentes para atualizar.");
+      let inseridas = 0;
+      if (novas.length > 0) {
+        const rows = novas.map(it => ({
+          id: it._id, user_id: user.id, origem: "aasp",
+          data_publicacao: it._data || null, numero_processo: it._numProc || null,
+          tipo: it._titulo || null, partes: it._partes || null,
+          orgao_julgador: it._orgaoJulgador || null,
+          resumo_ia: it._resumoIA || null, status: it._status || "ativa", dados_raw: it as any,
+        }));
+        for (let i = 0; i < rows.length; i += 50) {
+          const { error } = await supabase.from("intimacoes")
+            .upsert(rows.slice(i, i + 50), { onConflict: "id" });
+          if (error) addLog("  ⚠ Lote " + i + "–" + (i+50) + ": " + error.message);
+          else inseridas += rows.slice(i, i + 50).length;
+        }
+        addLog("  ✓ " + inseridas + " inseridas com sucesso.");
+      }
+      let atualizadas = 0;
+      for (const it of antigas) {
+        const upd: Record<string, any> = { status: it._status || "ativa", dados_raw: it as any };
+        if (it._resumoIA) upd.resumo_ia = it._resumoIA;
+        const { error } = await supabase.from("intimacoes")
+          .update(upd).eq("id", it._id).eq("user_id", user.id);
+        if (!error) atualizadas++;
+      }
+      if (antigas.length > 0) addLog("  ✓ " + atualizadas + "/" + antigas.length + " atualizadas.");
+      const { count: bancoFinal, data: bancoData } = await supabase
+        .from("intimacoes").select("id, resumo_ia", { count: "exact" })
+        .eq("user_id", user.id).eq("origem", "aasp");
+      const comResumo = (bancoData || []).filter((r: any) => r.resumo_ia).length;
+      setStats({ local: local.length, banco: bancoFinal || 0, resumos: comResumo });
+      addLog("Concluído! Supabase agora tem " + bancoFinal + " intimação(ões), " + comResumo + " com resumo IA.");
+      setStatus("ok");
+      toast({ title: "✅ Sincronização concluída!", description: bancoFinal + " intimações no banco." });
+    } catch (err: any) {
+      addLog("ERRO: " + err.message);
+      setStatus("erro");
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-6">
+      <div className="flex items-center gap-3">
+        <Database className="h-5 w-5 text-accent" />
+        <div>
+          <h2 className="font-semibold text-base">Sincronização com Supabase</h2>
+          <p className="text-xs text-muted-foreground">Empurra todas as intimações do cache local para o banco de dados</p>
+        </div>
+      </div>
+      {stats && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-muted/40 rounded-xl p-4 text-center border border-border">
+            <div className="text-2xl font-bold text-foreground">{stats.local}</div>
+            <div className="text-xs text-muted-foreground mt-1">No cache local</div>
+          </div>
+          <div className={"rounded-xl p-4 text-center border " + (stats.banco < stats.local ? "bg-red-500/10 border-red-400/30" : "bg-emerald-500/10 border-emerald-400/30")}>
+            <div className={"text-2xl font-bold " + (stats.banco < stats.local ? "text-red-600" : "text-emerald-600")}>{stats.banco}</div>
+            <div className="text-xs text-muted-foreground mt-1">No Supabase</div>
+            {stats.banco < stats.local && (
+              <div className="text-[10px] text-red-500 font-semibold mt-1">{stats.local - stats.banco} faltando</div>
+            )}
+          </div>
+          <div className="bg-muted/40 rounded-xl p-4 text-center border border-border">
+            <div className="text-2xl font-bold text-accent">{stats.resumos}</div>
+            <div className="text-xs text-muted-foreground mt-1">Com resumo IA</div>
+          </div>
+        </div>
+      )}
+      {stats && stats.banco < stats.local && (
+        <Alert className="border-amber-400/40 bg-amber-500/5">
+          <AlertCircle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="text-sm">
+            <strong>{stats.local - stats.banco} intimação(ões)</strong> estão apenas no cache local deste dispositivo.
+            O mobile não consegue ver esses registros. Clique em <strong>Sincronizar Agora</strong>.
+          </AlertDescription>
+        </Alert>
+      )}
+      {stats && stats.banco >= stats.local && stats.banco > 0 && (
+        <Alert className="border-emerald-400/40 bg-emerald-500/5">
+          <CheckCircle className="h-4 w-4 text-emerald-500" />
+          <AlertDescription className="text-sm">
+            Banco de dados sincronizado. Todos os dispositivos estão com os mesmos dados.
+          </AlertDescription>
+        </Alert>
+      )}
+      <Button onClick={forcarSync} disabled={status === "rodando"} className="w-full" size="lg">
+        {status === "rodando"
+          ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Sincronizando...</>
+          : <><CloudUpload className="h-4 w-4 mr-2" />Sincronizar Agora</>}
+      </Button>
+      {log.length > 0 && (
+        <div className="bg-muted/50 rounded-xl border border-border p-4 font-mono text-xs space-y-1 max-h-48 overflow-y-auto">
+          {log.map((l, i) => (
+            <div key={i} className={l.includes("ERRO") || l.includes("⚠") ? "text-red-500" : l.includes("✓") || l.includes("Concluído") ? "text-emerald-600" : "text-muted-foreground"}>{l}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
