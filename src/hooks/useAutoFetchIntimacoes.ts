@@ -209,16 +209,19 @@ async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
     const raw = (row.dados_raw as AaspIntimacao) || {};
     return {
       ...raw,
-      _id:             row.id,
-      _data:           row.data_publicacao || raw._data || "",
-      _lida:           raw._lida || false,
-      _status:         (row.status as any) || "ativa",
-      _resumoIA:       row.resumo_ia || raw._resumoIA || null,
-      _titulo:         row.tipo || raw._titulo || "Publicação AASP",
-      _numProc:        row.numero_processo || raw._numProc || "",
-      _orgaoPublicacao:raw._orgaoPublicacao || "",
-      _partes:         row.partes || raw._partes || "",
-      _orgaoJulgador:  row.orgao_julgador || raw._orgaoJulgador || "",
+      _id:              row.id,
+      _data:            row.data_publicacao ?? raw._data ?? "",
+      _lida:            raw._lida ?? false,
+      // Supabase tem prioridade absoluta em status e resumo_ia.
+      // ?? garante que um resumo salvo no banco nunca é ignorado,
+      // mesmo que raw._resumoIA seja null ou undefined no dados_raw.
+      _status:          (row.status as any) ?? "ativa",
+      _resumoIA:        row.resumo_ia ?? raw._resumoIA ?? null,
+      _titulo:          row.tipo ?? raw._titulo ?? "Publicação AASP",
+      _numProc:         row.numero_processo ?? raw._numProc ?? "",
+      _orgaoPublicacao: raw._orgaoPublicacao ?? "",
+      _partes:          row.partes ?? raw._partes ?? "",
+      _orgaoJulgador:   row.orgao_julgador ?? raw._orgaoJulgador ?? "",
     };
   });
 
@@ -329,19 +332,32 @@ export function useAutoFetchIntimacoes() {
     ]);
   }, []);
 
-  // ── Ao montar com usuário: garante que localStorage está populado ─
+  // ── Ao montar com usuário: SEMPRE sincroniza com Supabase ────────
+  // Garante que mobile e desktop vejam exatamente os mesmos dados.
+  // O Supabase é a fonte de verdade; localStorage é apenas cache de exibição.
   useEffect(() => {
     if (!user) return;
     const local = loadStore();
-    if (local.length === 0) {
-      // localStorage vazio (ex: celular acessando pela primeira vez)
-      // → tenta carregar do Supabase antes de buscar da AASP
-      carregarDoSupabase(user.id).then(items => {
-        if (items.length > 0) {
-          toast.info(`📱 ${items.length} intimação(ões) carregada(s) da nuvem.`, { duration: 4000 });
-        }
-      }).catch(() => {});
-    }
+
+    carregarDoSupabase(user.id).then(fromDB => {
+      if (!fromDB.length) return;
+
+      // Mescla: Supabase tem prioridade em status e resumo_ia.
+      // Mantém itens locais que ainda não foram enviados ao banco.
+      const dbIds = new Set(fromDB.map(i => i._id));
+      const apenasLocal = local.filter(i => !dbIds.has(i._id));
+      const merged = [...fromDB, ...apenasLocal];
+
+      saveStore(merged);
+
+      // Dispara evento customizado para que IntimacoesPage e DashboardPage
+      // recarreguem o estado sem precisar de um reload completo.
+      window.dispatchEvent(new CustomEvent("intimacoes-sincronizadas", { detail: merged }));
+
+      if (local.length === 0 && fromDB.length > 0) {
+        toast.info(`📱 ${fromDB.length} intimação(ões) carregada(s) da nuvem.`, { duration: 4000 });
+      }
+    }).catch(() => {});
   }, [user]);
 
   // ── Busca AASP (uma vez por login) ───────────────────────────

@@ -282,15 +282,35 @@ export function IntimacoesPage() {
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>(() => loadStore());
   const [aaspKey, setAaspKey] = useState<string>("");
 
-  // ── Carrega do Supabase SEMPRE ao abrir (fonte de verdade cross-device) ─────
+  // ── Carrega e sincroniza com Supabase SEMPRE ao abrir ────────────────────────
+  // O Supabase é a fonte de verdade. localStorage é só cache inicial.
   useEffect(() => {
     if (!user) return;
 
-    // Mostra o localStorage imediatamente (evita tela em branco)
+    // 1. Exibe o cache local imediatamente (evita tela em branco)
     const local = loadStore();
     if (local.length > 0) setIntimacoes(local);
 
-    // Depois busca do Supabase e mescla
+    // 2. Função de merge: Supabase tem prioridade em todos os campos
+    const mapRow = (row: any): AaspIntimacao => {
+      const raw = (row.dados_raw as AaspIntimacao) || {};
+      return {
+        ...raw,
+        _id:              row.id,
+        _data:            row.data_publicacao ?? raw._data ?? "",
+        _lida:            raw._lida ?? false,
+        // ?? garante que resumo_ia do banco nunca é descartado
+        _status:          (row.status as any) ?? "ativa",
+        _resumoIA:        row.resumo_ia ?? raw._resumoIA ?? null,
+        _titulo:          row.tipo ?? raw._titulo ?? "Publicação AASP",
+        _numProc:         row.numero_processo ?? raw._numProc ?? "",
+        _orgaoPublicacao: raw._orgaoPublicacao ?? "",
+        _partes:          row.partes ?? raw._partes ?? "",
+        _orgaoJulgador:   row.orgao_julgador ?? raw._orgaoJulgador ?? "",
+      };
+    };
+
+    // 3. Busca do Supabase e mescla
     supabase
       .from("intimacoes")
       .select("*")
@@ -299,42 +319,25 @@ export function IntimacoesPage() {
       .order("data_publicacao", { ascending: false })
       .limit(500)
       .then(async ({ data }) => {
-        const fromDB: AaspIntimacao[] = (data || []).map((row: any) => {
-          const raw = (row.dados_raw as AaspIntimacao) || {};
-          return {
-            ...raw,
-            _id:              row.id,
-            _data:            row.data_publicacao || raw._data || "",
-            _lida:            raw._lida || false,
-            _status:          (row.status as any) || "ativa",
-            _resumoIA:        row.resumo_ia || raw._resumoIA || null,
-            _titulo:          row.tipo || raw._titulo || "Publicação AASP",
-            _numProc:         row.numero_processo || raw._numProc || "",
-            _orgaoPublicacao: raw._orgaoPublicacao || "",
-            _partes:          row.partes || raw._partes || "",
-            _orgaoJulgador:   row.orgao_julgador || raw._orgaoJulgador || "",
-          };
-        });
-
+        const fromDB: AaspIntimacao[] = (data || []).map(mapRow);
         const dbIds = new Set(fromDB.map(i => i._id));
 
-        // Intimações que estão só no localStorage (nunca foram ao Supabase) → migra agora
+        // 4. Migra intimações locais que nunca chegaram ao Supabase
         const apenasLocal = local.filter(i => !dbIds.has(i._id));
         if (apenasLocal.length > 0) {
           const migRows = apenasLocal.map((it: AaspIntimacao) => ({
             id:               it._id,
             user_id:          user.id,
             origem:           "aasp",
-            numero_processo:  it._numProc || null,
-            tipo:             it._titulo || null,
-            data_publicacao:  it._data || null,
-            status:           it._status || "ativa",
-            partes:           it._partes || null,
-            orgao_julgador:   it._orgaoJulgador || null,
-            resumo_ia:        it._resumoIA || null,
+            numero_processo:  it._numProc ?? null,
+            tipo:             it._titulo ?? null,
+            data_publicacao:  it._data ?? null,
+            status:           it._status ?? "ativa",
+            partes:           it._partes ?? null,
+            orgao_julgador:   it._orgaoJulgador ?? null,
+            resumo_ia:        it._resumoIA ?? null,
             dados_raw:        it,
           }));
-          // Envia em lotes de 50 para não estourar o limite da API
           for (let i = 0; i < migRows.length; i += 50) {
             await supabase.from("intimacoes")
               .upsert(migRows.slice(i, i + 50), { onConflict: "id" })
@@ -342,13 +345,25 @@ export function IntimacoesPage() {
           }
         }
 
-        // Mescla final: Supabase tem prioridade (resumos e status mais recentes)
+        // 5. Mescla final: Supabase tem prioridade
         const merged = [...fromDB, ...apenasLocal];
         saveStore(merged);
         setIntimacoes(merged);
       })
       .catch(() => {});
   }, [user]);
+
+  // ── Reage ao evento do hook useAutoFetchIntimacoes (sincronização cross-device) ─
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const merged = (e as CustomEvent<AaspIntimacao[]>).detail;
+      if (Array.isArray(merged) && merged.length > 0) {
+        setIntimacoes(merged);
+      }
+    };
+    window.addEventListener("intimacoes-sincronizadas", handler);
+    return () => window.removeEventListener("intimacoes-sincronizadas", handler);
+  }, []);
 
   // Refs para evitar stale closures nos callbacks assíncronos
   const aaspKeyRef = useRef(aaspKey);
@@ -770,10 +785,18 @@ export function IntimacoesPage() {
       );
       saveStore(updated);
 
-      // Salva no Supabase para sincronização cross-device
-      try {
-        await supabase.from("intimacoes").update({ resumo_ia: resumo } as any).eq("id", intimacao._id);
-      } catch (_) {}
+      // Salva no Supabase para sincronização cross-device.
+      // Inclui user_id para garantir RLS e detectar falhas silenciosas.
+      if (user) {
+        const { error: sbErr } = await supabase
+          .from("intimacoes")
+          .update({ resumo_ia: resumo } as any)
+          .eq("id", intimacao._id)
+          .eq("user_id", user.id);
+        if (sbErr) {
+          console.warn("[ResumoIA] Falha ao salvar no Supabase:", sbErr.message);
+        }
+      }
 
       toast.success("Resumo IA gerado e salvo!");
       return resumo;
@@ -794,10 +817,17 @@ export function IntimacoesPage() {
         // Salva no localStorage
         const updated = intimacoesRef.current.map(it => it._id === id ? { ...it, _resumoIA: resumo } : it);
         saveStore(updated);
-        // Salva no Supabase (tabela intimacoes se existir)
-        try {
-          await supabase.from("intimacoes").update({ resumo_ia: resumo } as any).eq("id", id);
-        } catch (_) {}
+        // Salva no Supabase — inclui user_id para RLS
+        if (user) {
+          const { error: sbErr } = await supabase
+            .from("intimacoes")
+            .update({ resumo_ia: resumo } as any)
+            .eq("id", id)
+            .eq("user_id", user.id);
+          if (sbErr) {
+            console.warn("[ResumoIA todos] Falha Supabase:", sbErr.message);
+          }
+        }
       }
     );
   };

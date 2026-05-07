@@ -59,14 +59,15 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           return {
             ...raw,
             _id:            row.id,
-            _data:          row.data_publicacao || raw._data || "",
-            _lida:          raw._lida || false,
-            _status:        row.status || "ativa",
-            _resumoIA:      row.resumo_ia || raw._resumoIA || null,
-            _titulo:        row.tipo || raw._titulo || "Publicação AASP",
-            _numProc:       row.numero_processo || raw._numProc || "",
-            _partes:        row.partes || raw._partes || "",
-            _orgaoJulgador: row.orgao_julgador || raw._orgaoJulgador || "",
+            _data:          row.data_publicacao ?? raw._data ?? "",
+            _lida:          raw._lida ?? false,
+            // ?? preserva resumo_ia mesmo quando raw tem null
+            _status:        row.status ?? "ativa",
+            _resumoIA:      row.resumo_ia ?? raw._resumoIA ?? null,
+            _titulo:        row.tipo ?? raw._titulo ?? "Publicação AASP",
+            _numProc:       row.numero_processo ?? raw._numProc ?? "",
+            _partes:        row.partes ?? raw._partes ?? "",
+            _orgaoJulgador: row.orgao_julgador ?? raw._orgaoJulgador ?? "",
           };
         });
         // Mescla: Supabase tem prioridade, mantém locais não enviados
