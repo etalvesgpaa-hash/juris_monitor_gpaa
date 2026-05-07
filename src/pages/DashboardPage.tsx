@@ -15,7 +15,7 @@ import {
 } from "recharts";
 
 const STORE_KEY = "jm_aasp_intimacoes";
-function loadIntimacoes() {
+function loadIntimacoesCached(): any[] {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch { return []; }
 }
 function fmtData(iso: string): string {
@@ -40,6 +40,47 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
 
+  // ── Intimações: inicia com localStorage (imediato) e sincroniza com Supabase ─
+  const [intimacoes, setIntimacoes] = useState<any[]>(() => loadIntimacoesCached());
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("intimacoes")
+      .select("id, data_publicacao, status, resumo_ia, tipo, numero_processo, partes, orgao_julgador, dados_raw")
+      .eq("user_id", user.id)
+      .eq("origem", "aasp")
+      .order("data_publicacao", { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (!data?.length) return;
+        const fromDB: any[] = data.map((row: any) => {
+          const raw = (row.dados_raw as any) || {};
+          return {
+            ...raw,
+            _id:            row.id,
+            _data:          row.data_publicacao || raw._data || "",
+            _lida:          raw._lida || false,
+            _status:        row.status || "ativa",
+            _resumoIA:      row.resumo_ia || raw._resumoIA || null,
+            _titulo:        row.tipo || raw._titulo || "Publicação AASP",
+            _numProc:       row.numero_processo || raw._numProc || "",
+            _partes:        row.partes || raw._partes || "",
+            _orgaoJulgador: row.orgao_julgador || raw._orgaoJulgador || "",
+          };
+        });
+        // Mescla: Supabase tem prioridade, mantém locais não enviados
+        const cached = loadIntimacoesCached();
+        const dbIds = new Set(fromDB.map((i: any) => i._id));
+        const apenasLocal = cached.filter((i: any) => !dbIds.has(i._id));
+        const merged = [...fromDB, ...apenasLocal];
+        // Atualiza localStorage e estado
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(merged.slice(0, 1000))); } catch {}
+        setIntimacoes(merged);
+      })
+      .catch(() => {});
+  }, [user]);
+
   // Clientes que receberam notificação hoje
   const [clientesNotificadosHoje, setClientesNotificadosHoje] = useState(0);
 
@@ -61,7 +102,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       });
   }, [user]);
 
-  const intimacoes       = loadIntimacoes();
   const hoje             = dataLocalHoje();
   const intimacoesAtivas = intimacoes.filter((i: any) => (i._status || "ativa") === "ativa");
   const intimacoesHoje   = intimacoesAtivas.filter((i: any) => (i._data || "").slice(0,10) === hoje);
