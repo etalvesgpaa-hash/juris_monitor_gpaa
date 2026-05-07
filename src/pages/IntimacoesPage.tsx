@@ -298,9 +298,8 @@ export function IntimacoesPage() {
       .eq("origem", "aasp")
       .order("data_publicacao", { ascending: false })
       .limit(500)
-      .then(({ data }) => {
-        if (!data?.length) return;
-        const fromDB: AaspIntimacao[] = data.map((row: any) => {
+      .then(async ({ data }) => {
+        const fromDB: AaspIntimacao[] = (data || []).map((row: any) => {
           const raw = (row.dados_raw as AaspIntimacao) || {};
           return {
             ...raw,
@@ -317,12 +316,34 @@ export function IntimacoesPage() {
           };
         });
 
-        // Mescla: Supabase tem prioridade (tem resumoIA e status mais recentes)
-        // mas mantém itens locais que ainda não foram enviados ao Supabase
         const dbIds = new Set(fromDB.map(i => i._id));
-        const apenasLocal = local.filter(i => !dbIds.has(i._id));
-        const merged = [...fromDB, ...apenasLocal];
 
+        // Intimações que estão só no localStorage (nunca foram ao Supabase) → migra agora
+        const apenasLocal = local.filter(i => !dbIds.has(i._id));
+        if (apenasLocal.length > 0) {
+          const migRows = apenasLocal.map((it: AaspIntimacao) => ({
+            id:               it._id,
+            user_id:          user.id,
+            origem:           "aasp",
+            numero_processo:  it._numProc || null,
+            tipo:             it._titulo || null,
+            data_publicacao:  it._data || null,
+            status:           it._status || "ativa",
+            partes:           it._partes || null,
+            orgao_julgador:   it._orgaoJulgador || null,
+            resumo_ia:        it._resumoIA || null,
+            dados_raw:        it,
+          }));
+          // Envia em lotes de 50 para não estourar o limite da API
+          for (let i = 0; i < migRows.length; i += 50) {
+            await supabase.from("intimacoes")
+              .upsert(migRows.slice(i, i + 50), { onConflict: "id" })
+              .catch(() => {});
+          }
+        }
+
+        // Mescla final: Supabase tem prioridade (resumos e status mais recentes)
+        const merged = [...fromDB, ...apenasLocal];
         saveStore(merged);
         setIntimacoes(merged);
       })
@@ -625,7 +646,7 @@ export function IntimacoesPage() {
         dados_raw:        it,
       }));
       try {
-        await supabase.from("intimacoes").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+        await supabase.from("intimacoes").upsert(rows, { onConflict: "id" });
       } catch (_) {}
     }
 
@@ -671,7 +692,7 @@ export function IntimacoesPage() {
         dados_raw:        it,
       }));
       try {
-        await supabase.from("intimacoes").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+        await supabase.from("intimacoes").upsert(rows, { onConflict: "id" });
       } catch (_) {}
     }
   };

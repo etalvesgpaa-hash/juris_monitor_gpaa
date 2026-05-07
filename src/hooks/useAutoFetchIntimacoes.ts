@@ -128,32 +128,65 @@ function saveStore(items: AaspIntimacao[]) {
 // ── Supabase sync ─────────────────────────────────────────────
 /**
  * Salva/atualiza intimações na tabela `intimacoes` do Supabase.
- * Usa upsert pelo campo `id` (= _id da intimação AASP).
+ * - Novas intimações: insert completo
+ * - Existentes: atualiza apenas campos não-nulos (nunca sobrescreve resumo_ia com null)
  */
 async function syncParaSupabase(items: AaspIntimacao[], userId: string) {
   if (!items.length) return;
-  const rows = items.map(it => ({
-    id:              it._id,
-    user_id:         userId,
-    origem:          "aasp",
-    data_publicacao: it._data || null,
-    numero_processo: it._numProc || null,
-    tipo:            it._titulo || null,
-    partes:          it._partes || null,
-    orgao_julgador:  it._orgaoJulgador || null,
-    resumo_ia:       it._resumoIA || null,
-    status:          it._status || "ativa",
-    dados_raw:       it as any,
-  }));
 
-  // Upsert em lotes de 50 para não estourar limites
-  for (let i = 0; i < rows.length; i += 50) {
-    await supabase
+  // Verifica quais já existem no banco
+  const ids = items.map(i => i._id);
+  const existentes = new Set<string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase
       .from("intimacoes")
-      .upsert(rows.slice(i, i + 50), { onConflict: "id" })
-      .then(({ error }) => {
-        if (error) console.warn("[Supabase sync] upsert parcial falhou:", error.message);
-      });
+      .select("id")
+      .in("id", ids.slice(i, i + 100))
+      .eq("user_id", userId)
+      .catch(() => ({ data: null }));
+    (data || []).forEach((r: any) => existentes.add(r.id));
+  }
+
+  const novas  = items.filter(it => !existentes.has(it._id));
+  const antigas = items.filter(it =>  existentes.has(it._id));
+
+  // INSERT das novas (completo)
+  if (novas.length > 0) {
+    const rows = novas.map(it => ({
+      id:              it._id,
+      user_id:         userId,
+      origem:          "aasp",
+      data_publicacao: it._data || null,
+      numero_processo: it._numProc || null,
+      tipo:            it._titulo || null,
+      partes:          it._partes || null,
+      orgao_julgador:  it._orgaoJulgador || null,
+      resumo_ia:       it._resumoIA || null,
+      status:          it._status || "ativa",
+      dados_raw:       it as any,
+    }));
+    for (let i = 0; i < rows.length; i += 50) {
+      await supabase.from("intimacoes")
+        .insert(rows.slice(i, i + 50))
+        .then(({ error }) => {
+          if (error) console.warn("[Supabase sync] insert falhou:", error.message);
+        });
+    }
+  }
+
+  // UPDATE das existentes — NUNCA sobrescreve resumo_ia com null
+  for (const it of antigas) {
+    const update: Record<string, any> = {
+      status:    it._status || "ativa",
+      dados_raw: it as any,
+    };
+    // Só atualiza resumo_ia se tiver valor (não apaga resumo existente)
+    if (it._resumoIA) update.resumo_ia = it._resumoIA;
+    await supabase.from("intimacoes")
+      .update(update)
+      .eq("id", it._id)
+      .eq("user_id", userId)
+      .catch(() => {});
   }
 }
 
