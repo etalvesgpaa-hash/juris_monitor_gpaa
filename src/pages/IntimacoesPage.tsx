@@ -824,16 +824,19 @@ export function IntimacoesPage() {
     
     return (
       <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
-        <td className="px-3 py-2.5 align-top">
+        {/* Data */}
+        <td className="px-3 py-2.5 align-top whitespace-nowrap">
           <div className="flex items-center gap-1.5">
             {naoLida && <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />}
-            <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{fmtData(intim._data)}</span>
+            <span className="text-xs text-muted-foreground font-mono">{fmtData(intim._data)}</span>
           </div>
         </td>
+
+        {/* Processo */}
         <td className="px-3 py-2.5 align-top">
           {intim._numProc ? (
             <button
-              className="font-mono text-xs font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
+              className="font-mono text-xs font-bold text-accent hover:underline underline-offset-2 text-left transition-colors break-all"
               title="Visualizar intimação"
               onClick={() => { marcarLida(intim._id); setSelected(intim); }}
             >
@@ -843,79 +846,71 @@ export function IntimacoesPage() {
             <span className="text-xs text-muted-foreground italic">—</span>
           )}
         </td>
-        <td className="px-3 py-2.5 align-top">
-          <div className="text-xs font-semibold truncate max-w-[200px]">{intim._titulo}</div>
+
+        {/* Título + Órgão + Meio (coluna unificada) */}
+        <td className="px-3 py-2.5 align-top min-w-[180px] max-w-[240px]">
+          <div className="text-xs font-semibold line-clamp-2 leading-snug">{intim._titulo}</div>
+          {orgao && <div className="text-[0.65rem] text-muted-foreground mt-0.5 line-clamp-1">{orgao}</div>}
+          {(meio || jornal) && <div className="text-[0.65rem] text-accent font-medium mt-0.5">{meio || jornal}</div>}
         </td>
-        <td className="px-3 py-2.5 align-top">
-          {orgao ? (
-            <div className="text-[0.7rem] text-foreground max-w-[180px]">{orgao}</div>
-          ) : (
-            <span className="text-xs text-muted-foreground italic">—</span>
-          )}
-        </td>
-        <td className="px-3 py-2.5 align-top">
-          {meio ? (
-            <div className="text-[0.7rem] text-accent font-medium">{meio}</div>
-          ) : jornal ? (
-            <div className="text-[0.7rem] text-accent font-medium">{jornal}</div>
-          ) : (
-            <span className="text-xs text-muted-foreground italic">—</span>
-          )}
-        </td>
-        <td className="px-3 py-2.5 align-top max-w-[200px]">
+
+        {/* Partes */}
+        <td className="px-3 py-2.5 align-top min-w-[120px] max-w-[180px]">
           {partes ? (
-            <div className="text-[0.7rem] text-foreground truncate" title={partes}>{partes}</div>
+            <div className="text-[0.7rem] text-foreground line-clamp-3 leading-snug" title={partes}>{partes}</div>
           ) : (
             <span className="text-xs text-muted-foreground italic">—</span>
           )}
         </td>
-        <td className="px-3 py-2.5 align-top max-w-[250px]">
+
+        {/* Resumo IA */}
+        <td className="px-3 py-2.5 align-top min-w-[140px] max-w-[220px]">
           {intim._resumoIA ? (
-            <div className="text-xs text-foreground leading-relaxed">{intim._resumoIA}</div>
+            <div className="text-xs text-foreground leading-relaxed line-clamp-3">{intim._resumoIA}</div>
           ) : (
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-xs text-muted-foreground hover:text-accent"
+              className="h-6 text-xs text-muted-foreground hover:text-accent whitespace-nowrap"
               onClick={() => gerarResumoIA(intim)}
             >
-              <Sparkles className="h-3 w-3 mr-1" /> Gerar Resumo IA
+              <Sparkles className="h-3 w-3 mr-1" /> Gerar IA
             </Button>
           )}
         </td>
-        <td className="px-3 py-2.5 align-top">
+
+        {/* Status */}
+        <td className="px-3 py-2.5 align-top whitespace-nowrap">
           <StatusBadge status={intim._status || "ativa"} nova={naoLida} />
         </td>
+
+        {/* Ações — linha única, nunca quebra */}
         <td className="px-3 py-2.5 align-top">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex gap-1">
-              <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
-                <Eye className="h-3.5 w-3.5" />
+          <div className="flex items-center gap-0.5 flex-nowrap">
+            <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
+              <Eye className="h-3.5 w-3.5" />
+            </ActionBtn>
+            <ActionBtn title="Novo Cliente" onClick={() => setNovoClienteIntimacao(intim)} className="text-emerald-600">
+              <UserPlus className="h-3.5 w-3.5" />
+            </ActionBtn>
+            <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
+              <Plus className="h-3.5 w-3.5" />
+            </ActionBtn>
+            {(intim._status || "ativa") === "ativa" ? (
+              <ActionBtn title="Finalizar" onClick={() => setStatus(intim._id, "finalizada")} className="text-green-ok">
+                <CheckCircle className="h-3.5 w-3.5" />
               </ActionBtn>
-              <ActionBtn title="Novo Cliente" onClick={() => setNovoClienteIntimacao(intim)} className="text-emerald-600">
-                <UserPlus className="h-3.5 w-3.5" />
+            ) : (
+              <ActionBtn title="Reativar" onClick={() => setStatus(intim._id, "ativa")} className="text-accent">
+                <PlayCircle className="h-3.5 w-3.5" />
               </ActionBtn>
-              <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
-                <Plus className="h-3.5 w-3.5" />
-              </ActionBtn>
-              {(intim._status || "ativa") === "ativa" ? (
-                <ActionBtn title="Finalizar" onClick={() => setStatus(intim._id, "finalizada")} className="text-green-ok">
-                  <CheckCircle className="h-3.5 w-3.5" />
-                </ActionBtn>
-              ) : (
-                <ActionBtn title="Reativar" onClick={() => setStatus(intim._id, "ativa")} className="text-accent">
-                  <PlayCircle className="h-3.5 w-3.5" />
-                </ActionBtn>
-              )}
-            </div>
-            <div className="flex gap-1">
-              <ActionBtn title="Pausar" onClick={() => setStatus(intim._id, "pausada")} className="text-muted-foreground">
-                <Pause className="h-3.5 w-3.5" />
-              </ActionBtn>
-              <ActionBtn title="Excluir" onClick={() => excluir(intim._id)} className="text-red-alert">
-                <Trash2 className="h-3.5 w-3.5" />
-              </ActionBtn>
-            </div>
+            )}
+            <ActionBtn title="Pausar" onClick={() => setStatus(intim._id, "pausada")} className="text-muted-foreground">
+              <Pause className="h-3.5 w-3.5" />
+            </ActionBtn>
+            <ActionBtn title="Excluir" onClick={() => excluir(intim._id)} className="text-red-alert">
+              <Trash2 className="h-3.5 w-3.5" />
+            </ActionBtn>
           </div>
         </td>
       </tr>
@@ -1136,10 +1131,10 @@ export function IntimacoesPage() {
       ) : viewMode === "tabela" ? (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" style={{ minWidth: "780px" }}>
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["DATA", "PROCESSO", "TÍTULO", "ÓRGÃO", "TIPO COMUNICAÇÃO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
+                  {["DATA", "PROCESSO", "TÍTULO / ÓRGÃO / TIPO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
