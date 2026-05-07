@@ -83,7 +83,7 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             <div className="font-display font-semibold text-primary-foreground text-[0.9rem] tracking-wide">
               JurisMonitor
             </div>
-            <div className="font-display font-semibold text-primary-foreground text-[0.7rem] tracking-wide">
+            <div className="font-display font-semibold text-primary-foreground text-[0.5rem] tracking-wide">
               EDSON TEODORO · Advocacia
             </div>
           </div>
