@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail, UserCheck } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -782,6 +782,87 @@ export function IntimacoesPage() {
     toast.success("Intimação excluída.");
   };
 
+  // ── Reenvio manual de e-mail para clientes do processo ──────────────────────
+  const [enviandoEmail, setEnviandoEmail] = useState<Set<string>>(new Set());
+
+  const reenviarEmailManual = useCallback(async (intim: AaspIntimacao) => {
+    if (!intim._numProc) { toast.error("Intimação sem número de processo."); return; }
+
+    setEnviandoEmail(prev => new Set(prev).add(intim._id));
+    try {
+      const { data: clientes } = await supabase
+        .from("clientes")
+        .select("id, nome, email, numeros_processo, notificacoes_email, status_monitoramento")
+        .eq("user_id", user!.id)
+        .eq("notificacoes_email", true)
+        .eq("status_monitoramento", "ativo")
+        .not("email", "is", null)
+        .not("numeros_processo", "is", null);
+
+      if (!clientes?.length) { toast.info("Nenhum cliente com notificação ativa para este processo."); return; }
+
+      const intimLimpo = intim._numProc.replace(/\D/g, "");
+      const destinatarios = clientes.filter(c =>
+        (c.numeros_processo as string[]).some(p => {
+          const pl = p.replace(/\D/g, "");
+          return pl && intimLimpo && (pl.includes(intimLimpo) || intimLimpo.includes(pl));
+        })
+      );
+
+      if (!destinatarios.length) { toast.info("Nenhum cliente cadastrado para este processo."); return; }
+
+      const fmtDataBR = (iso: string) => {
+        const p = (iso || "").slice(0, 10).split("-");
+        return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+      };
+
+      let ok = 0;
+      for (const cliente of destinatarios) {
+        try {
+          const res = await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              destinatario:   cliente.email,
+              nomeCliente:    cliente.nome,
+              numeroProcesso: intim._numProc,
+              dataPublicacao: fmtDataBR(intim._data),
+              assunto:        intim._titulo || "Nova Publicação AASP",
+              resumoIA:       intim._resumoIA || null,
+              textoCompleto:  "",
+            }),
+          });
+
+          const status = res.ok ? "enviado" : "falha";
+          await supabase.from("notificacoes_enviadas").insert({
+            user_id:         user!.id,
+            cliente_id:      cliente.id,
+            intimacao_id:    intim._id,
+            numero_processo: intim._numProc || "",
+            assunto:         intim._titulo || "Nova Publicação AASP",
+            resumo_ia:       intim._resumoIA || null,
+            email_destino:   cliente.email,
+            status,
+          });
+
+          if (res.ok) {
+            ok++;
+            await supabase.from("clientes").update({ ultima_notificacao: new Date().toISOString() }).eq("id", cliente.id);
+          }
+        } catch (e: any) {
+          console.error("[ReenvioManual]", e.message);
+        }
+      }
+
+      if (ok > 0) toast.success(`📧 ${ok} e-mail(s) enviado(s) com sucesso!`);
+      else toast.error("Falha ao enviar e-mails. Verifique as configurações.");
+    } catch (e: any) {
+      toast.error("Erro ao buscar clientes: " + e.message);
+    } finally {
+      setEnviandoEmail(prev => { const s = new Set(prev); s.delete(intim._id); return s; });
+    }
+  }, [user]);
+
   const limparTudo = () => {
     if (!confirm("Limpar TODAS as intimações? Esta ação não pode ser desfeita.")) return;
     setIntimacoes([]);
@@ -789,93 +870,8 @@ export function IntimacoesPage() {
     toast.success("Todas as intimações foram removidas.");
   };
 
-  // ── Mapa: número do processo (dígitos) → clientes cadastrados ───────────────
-  // Permite identificar rapidamente se uma intimação já tem cliente vinculado.
-  const clientesPorProcesso = React.useMemo(() => {
-    const mapa = new Map<string, { id: string; nome: string; email: string | null }[]>();
-    for (const c of clientes) {
-      const procs = (c.numeros_processo as string[] | null) || [];
-      for (const p of procs) {
-        const chave = p.replace(/\D/g, "");
-        if (!chave) continue;
-        if (!mapa.has(chave)) mapa.set(chave, []);
-        mapa.get(chave)!.push({ id: c.id, nome: c.nome, email: c.email ?? null });
-      }
-    }
-    return mapa;
-  }, [clientes]);
-
-  /** Retorna os clientes vinculados a uma intimação (pelo número do processo) */
-  const clientesDaIntimacao = (intim: AaspIntimacao) => {
-    if (!intim._numProc) return [];
-    const chave = intim._numProc.replace(/\D/g, "");
-    if (!chave) return [];
-    // Busca por substring (igual ao envio automático do hook)
-    const resultado: { id: string; nome: string; email: string | null }[] = [];
-    for (const [k, lista] of clientesPorProcesso.entries()) {
-      if (chave.includes(k) || k.includes(chave)) {
-        resultado.push(...lista);
-      }
-    }
-    // Remove duplicatas por id
-    return resultado.filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i);
-  };
-
-  // ── Reenvio manual de e-mail para clientes do processo ──────────────────────
-  const [enviandoEmail, setEnviandoEmail] = useState<Set<string>>(new Set());
-
-  const reenviarEmailManual = useCallback(async (intim: AaspIntimacao) => {
-    if (!intim._numProc) { toast.error("Intimação sem número de processo."); return; }
-    const destinatarios = clientesDaIntimacao(intim).filter(c => c.email);
-    if (!destinatarios.length) { toast.info("Nenhum cliente com e-mail cadastrado para este processo."); return; }
-
-    setEnviandoEmail(prev => new Set(prev).add(intim._id));
-    const fmtDataBR = (iso: string) => {
-      const p = (iso || "").slice(0, 10).split("-");
-      return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
-    };
-
-    let ok = 0;
-    for (const cliente of destinatarios) {
-      try {
-        const res = await fetch("/api/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            destinatario:   cliente.email,
-            nomeCliente:    cliente.nome,
-            numeroProcesso: intim._numProc,
-            dataPublicacao: fmtDataBR(intim._data),
-            assunto:        intim._titulo || "Nova Publicação AASP",
-            resumoIA:       intim._resumoIA || null,
-            textoCompleto:  "",
-          }),
-        });
-        const status = res.ok ? "enviado" : "falha";
-        await supabase.from("notificacoes_enviadas").insert({
-          user_id:         user!.id,
-          cliente_id:      cliente.id,
-          intimacao_id:    intim._id,
-          numero_processo: intim._numProc || "",
-          assunto:         intim._titulo || "Nova Publicação AASP",
-          resumo_ia:       intim._resumoIA || null,
-          email_destino:   cliente.email,
-          status,
-        });
-        if (res.ok) {
-          ok++;
-          await supabase.from("clientes").update({ ultima_notificacao: new Date().toISOString() }).eq("id", cliente.id);
-        }
-      } catch (e: any) {
-        console.error("[ReenvioManual]", e.message);
-      }
-    }
-    setEnviandoEmail(prev => { const s = new Set(prev); s.delete(intim._id); return s; });
-    if (ok > 0) toast.success(`📧 ${ok} e-mail(s) enviado(s) com sucesso!`);
-    else toast.error("Falha ao enviar e-mails. Verifique as configurações.");
-  }, [user, clientesPorProcesso]);
-
-
+  // Gera os últimos 7 dias ÚTEIS usando data LOCAL
+  const ultimos7Dias = (() => {
     const dias: string[] = [];
     const d = new Date();
     while (dias.length < 7) {
@@ -906,8 +902,6 @@ export function IntimacoesPage() {
     const orgao = intim._orgaoJulgador || (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
     const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
     const meio = (intim.Meio || intim.meio || "") as string;
-    const clientesVinculados = clientesDaIntimacao(intim);
-    const temCliente = clientesVinculados.length > 0;
     
     return (
       <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
@@ -919,7 +913,7 @@ export function IntimacoesPage() {
           </div>
         </td>
 
-        {/* Processo + cliente vinculado */}
+        {/* Processo */}
         <td className="px-3 py-2.5 align-top">
           {intim._numProc ? (
             <button
@@ -931,16 +925,6 @@ export function IntimacoesPage() {
             </button>
           ) : (
             <span className="text-xs text-muted-foreground italic">—</span>
-          )}
-          {temCliente && (
-            <div className="mt-1 flex flex-col gap-0.5">
-              {clientesVinculados.map(c => (
-                <span key={c.id} className="inline-flex items-center gap-1 text-[0.62rem] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-400/30 rounded px-1.5 py-0.5 whitespace-nowrap">
-                  <UserCheck className="h-2.5 w-2.5 flex-shrink-0" />
-                  {c.nome.split(" ").slice(0, 2).join(" ")}
-                </span>
-              ))}
-            </div>
           )}
         </td>
 
@@ -987,19 +971,10 @@ export function IntimacoesPage() {
             <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
               <Eye className="h-3.5 w-3.5" />
             </ActionBtn>
-            <ActionBtn
-              title={temCliente ? `Cliente já cadastrado: ${clientesVinculados.map(c => c.nome).join(", ")}` : "Novo Cliente"}
-              onClick={() => setNovoClienteIntimacao(intim)}
-              className={temCliente ? "text-emerald-600 bg-emerald-500/10" : "text-emerald-600"}
-            >
-              {temCliente ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+            <ActionBtn title="Novo Cliente" onClick={() => setNovoClienteIntimacao(intim)} className="text-emerald-600">
+              <UserPlus className="h-3.5 w-3.5" />
             </ActionBtn>
-            <ActionBtn
-              title="Enviar e-mail ao cliente"
-              onClick={() => reenviarEmailManual(intim)}
-              className={temCliente ? "text-blue-500" : "text-muted-foreground"}
-              disabled={enviandoEmail.has(intim._id) || !temCliente}
-            >
+            <ActionBtn title="Enviar e-mail ao cliente" onClick={() => reenviarEmailManual(intim)} className="text-blue-500" disabled={enviandoEmail.has(intim._id)}>
               {enviandoEmail.has(intim._id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
             </ActionBtn>
             <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
@@ -1032,8 +1007,6 @@ export function IntimacoesPage() {
     const orgao = intim._orgaoJulgador || (intim.OrgaoJulgador || intim.orgaoJulgador || "") as string;
     const partes = intim._partes || (intim.Partes || intim.partes || "") as string;
     const meio = (intim.Meio || intim.meio || "") as string;
-    const clientesVinculados = clientesDaIntimacao(intim);
-    const temCliente = clientesVinculados.length > 0;
     
     return (
       <div
@@ -1054,17 +1027,6 @@ export function IntimacoesPage() {
               >
                 {intim._numProc}
               </button>
-            )}
-            {/* Badge(s) de cliente vinculado */}
-            {temCliente && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {clientesVinculados.map(c => (
-                  <span key={c.id} className="inline-flex items-center gap-1 text-[0.65rem] font-semibold bg-emerald-500/10 text-emerald-700 border border-emerald-400/30 rounded-full px-2 py-0.5">
-                    <UserCheck className="h-3 w-3 flex-shrink-0" />
-                    {c.nome.split(" ").slice(0, 2).join(" ")}
-                  </span>
-                ))}
-              </div>
             )}
             <div className="text-sm font-semibold truncate mt-0.5">{intim._titulo}</div>
             
@@ -1112,26 +1074,14 @@ export function IntimacoesPage() {
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
             <Eye className="h-3 w-3 mr-1" /> Ver
           </Button>
-          <Button
-            variant="outline" size="sm"
-            className={`h-7 text-xs ${temCliente ? "text-emerald-600 border-emerald-400/50 bg-emerald-500/5" : "text-emerald-600 border-emerald-200"}`}
-            onClick={() => setNovoClienteIntimacao(intim)}
-            title={temCliente ? `Cliente já cadastrado: ${clientesVinculados.map(c => c.nome).join(", ")}` : "Cadastrar novo cliente"}
-          >
-            {temCliente ? <UserCheck className="h-3 w-3 mr-1" /> : <UserPlus className="h-3 w-3 mr-1" />}
-            {temCliente ? "Cliente ✓" : "Cliente"}
+          <Button variant="outline" size="sm" className="h-7 text-xs text-emerald-600 border-emerald-200" onClick={() => setNovoClienteIntimacao(intim)}>
+            <UserPlus className="h-3 w-3 mr-1" /> Cliente
           </Button>
-          {temCliente && (
-            <Button
-              variant="outline" size="sm"
-              className="h-7 text-xs text-blue-500 border-blue-200"
-              onClick={() => reenviarEmailManual(intim)}
-              disabled={enviandoEmail.has(intim._id)}
-            >
-              {enviandoEmail.has(intim._id) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Mail className="h-3 w-3 mr-1" />}
-              E-mail
-            </Button>
-          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs text-blue-500 border-blue-200"
+            onClick={() => reenviarEmailManual(intim)} disabled={enviandoEmail.has(intim._id)}>
+            {enviandoEmail.has(intim._id) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Mail className="h-3 w-3 mr-1" />}
+            E-mail
+          </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs text-accent" onClick={() => criarTarefaDeIntimacao(intim)}>
             <Plus className="h-3 w-3 mr-1" /> Tarefa
           </Button>
@@ -1302,7 +1252,6 @@ export function IntimacoesPage() {
           onNovoCliente={(intim) => { setSelected(null); setNovoClienteIntimacao(intim); }}
           onReenviarEmail={reenviarEmailManual}
           enviandoEmail={enviandoEmail}
-          clientesVinculados={clientesDaIntimacao(selected)}
         />
       )}
 
@@ -1317,7 +1266,6 @@ export function IntimacoesPage() {
             toast.success("✅ Cliente cadastrado com sucesso!");
           }}
           saving={createCliente.isPending}
-          clientesVinculados={clientesDaIntimacao(novoClienteIntimacao)}
         />
       )}
 
@@ -1348,20 +1296,17 @@ function ActionBtn({
   onClick,
   children,
   className = "",
-  disabled = false,
 }: {
   title: string;
   onClick: () => void;
   children: React.ReactNode;
   className?: string;
-  disabled?: boolean;
 }) {
   return (
     <button
       title={title}
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      className={`p-1 rounded hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      onClick={onClick}
+      className={`p-1 rounded hover:bg-muted transition-colors ${className}`}
     >
       {children}
     </button>
@@ -1378,7 +1323,6 @@ function ModalDetalhe({
   onNovoCliente,
   onReenviarEmail,
   enviandoEmail,
-  clientesVinculados,
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
@@ -1389,9 +1333,7 @@ function ModalDetalhe({
   onNovoCliente: (intim: AaspIntimacao) => void;
   onReenviarEmail: (intim: AaspIntimacao) => void;
   enviandoEmail: Set<string>;
-  clientesVinculados: { id: string; nome: string; email: string | null }[];
 }) {
-  const temCliente = clientesVinculados.length > 0;
   const titulo =
     intim._titulo ||
     intim.TituloAssunto ||
@@ -1457,24 +1399,6 @@ function ModalDetalhe({
 
         {/* Corpo */}
         <div className="p-6 space-y-4">
-          {/* Clientes vinculados */}
-          {temCliente && (
-            <div className="bg-emerald-500/8 border border-emerald-400/30 rounded-xl p-4">
-              <div className="text-[0.65rem] font-black uppercase tracking-widest text-emerald-700 mb-2 flex items-center gap-1.5">
-                <UserCheck className="h-3.5 w-3.5" />
-                Cliente(s) Cadastrado(s) para este Processo
-              </div>
-              <div className="flex flex-col gap-2">
-                {clientesVinculados.map(c => (
-                  <div key={c.id} className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-foreground">{c.nome}</span>
-                    {c.email && <span className="text-xs text-muted-foreground">{c.email}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Órgão e Partes */}
           {orgao && (
             <p className="text-sm text-foreground">
@@ -1534,30 +1458,23 @@ function ModalDetalhe({
           </Button>
           <Button
             variant="outline" size="sm"
-            className={temCliente
-              ? "text-emerald-600 border-emerald-400/50 bg-emerald-500/5"
-              : "text-emerald-600 border-emerald-300/60 hover:bg-emerald-50"}
+            className="text-emerald-600 border-emerald-300/60 hover:bg-emerald-50"
             onClick={() => onNovoCliente(intim)}
-            title={temCliente ? `Já cadastrado: ${clientesVinculados.map(c => c.nome).join(", ")}` : "Cadastrar novo cliente"}
           >
-            {temCliente
-              ? <><UserCheck className="h-4 w-4 mr-1.5" /> Cliente Cadastrado</>
-              : <><UserPlus className="h-4 w-4 mr-1.5" /> Novo Cliente</>}
+            <UserPlus className="h-4 w-4 mr-1.5" /> Novo Cliente
           </Button>
-          {temCliente && (
-            <Button
-              variant="outline" size="sm"
-              className="text-blue-500 border-blue-300/60 hover:bg-blue-50"
-              onClick={() => onReenviarEmail(intim)}
-              disabled={enviandoEmail.has(intim._id)}
-              title="Enviar e-mail para os clientes vinculados"
-            >
-              {enviandoEmail.has(intim._id)
-                ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                : <Mail className="h-4 w-4 mr-1.5" />}
-              Enviar E-mail
-            </Button>
-          )}
+          <Button
+            variant="outline" size="sm"
+            className="text-blue-500 border-blue-300/60 hover:bg-blue-50"
+            onClick={() => onReenviarEmail(intim)}
+            disabled={enviandoEmail.has(intim._id)}
+            title="Envia e-mail para os clientes que têm este processo cadastrado e notificação ativa"
+          >
+            {enviandoEmail.has(intim._id)
+              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              : <Mail className="h-4 w-4 mr-1.5" />}
+            Enviar E-mail
+          </Button>
           {(intim._status || "ativa") === "ativa" ? (
             <Button variant="outline" size="sm" className="text-green-ok border-green-ok/30"
               onClick={() => { onSetStatus(intim._id, "finalizada"); onClose(); }}>
@@ -1589,13 +1506,11 @@ function NovoClienteModal({
   onClose,
   onCreate,
   saving,
-  clientesVinculados = [],
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
   onCreate: (dados: any) => Promise<void>;
   saving: boolean;
-  clientesVinculados?: { id: string; nome: string; email: string | null }[];
 }) {
   // Pré-preenche nome com a primeira parte da intimação
   const partesRaw = intim._partes || (intim.Partes || intim.partes || "") as string;
@@ -1663,24 +1578,6 @@ function NovoClienteModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-
-        {/* Aviso: cliente já cadastrado */}
-        {clientesVinculados.length > 0 && (
-          <div className="mx-6 mt-4 bg-amber-500/10 border border-amber-400/40 rounded-xl p-3 flex items-start gap-2.5">
-            <UserCheck className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-bold text-amber-700">Atenção: cliente já cadastrado para este processo</p>
-              <div className="mt-1 flex flex-col gap-0.5">
-                {clientesVinculados.map(c => (
-                  <span key={c.id} className="text-xs text-amber-700">
-                    • {c.nome}{c.email ? ` — ${c.email}` : ""}
-                  </span>
-                ))}
-              </div>
-              <p className="text-[0.65rem] text-amber-600 mt-1">Você pode cadastrar outro cliente se necessário.</p>
-            </div>
-          </div>
-        )}
 
         {/* Formulário */}
         <div className="p-6 space-y-4">
