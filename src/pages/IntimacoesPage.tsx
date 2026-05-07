@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
-import { useClientes } from "@/hooks/useClientes";
+import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles } from "lucide-react";
+import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
 interface AaspIntimacao {
@@ -267,9 +267,13 @@ function saveStore(items: AaspIntimacao[]) {
 export function IntimacoesPage() {
   const { user } = useAuth();
   const { data: clientes = [] } = useClientes();
+  const createCliente = useCreateCliente();
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
+
+  // Estado do modal de novo cliente (pré-preenchido da intimação)
+  const [novoClienteIntimacao, setNovoClienteIntimacao] = useState<AaspIntimacao | null>(null);
 
   // Estado do modal de criação de tarefa
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -888,6 +892,9 @@ export function IntimacoesPage() {
               <ActionBtn title="Visualizar" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
                 <Eye className="h-3.5 w-3.5" />
               </ActionBtn>
+              <ActionBtn title="Novo Cliente" onClick={() => setNovoClienteIntimacao(intim)} className="text-emerald-600">
+                <UserPlus className="h-3.5 w-3.5" />
+              </ActionBtn>
               <ActionBtn title="Criar Tarefa" onClick={() => criarTarefaDeIntimacao(intim)} className="text-accent">
                 <Plus className="h-3.5 w-3.5" />
               </ActionBtn>
@@ -987,6 +994,9 @@ export function IntimacoesPage() {
         <div className="flex gap-2 mt-3 flex-wrap">
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { marcarLida(intim._id); setSelected(intim); }}>
             <Eye className="h-3 w-3 mr-1" /> Ver
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs text-emerald-600 border-emerald-200" onClick={() => setNovoClienteIntimacao(intim)}>
+            <UserPlus className="h-3 w-3 mr-1" /> Cliente
           </Button>
           <Button variant="outline" size="sm" className="h-7 text-xs text-accent" onClick={() => criarTarefaDeIntimacao(intim)}>
             <Plus className="h-3 w-3 mr-1" /> Tarefa
@@ -1155,6 +1165,21 @@ export function IntimacoesPage() {
           onExcluir={excluir}
           onCriarTarefa={criarTarefaDeIntimacao}
           onGerarResumo={gerarResumoIA}
+          onNovoCliente={(intim) => { setSelected(null); setNovoClienteIntimacao(intim); }}
+        />
+      )}
+
+      {/* Modal de Novo Cliente (pré-preenchido da intimação) */}
+      {novoClienteIntimacao && (
+        <NovoClienteModal
+          intim={novoClienteIntimacao}
+          onClose={() => setNovoClienteIntimacao(null)}
+          onCreate={async (dados) => {
+            await createCliente.mutateAsync(dados);
+            setNovoClienteIntimacao(null);
+            toast.success("✅ Cliente cadastrado com sucesso!");
+          }}
+          saving={createCliente.isPending}
         />
       )}
 
@@ -1209,6 +1234,7 @@ function ModalDetalhe({
   onExcluir,
   onCriarTarefa,
   onGerarResumo,
+  onNovoCliente,
 }: {
   intim: AaspIntimacao;
   onClose: () => void;
@@ -1216,6 +1242,7 @@ function ModalDetalhe({
   onExcluir: (id: string) => void;
   onCriarTarefa: (intim: AaspIntimacao) => void;
   onGerarResumo: (intim: AaspIntimacao) => void;
+  onNovoCliente: (intim: AaspIntimacao) => void;
 }) {
   const titulo =
     intim._titulo ||
@@ -1339,6 +1366,13 @@ function ModalDetalhe({
           <Button variant="gold" size="sm" onClick={() => { onCriarTarefa(intim); onClose(); }}>
             <Plus className="h-4 w-4 mr-1.5" /> Criar Tarefa
           </Button>
+          <Button
+            variant="outline" size="sm"
+            className="text-emerald-600 border-emerald-300/60 hover:bg-emerald-50"
+            onClick={() => onNovoCliente(intim)}
+          >
+            <UserPlus className="h-4 w-4 mr-1.5" /> Novo Cliente
+          </Button>
           {(intim._status || "ativa") === "ativa" ? (
             <Button variant="outline" size="sm" className="text-green-ok border-green-ok/30"
               onClick={() => { onSetStatus(intim._id, "finalizada"); onClose(); }}>
@@ -1357,6 +1391,228 @@ function ModalDetalhe({
           <Button variant="destructive" size="sm"
             onClick={() => { onExcluir(intim._id); onClose(); }}>
             <Trash2 className="h-4 w-4 mr-1.5" /> Excluir
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal Novo Cliente (pré-preenchido da intimação) ───────────────────────────
+function NovoClienteModal({
+  intim,
+  onClose,
+  onCreate,
+  saving,
+}: {
+  intim: AaspIntimacao;
+  onClose: () => void;
+  onCreate: (dados: any) => Promise<void>;
+  saving: boolean;
+}) {
+  // Pré-preenche nome com a primeira parte da intimação
+  const partesRaw = intim._partes || (intim.Partes || intim.partes || "") as string;
+  const primeiroNome = partesRaw.split(/[·×,]/)[0]?.trim() || "";
+
+  const [form, setForm] = React.useState({
+    nome: primeiroNome,
+    cpf_cnpj: "",
+    email: "",
+    telefone: "",
+    endereco: "",
+    observacoes: "",
+    numeros_processo: intim._numProc ? [intim._numProc] : [] as string[],
+    notificacoes_email: true,
+    status_monitoramento: "ativo" as "ativo" | "pausado" | "inativo",
+  });
+  const [processoInput, setProcessoInput] = React.useState("");
+
+  const adicionarProcesso = () => {
+    const proc = processoInput.trim();
+    if (proc && !form.numeros_processo.includes(proc)) {
+      setForm(f => ({ ...f, numeros_processo: [...f.numeros_processo, proc] }));
+    }
+    setProcessoInput("");
+  };
+
+  const removerProcesso = (proc: string) =>
+    setForm(f => ({ ...f, numeros_processo: f.numeros_processo.filter(p => p !== proc) }));
+
+  const handleSalvar = async () => {
+    if (!form.nome.trim()) { toast.error("Informe o nome do cliente."); return; }
+    await onCreate({
+      nome: form.nome,
+      cpf_cnpj: form.cpf_cnpj || null,
+      email: form.email || null,
+      telefone: form.telefone || null,
+      endereco: form.endereco || null,
+      observacoes: form.observacoes || null,
+      numeros_processo: form.numeros_processo.length > 0 ? form.numeros_processo : null,
+      notificacoes_email: form.notificacoes_email,
+      status_monitoramento: form.status_monitoramento,
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ background: "rgba(13,42,30,0.82)", backdropFilter: "blur(5px)" }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-card rounded-2xl w-full max-w-xl max-h-[92vh] overflow-y-auto shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 pb-4 border-b border-border">
+          <div>
+            <div className="text-[0.65rem] font-bold tracking-[0.12em] uppercase text-emerald-600 mb-1">
+              👤 Novo Cliente
+            </div>
+            <h2 className="font-display text-lg font-bold text-foreground">Cadastrar Cliente</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Dados pré-preenchidos da intimação</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-muted/60 hover:bg-muted flex items-center justify-center transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Formulário */}
+        <div className="p-6 space-y-4">
+          {/* Nome */}
+          <div>
+            <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1.5">
+              Nome Completo *
+            </label>
+            <input
+              value={form.nome}
+              onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
+              placeholder="Nome do cliente"
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1.5">CPF / CNPJ</label>
+              <input
+                value={form.cpf_cnpj}
+                onChange={e => setForm(f => ({ ...f, cpf_cnpj: e.target.value }))}
+                placeholder="000.000.000-00"
+                className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+              />
+            </div>
+            <div>
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1.5">Telefone / WhatsApp</label>
+              <input
+                value={form.telefone}
+                onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))}
+                placeholder="(11) 99999-9999"
+                className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1.5">E-mail</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="email@exemplo.com"
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
+            />
+          </div>
+
+          {/* Processos */}
+          <div className="border border-border rounded-xl p-4 bg-muted/30">
+            <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-2 block">
+              Números de Processo (CNJ)
+            </label>
+            <div className="flex gap-2 mb-2">
+              <input
+                value={processoInput}
+                onChange={e => setProcessoInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && adicionarProcesso()}
+                placeholder="0000000-00.0000.0.00.0000"
+                className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all font-mono"
+              />
+              <button
+                onClick={adicionarProcesso}
+                className="border border-border rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {form.numeros_processo.map(proc => (
+                <div key={proc} className="inline-flex items-center gap-1.5 bg-accent/10 border border-accent/30 rounded-lg px-2.5 py-1 text-xs font-mono">
+                  {proc}
+                  <button onClick={() => removerProcesso(proc)} className="text-red-500 hover:text-red-700">×</button>
+                </div>
+              ))}
+              {form.numeros_processo.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">Nenhum processo adicionado</p>
+              )}
+            </div>
+          </div>
+
+          {/* Notificações + Status */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-border rounded-xl p-3 bg-muted/30">
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-2">
+                Notificação por E-mail
+              </label>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.notificacoes_email}
+                  onChange={e => setForm(f => ({ ...f, notificacoes_email: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent" />
+              </label>
+            </div>
+            <div className="border border-border rounded-xl p-3 bg-muted/30">
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-2">
+                Status
+              </label>
+              <select
+                value={form.status_monitoramento}
+                onChange={e => setForm(f => ({ ...f, status_monitoramento: e.target.value as any }))}
+                className="w-full border border-border rounded-lg px-2 py-1.5 text-sm bg-card outline-none focus:border-accent"
+              >
+                <option value="ativo">Ativo</option>
+                <option value="pausado">Pausado</option>
+                <option value="inativo">Inativo</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Observações */}
+          <div>
+            <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1.5">Observações</label>
+            <textarea
+              value={form.observacoes}
+              onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))}
+              placeholder="Notas sobre o cliente..."
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all min-h-[70px]"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 pb-6 flex gap-2 justify-end border-t border-border pt-4">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={handleSalvar}
+            disabled={saving}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <UserPlus className="h-4 w-4 mr-1.5" />}
+            {saving ? "Salvando..." : "Cadastrar Cliente"}
           </Button>
         </div>
       </div>
