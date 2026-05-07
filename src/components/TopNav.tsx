@@ -153,7 +153,7 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             <button
               key={tab.id}
               onClick={() => onPageChange(tab.id)}
-              className={`shrink-0 px-3.5 py-2 text-[0.74rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
+              className={`shrink-0 px-3.5 py-2 text-[0.82rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
                 activePage === tab.id
                   ? "border-accent text-accent font-bold"
                   : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
