@@ -203,11 +203,7 @@ async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
     .order("data_publicacao", { ascending: false })
     .limit(500);
 
-  if (error) {
-    console.error("[Supabase] Erro ao carregar intimacoes:", error.code, error.message, error.details);
-    return [];
-  }
-  if (!data?.length) return [];
+  if (error || !data?.length) return [];
 
   const items: AaspIntimacao[] = data.map((row: any) => {
     const raw = (row.dados_raw as AaspIntimacao) || {};
@@ -344,10 +340,7 @@ export function useAutoFetchIntimacoes() {
     const local = loadStore();
 
     carregarDoSupabase(user.id).then(fromDB => {
-      if (!fromDB.length) {
-        console.warn("[Sync] carregarDoSupabase retornou 0 itens para user:", user.id);
-        return;
-      }
+      if (!fromDB.length) return;
 
       // Mescla: Supabase tem prioridade em status e resumo_ia.
       // Mantém itens locais que ainda não foram enviados ao banco.
@@ -364,10 +357,7 @@ export function useAutoFetchIntimacoes() {
       if (local.length === 0 && fromDB.length > 0) {
         toast.info(`📱 ${fromDB.length} intimação(ões) carregada(s) da nuvem.`, { duration: 4000 });
       }
-    }).catch((err: any) => {
-      console.error("[Sync] Falha ao sincronizar com Supabase:", err?.message || err);
-      window.dispatchEvent(new CustomEvent("supabase-sync-erro", { detail: err?.message || String(err) }));
-    });
+    }).catch(() => {});
   }, [user]);
 
   // ── Busca AASP (uma vez por login) ───────────────────────────
