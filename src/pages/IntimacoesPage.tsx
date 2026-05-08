@@ -884,7 +884,17 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
-    supabase.from("intimacoes").update({ dados_raw: { _lida: true } } as any).eq("id", id).catch(() => {});
+    
+    // Atualiza no Supabase de forma assíncrona (fire and forget)
+    if (user) {
+      supabase
+        .from("intimacoes")
+        .update({ dados_raw: { _lida: true } } as any)
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .then(() => {})
+        .catch(() => {});
+    }
   };
 
   const setStatus = (id: string, status: AaspIntimacao["_status"]) => {
@@ -893,7 +903,17 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
-    supabase.from("intimacoes").update({ status } as any).eq("id", id).catch(() => {});
+    
+    if (user) {
+      supabase
+        .from("intimacoes")
+        .update({ status } as any)
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .then(() => {})
+        .catch(() => {});
+    }
+    
     toast.success("Status atualizado.");
   };
 
@@ -904,7 +924,17 @@ export function IntimacoesPage() {
       saveStore(updated);
       return updated;
     });
-    supabase.from("intimacoes").delete().eq("id", id).catch(() => {});
+    
+    if (user) {
+      supabase
+        .from("intimacoes")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .then(() => {})
+        .catch(() => {});
+    }
+    
     toast.success("Intimação excluída.");
   };
 
