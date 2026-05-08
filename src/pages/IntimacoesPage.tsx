@@ -284,8 +284,12 @@ export function IntimacoesPage() {
 
   // ── Carrega e sincroniza com Supabase SEMPRE ao abrir ────────────────────────
   // O Supabase é a fonte de verdade. localStorage é só cache inicial.
+  const carregouParaUser = useRef<string | null>(null);
   useEffect(() => {
     if (!user) return;
+    // Evita dupla execução (onAuthStateChange + getSession disparam user duas vezes)
+    if (carregouParaUser.current === user.id) return;
+    carregouParaUser.current = user.id;
 
     // 1. Exibe o cache local imediatamente (evita tela em branco)
     const local = loadStore();
@@ -349,6 +353,12 @@ export function IntimacoesPage() {
         const merged = [...fromDB, ...apenasLocal];
         saveStore(merged);
         setIntimacoes(merged);
+        // Mantém o modal aberto se estava aberto antes da sincronização
+        setSelected(prev => {
+          if (!prev) return null;
+          const atualizado = merged.find(i => i._id === prev._id);
+          return atualizado ?? prev;
+        });
       })
       .catch(() => {});
   }, [user]);
@@ -359,6 +369,13 @@ export function IntimacoesPage() {
       const merged = (e as CustomEvent<AaspIntimacao[]>).detail;
       if (Array.isArray(merged) && merged.length > 0) {
         setIntimacoes(merged);
+        // Mantém o modal aberto atualizando o selected com os dados mais recentes
+        // (ex: resumo_ia que acabou de ser sincronizado do banco)
+        setSelected(prev => {
+          if (!prev) return null;
+          const atualizado = merged.find(i => i._id === prev._id);
+          return atualizado ?? prev;
+        });
       }
     };
     window.addEventListener("intimacoes-sincronizadas", handler);
