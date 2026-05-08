@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
@@ -1418,8 +1419,8 @@ export function IntimacoesPage() {
         </div>
       )}
 
-      {/* Modal de Detalhe */}
-      {selected && (
+      {/* Modal de Detalhe — renderizado via Portal no body para escapar do overflow-x-hidden do AppLayout */}
+      {selected && createPortal(
         <ModalDetalhe
           intim={selected}
           onClose={() => setSelected(null)}
@@ -1431,11 +1432,12 @@ export function IntimacoesPage() {
           onReenviarEmail={reenviarEmailManual}
           enviandoEmail={enviandoEmail}
           clientesVinculados={clientesDaIntimacao(selected)}
-        />
+        />,
+        document.body
       )}
 
-      {/* Modal de Novo Cliente (pré-preenchido da intimação) */}
-      {novoClienteIntimacao && (
+      {/* Modal de Novo Cliente — Portal para escapar overflow-x-hidden */}
+      {novoClienteIntimacao && createPortal(
         <NovoClienteModal
           intim={novoClienteIntimacao}
           onClose={() => setNovoClienteIntimacao(null)}
@@ -1446,18 +1448,22 @@ export function IntimacoesPage() {
           }}
           saving={createCliente.isPending}
           clientesVinculados={clientesDaIntimacao(novoClienteIntimacao)}
-        />
+        />,
+        document.body
       )}
 
-      {/* Modal de Criação de Tarefa */}
-      <CreateTaskModal
-        open={showTaskModal}
-        onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
-        onSubmit={handleSubmitTarefa}
-        initialData={taskModalInitialData}
-        processos={processos}
-        feriados={feriados}
-      />
+      {/* Modal de Criação de Tarefa — Portal para escapar overflow-x-hidden */}
+      {createPortal(
+        <CreateTaskModal
+          open={showTaskModal}
+          onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
+          onSubmit={handleSubmitTarefa}
+          initialData={taskModalInitialData}
+          processos={processos}
+          feriados={feriados}
+        />,
+        document.body
+      )}
     </div>
   );
 }
