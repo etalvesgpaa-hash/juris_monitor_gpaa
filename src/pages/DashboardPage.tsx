@@ -42,6 +42,18 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   // ── Intimações: inicia com localStorage (imediato) e sincroniza com Supabase ─
   const [intimacoes, setIntimacoes] = useState<any[]>(() => loadIntimacoesCached());
+  const [erroSync, setErroSync] = useState<string | null>(null);
+
+  // Captura erros de sincronização do hook (visível no mobile sem console)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const msg = (e as CustomEvent<string>).detail;
+      setErroSync(msg);
+      console.error("[Dashboard] Erro de sync recebido:", msg);
+    };
+    window.addEventListener("supabase-sync-erro", handler);
+    return () => window.removeEventListener("supabase-sync-erro", handler);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -59,7 +71,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           return {
             ...raw,
             _id:            row.id,
-            _data:          row.data_publicacao ?? raw._data ?? "",
+            _data:          ((row.data_publicacao ?? raw._data ?? "") as string).slice(0, 10),
             _lida:          raw._lida ?? false,
             // ?? preserva resumo_ia mesmo quando raw tem null
             _status:        row.status ?? "ativa",
@@ -156,9 +168,10 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       d.setDate(d.getDate() - 1);
     }
     
-    // Conta intimações por dia
+    // Conta intimações por dia — normaliza _data para YYYY-MM-DD (remove horário se houver)
     const contagemPorDia = intimacoes.reduce<Record<string, number>>((acc, it: any) => {
-      acc[it._data] = (acc[it._data] || 0) + 1;
+      const dataKey = (it._data || "").slice(0, 10);
+      if (dataKey) acc[dataKey] = (acc[dataKey] || 0) + 1;
       return acc;
     }, {});
     
@@ -222,6 +235,14 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   return (
     <div>
+      {/* Banner de erro de sincronização — visível no mobile */}
+      {erroSync && (
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-400/40 rounded-xl text-sm text-red-600 flex items-start gap-2">
+          <span className="font-bold shrink-0">⚠ Erro de sincronização:</span>
+          <span className="break-all">{erroSync}</span>
+          <button onClick={() => setErroSync(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600 font-bold">✕</button>
+        </div>
+      )}
       {/* ── Cards de estatísticas — linha 1 ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         {/* Intimações de HOJE */}

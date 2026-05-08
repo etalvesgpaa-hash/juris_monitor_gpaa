@@ -297,7 +297,7 @@ export function IntimacoesPage() {
       return {
         ...raw,
         _id:              row.id,
-        _data:            row.data_publicacao ?? raw._data ?? "",
+        _data:            ((row.data_publicacao ?? raw._data ?? "") as string).slice(0, 10),
         _lida:            raw._lida ?? false,
         // ?? garante que resumo_ia do banco nunca é descartado
         _status:          (row.status as any) ?? "ativa",
@@ -996,16 +996,17 @@ export function IntimacoesPage() {
     return dias;
   })();
 
-  // Contagem de intimações por dia (todas, independente do status)
+  // Contagem de intimações por dia — normaliza _data para YYYY-MM-DD
   const contagemPorDia = intimacoes.reduce<Record<string, number>>((acc, it) => {
-    acc[it._data] = (acc[it._data] || 0) + 1;
+    const dataKey = (it._data || "").slice(0, 10);
+    if (dataKey) acc[dataKey] = (acc[dataKey] || 0) + 1;
     return acc;
   }, {});
 
   const filtradas = intimacoes
     .filter((it) => {
       if (it._status !== filtroStatus) return false;
-      if (filtroData !== "todos" && it._data !== filtroData) return false;
+      if (filtroData !== "todos" && (it._data || "").slice(0, 10) !== filtroData) return false;
       return true;
     })
     .sort((a, b) => b._data.localeCompare(a._data));
@@ -1327,8 +1328,8 @@ export function IntimacoesPage() {
                 Todos os dias ({intimacoes.filter(i => i._status === filtroStatus).length})
               </SelectItem>
               {ultimos7Dias.map((dia) => {
-                const count = intimacoes.filter(i => i._data === dia && i._status === filtroStatus).length;
-                const countTotal = intimacoes.filter(i => i._data === dia).length;
+                const count = intimacoes.filter(i => (i._data || "").slice(0, 10) === dia && i._status === filtroStatus).length;
+                const countTotal = intimacoes.filter(i => (i._data || "").slice(0, 10) === dia).length;
                 const [ano, mes, d] = dia.split("-");
                 const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
                 const label = `${dow}, ${d}/${mes}`;
