@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
@@ -1038,6 +1037,13 @@ export function IntimacoesPage() {
     const clientesVinculados = clientesDaIntimacao(intim);
     const temCliente = clientesVinculados.length > 0;
     
+    const handleClickProcesso = () => {
+      console.log("🔍 Clicou no processo:", intim._numProc, intim);
+      marcarLida(intim._id);
+      setSelected(intim);
+      console.log("✅ Estado selected atualizado");
+    };
+    
     return (
       <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
         {/* Data */}
@@ -1054,7 +1060,7 @@ export function IntimacoesPage() {
             <button
               className="font-mono text-xs font-bold text-accent hover:underline underline-offset-2 text-left transition-colors break-all"
               title="Visualizar intimação"
-              onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+              onClick={handleClickProcesso}
             >
               {intim._numProc}
             </button>
@@ -1164,6 +1170,13 @@ export function IntimacoesPage() {
     const clientesVinculados = clientesDaIntimacao(intim);
     const temCliente = clientesVinculados.length > 0;
     
+    const handleClickProcesso = () => {
+      console.log("🔍 [CARD] Clicou no processo:", intim._numProc, intim);
+      marcarLida(intim._id);
+      setSelected(intim);
+      console.log("✅ [CARD] Estado selected atualizado");
+    };
+    
     return (
       <div
         key={intim._id}
@@ -1179,7 +1192,7 @@ export function IntimacoesPage() {
               <button
                 className="font-mono text-sm font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
                 title="Visualizar intimação"
-                onClick={() => { marcarLida(intim._id); setSelected(intim); }}
+                onClick={handleClickProcesso}
               >
                 {intim._numProc}
               </button>
@@ -1419,25 +1432,27 @@ export function IntimacoesPage() {
         </div>
       )}
 
-      {/* Modal de Detalhe — renderizado via Portal no body para escapar do overflow-x-hidden do AppLayout */}
-      {selected && createPortal(
-        <ModalDetalhe
-          intim={selected}
-          onClose={() => setSelected(null)}
-          onSetStatus={setStatus}
-          onExcluir={excluir}
-          onCriarTarefa={criarTarefaDeIntimacao}
-          onGerarResumo={gerarResumoIA}
-          onNovoCliente={(intim) => { setSelected(null); setNovoClienteIntimacao(intim); }}
-          onReenviarEmail={reenviarEmailManual}
-          enviandoEmail={enviandoEmail}
-          clientesVinculados={clientesDaIntimacao(selected)}
-        />,
-        document.body
+      {/* Modal de Detalhe */}
+      {selected && (
+        <>
+          {console.log("🎯 Renderizando ModalDetalhe com:", selected)}
+          <ModalDetalhe
+            intim={selected}
+            onClose={() => setSelected(null)}
+            onSetStatus={setStatus}
+            onExcluir={excluir}
+            onCriarTarefa={criarTarefaDeIntimacao}
+            onGerarResumo={gerarResumoIA}
+            onNovoCliente={(intim) => { setSelected(null); setNovoClienteIntimacao(intim); }}
+            onReenviarEmail={reenviarEmailManual}
+            enviandoEmail={enviandoEmail}
+            clientesVinculados={clientesDaIntimacao(selected)}
+          />
+        </>
       )}
 
-      {/* Modal de Novo Cliente — Portal para escapar overflow-x-hidden */}
-      {novoClienteIntimacao && createPortal(
+      {/* Modal de Novo Cliente (pré-preenchido da intimação) */}
+      {novoClienteIntimacao && (
         <NovoClienteModal
           intim={novoClienteIntimacao}
           onClose={() => setNovoClienteIntimacao(null)}
@@ -1448,22 +1463,18 @@ export function IntimacoesPage() {
           }}
           saving={createCliente.isPending}
           clientesVinculados={clientesDaIntimacao(novoClienteIntimacao)}
-        />,
-        document.body
+        />
       )}
 
-      {/* Modal de Criação de Tarefa — Portal para escapar overflow-x-hidden */}
-      {createPortal(
-        <CreateTaskModal
-          open={showTaskModal}
-          onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
-          onSubmit={handleSubmitTarefa}
-          initialData={taskModalInitialData}
-          processos={processos}
-          feriados={feriados}
-        />,
-        document.body
-      )}
+      {/* Modal de Criação de Tarefa */}
+      <CreateTaskModal
+        open={showTaskModal}
+        onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); }}
+        onSubmit={handleSubmitTarefa}
+        initialData={taskModalInitialData}
+        processos={processos}
+        feriados={feriados}
+      />
     </div>
   );
 }
