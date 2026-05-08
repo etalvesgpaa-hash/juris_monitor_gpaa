@@ -400,6 +400,11 @@ export function IntimacoesPage() {
   );
   const [selected, setSelected] = useState<AaspIntimacao | null>(null);
 
+  // Debug: monitora mudanças no estado selected
+  useEffect(() => {
+    console.log("[DEBUG] Estado 'selected' mudou:", selected ? `ID: ${selected._id}, Processo: ${selected._numProc}` : "null");
+  }, [selected]);
+
   // Carrega chaves do Supabase / localStorage
   useEffect(() => {
     const localAasp = localStorage.getItem("jurismonitor_aasp_key") || "";
@@ -1037,13 +1042,6 @@ export function IntimacoesPage() {
     const clientesVinculados = clientesDaIntimacao(intim);
     const temCliente = clientesVinculados.length > 0;
     
-    const handleClickProcesso = () => {
-      console.log("🔍 Clicou no processo:", intim._numProc, intim);
-      marcarLida(intim._id);
-      setSelected(intim);
-      console.log("✅ Estado selected atualizado");
-    };
-    
     return (
       <tr key={intim._id} className={`border-b border-border ${naoLida ? "bg-accent/5" : ""}`}>
         {/* Data */}
@@ -1060,7 +1058,12 @@ export function IntimacoesPage() {
             <button
               className="font-mono text-xs font-bold text-accent hover:underline underline-offset-2 text-left transition-colors break-all"
               title="Visualizar intimação"
-              onClick={handleClickProcesso}
+              onClick={() => { 
+                console.log("[DEBUG] Clique no processo:", intim._numProc, "ID:", intim._id);
+                marcarLida(intim._id); 
+                setSelected(intim);
+                console.log("[DEBUG] Estado selected atualizado para:", intim);
+              }}
             >
               {intim._numProc}
             </button>
@@ -1170,13 +1173,6 @@ export function IntimacoesPage() {
     const clientesVinculados = clientesDaIntimacao(intim);
     const temCliente = clientesVinculados.length > 0;
     
-    const handleClickProcesso = () => {
-      console.log("🔍 [CARD] Clicou no processo:", intim._numProc, intim);
-      marcarLida(intim._id);
-      setSelected(intim);
-      console.log("✅ [CARD] Estado selected atualizado");
-    };
-    
     return (
       <div
         key={intim._id}
@@ -1192,7 +1188,7 @@ export function IntimacoesPage() {
               <button
                 className="font-mono text-sm font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
                 title="Visualizar intimação"
-                onClick={handleClickProcesso}
+                onClick={() => { marcarLida(intim._id); setSelected(intim); }}
               >
                 {intim._numProc}
               </button>
@@ -1435,7 +1431,7 @@ export function IntimacoesPage() {
       {/* Modal de Detalhe */}
       {selected && (
         <>
-          {console.log("🎯 Renderizando ModalDetalhe com:", selected)}
+          {console.log("[DEBUG] Renderizando ModalDetalhe com intimação:", selected._id)}
           <ModalDetalhe
             intim={selected}
             onClose={() => setSelected(null)}
@@ -1536,6 +1532,8 @@ function ModalDetalhe({
   enviandoEmail: Set<string>;
   clientesVinculados: { id: string; nome: string; email: string | null }[];
 }) {
+  console.log("[DEBUG] ModalDetalhe renderizado para intimação:", intim._id, intim._numProc);
+  
   const temCliente = clientesVinculados.length > 0;
   const titulo =
     intim._titulo ||
@@ -1559,9 +1557,15 @@ function ModalDetalhe({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
       style={{ background: "rgba(13,42,30,0.78)", backdropFilter: "blur(5px)" }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => {
+        console.log("[DEBUG] Clique no overlay do modal");
+        if (e.target === e.currentTarget) {
+          console.log("[DEBUG] Fechando modal (clique no overlay)");
+          onClose();
+        }
+      }}
     >
       <div className="bg-card rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
