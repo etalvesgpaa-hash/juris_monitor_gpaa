@@ -26,6 +26,8 @@ import {
   Users,
   CheckCircle2,
   Bell,
+  Eye,
+  X,
 } from "lucide-react";
 import type { Cliente } from "../hooks/useClientes";
 import { supabase } from "@/lib/supabase";
@@ -120,6 +122,15 @@ export function ClientesPage() {
   const [reprocessing, setReprocessing] = useState<Record<string, boolean>>({});
   const [updatingResumos, setUpdatingResumos] = useState<Record<string, boolean>>({});
   const [lastNotificacoes, setLastNotificacoes] = useState<Record<string, NotificacaoEnviada>>({});
+
+  // Modal de visualização do resumo da intimação enviada por e-mail
+  const [modalResumo, setModalResumo] = useState<{
+    nomeCliente: string;
+    assunto: string;
+    resumo_ia: string;
+    email_destino: string;
+    created_at: string;
+  } | null>(null);
 
   // Stats
   const totalClientes = clientes.length;
@@ -1053,6 +1064,22 @@ export function ClientesPage() {
                                   <p className="text-[0.7rem] text-foreground/80 leading-relaxed line-clamp-3">
                                     {ultimaNotif.resumo_ia}
                                   </p>
+                                  {/* Botão para ver o resumo completo no modal */}
+                                  <button
+                                    onClick={() =>
+                                      setModalResumo({
+                                        nomeCliente: c.nome,
+                                        assunto: ultimaNotif.assunto,
+                                        resumo_ia: ultimaNotif.resumo_ia!,
+                                        email_destino: ultimaNotif.email_destino,
+                                        created_at: ultimaNotif.created_at,
+                                      })
+                                    }
+                                    className="mt-1.5 flex items-center gap-1 text-[0.65rem] text-accent hover:underline"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    Ver resumo completo
+                                  </button>
                                 </div>
                               )}
                             </>
@@ -1198,6 +1225,68 @@ export function ClientesPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Resumo da Intimação Enviada por E-mail */}
+      {modalResumo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+          onClick={() => setModalResumo(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho do modal */}
+            <div className="flex items-start justify-between p-5 border-b border-border">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  <span className="text-[0.7rem] font-bold uppercase tracking-wider text-accent">
+                    Resumo da Intimação — E-mail Enviado
+                  </span>
+                </div>
+                <h3 className="font-display font-bold text-base">{modalResumo.nomeCliente}</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{modalResumo.assunto}</p>
+              </div>
+              <button
+                onClick={() => setModalResumo(null)}
+                className="text-muted-foreground hover:text-foreground transition-colors ml-4 mt-0.5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Metadados */}
+            <div className="flex items-center gap-4 px-5 py-3 bg-muted/30 border-b border-border text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Mail className="h-3.5 w-3.5" />
+                {modalResumo.email_destino}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {fmtDateTime(modalResumo.created_at)}
+              </span>
+            </div>
+
+            {/* Conteúdo do resumo — rolável */}
+            <div className="p-5 overflow-y-auto flex-1">
+              <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                {modalResumo.resumo_ia}
+              </p>
+            </div>
+
+            {/* Rodapé do modal */}
+            <div className="p-4 border-t border-border flex justify-end">
+              <button
+                onClick={() => setModalResumo(null)}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
