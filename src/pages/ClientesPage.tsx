@@ -145,28 +145,76 @@ export function ClientesPage() {
     );
   }).length;
 
-  // Load last notifications for each client
+  // Load last notifications for each client.
+  // Para clientes sem notificação enviada, busca o resumo direto da tabela intimacoes.
   const loadLastNotificacoes = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+
+    // 1. Notificações já enviadas (fonte principal)
+    const { data: enviadas } = await supabase
       .from("notificacoes_enviadas")
       .select("*")
       .eq("user_id", user.id)
       .eq("status", "enviado")
       .order("created_at", { ascending: false });
 
-    if (data) {
-      const byCliente: Record<string, NotificacaoEnviada> = {};
-      for (const n of data as NotificacaoEnviada[]) {
-        const existing = byCliente[n.cliente_id];
-        // Prefere o registro que tenha resumo_ia; entre iguais, mantém o mais recente (primeiro da lista)
-        if (!existing || (!existing.resumo_ia && n.resumo_ia)) {
-          byCliente[n.cliente_id] = n;
+    const byCliente: Record<string, NotificacaoEnviada> = {};
+    for (const n of (enviadas || []) as NotificacaoEnviada[]) {
+      const existing = byCliente[n.cliente_id];
+      // Prefere o registro com resumo_ia; entre iguais mantém o mais recente
+      if (!existing || (!existing.resumo_ia && n.resumo_ia)) {
+        byCliente[n.cliente_id] = n;
+      }
+    }
+
+    // 2. Para clientes ainda sem resumo, busca direto na tabela intimacoes
+    const clientesSemResumo = clientes.filter(
+      (c) => !byCliente[c.id]?.resumo_ia && c.numeros_processo && c.numeros_processo.length > 0
+    );
+
+    if (clientesSemResumo.length > 0) {
+      const { data: intimacoesDB } = await supabase
+        .from("intimacoes")
+        .select("resumo_ia, numero_processo, data_publicacao, tipo")
+        .eq("user_id", user.id)
+        .eq("origem", "aasp")
+        .not("resumo_ia", "is", null)
+        .order("data_publicacao", { ascending: false })
+        .limit(500);
+
+      if (intimacoesDB && intimacoesDB.length > 0) {
+        for (const cliente of clientesSemResumo) {
+          const procs = (cliente.numeros_processo || []).map((p) => p.replace(/\D/g, ""));
+          // Acha a intimação mais recente com resumo para qualquer processo deste cliente
+          const match = (intimacoesDB as any[]).find((row) => {
+            if (!row.numero_processo || !row.resumo_ia) return false;
+            const iLimpo = String(row.numero_processo).replace(/\D/g, "");
+            return procs.some((p) => p && (iLimpo.includes(p) || p.includes(iLimpo)));
+          });
+          if (match) {
+            // Monta um registro sintético compatível com NotificacaoEnviada
+            // para que a UI exiba o resumo mesmo sem e-mail enviado
+            const existing = byCliente[cliente.id];
+            if (!existing || !existing.resumo_ia) {
+              byCliente[cliente.id] = {
+                id: `local-${cliente.id}`,
+                cliente_id: cliente.id,
+                numero_processo: match.numero_processo,
+                assunto: match.tipo || "Publicação AASP",
+                resumo_ia: match.resumo_ia,
+                email_destino: cliente.email || "",
+                status: "enviado",
+                created_at: match.data_publicacao || new Date().toISOString(),
+                intimacao_id: null,
+              } as NotificacaoEnviada;
+            }
+          }
         }
       }
-      setLastNotificacoes(byCliente);
     }
-  }, [user]);
+
+    setLastNotificacoes(byCliente);
+  }, [user, clientes]);
 
   useEffect(() => {
     if (!user) return;
@@ -1058,47 +1106,52 @@ export function ClientesPage() {
                       {/* NOTIFICAÇÕES */}
                       <td className="px-4 py-3 min-w-[160px]">
                         <div className="space-y-1.5">
-                          {/* Último envio */}
-                          {ultimaNotif ? (
+                          {/* Resumo IA — vem de notificação enviada ou direto da tabela intimacoes */}
+                          {ultimaNotif?.resumo_ia ? (
                             <>
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                {fmtDateTime(ultimaNotif.created_at)}
-                              </div>
-                              {/* Resumo da IA */}
-                              {ultimaNotif.resumo_ia && (
-                                <div className="mt-1.5 p-2 bg-accent/5 border border-accent/20 rounded-md">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <Sparkles className="h-3 w-3 text-accent" />
-                                    <span className="text-[0.65rem] font-semibold text-accent uppercase tracking-wide">
-                                      Resumo IA
-                                    </span>
-                                  </div>
-                                  <p className="text-[0.7rem] text-foreground/80 leading-relaxed line-clamp-3">
-                                    {ultimaNotif.resumo_ia}
-                                  </p>
-                                  {/* Botão para ver o resumo completo no modal */}
-                                  <button
-                                    onClick={() =>
-                                      setModalResumo({
-                                        nomeCliente: c.nome,
-                                        assunto: ultimaNotif.assunto,
-                                        resumo_ia: ultimaNotif.resumo_ia!,
-                                        email_destino: ultimaNotif.email_destino,
-                                        created_at: ultimaNotif.created_at,
-                                      })
-                                    }
-                                    className="mt-1.5 flex items-center gap-1 text-[0.65rem] text-accent hover:underline"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                    Ver resumo completo
-                                  </button>
+                              {/* Data — só mostra se for de e-mail real (id não começa com "local-") */}
+                              {!ultimaNotif.id.startsWith("local-") && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Clock className="h-3 w-3" />
+                                  {fmtDateTime(ultimaNotif.created_at)}
                                 </div>
                               )}
+                              <div className="mt-1 p-2 bg-accent/5 border border-accent/20 rounded-md">
+                                <div className="flex items-center gap-1 mb-1">
+                                  <Sparkles className="h-3 w-3 text-accent" />
+                                  <span className="text-[0.65rem] font-semibold text-accent uppercase tracking-wide">
+                                    Resumo IA
+                                  </span>
+                                </div>
+                                <p className="text-[0.7rem] text-foreground/80 leading-relaxed line-clamp-3">
+                                  {ultimaNotif.resumo_ia}
+                                </p>
+                                <button
+                                  onClick={() =>
+                                    setModalResumo({
+                                      nomeCliente: c.nome,
+                                      assunto: ultimaNotif.assunto,
+                                      resumo_ia: ultimaNotif.resumo_ia!,
+                                      email_destino: ultimaNotif.email_destino,
+                                      created_at: ultimaNotif.created_at,
+                                    })
+                                  }
+                                  className="mt-1.5 flex items-center gap-1 text-[0.65rem] text-accent hover:underline"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  Ver resumo completo
+                                </button>
+                              </div>
                             </>
+                          ) : ultimaNotif && !ultimaNotif.resumo_ia ? (
+                            /* Notificação enviada mas sem resumo IA */
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {fmtDateTime(ultimaNotif.created_at)}
+                            </div>
                           ) : (
                             <div className="text-xs text-muted-foreground italic">
-                              Nenhum envio ainda
+                              Sem resumo disponível
                             </div>
                           )}
 
