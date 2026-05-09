@@ -144,13 +144,17 @@ export function ClientesPage() {
       .eq("status", "enviado")
       .order("created_at", { ascending: false });
 
+    console.log("🔍 QUERY notificacoes_enviadas:", data);
+    
     if (data) {
       const byCliente: Record<string, NotificacaoEnviada> = {};
       for (const n of data as NotificacaoEnviada[]) {
+        console.log("📝 Notificação:", n.id, "Cliente:", n.cliente_id, "Resumo:", n.resumo_ia);
         if (!byCliente[n.cliente_id]) {
           byCliente[n.cliente_id] = n;
         }
       }
+      console.log("📊 byCliente final:", byCliente);
       setLastNotificacoes(byCliente);
     }
   }, [user]);
@@ -1029,6 +1033,10 @@ export function ClientesPage() {
                           {/* Último envio */}
                           {ultimaNotif ? (
                             <>
+                              {console.log("📧 ultimaNotif:", ultimaNotif)}
+                              {console.log("✨ resumo_ia:", ultimaNotif.resumo_ia)}
+                              {console.log("📊 Tipo:", typeof ultimaNotif.resumo_ia)}
+                              {console.log("✅ Truthy?:", !!ultimaNotif.resumo_ia)}
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3" />
                                 {fmtDateTime(ultimaNotif.created_at)}
