@@ -155,17 +155,15 @@ export function ClientesPage() {
       .eq("status", "enviado")
       .order("created_at", { ascending: false });
 
-    console.log("🔍 QUERY notificacoes_enviadas:", data);
-    
     if (data) {
       const byCliente: Record<string, NotificacaoEnviada> = {};
       for (const n of data as NotificacaoEnviada[]) {
-        console.log("📝 Notificação:", n.id, "Cliente:", n.cliente_id, "Resumo:", n.resumo_ia);
-        if (!byCliente[n.cliente_id]) {
+        const existing = byCliente[n.cliente_id];
+        // Prefere o registro que tenha resumo_ia; entre iguais, mantém o mais recente (primeiro da lista)
+        if (!existing || (!existing.resumo_ia && n.resumo_ia)) {
           byCliente[n.cliente_id] = n;
         }
       }
-      console.log("📊 byCliente final:", byCliente);
       setLastNotificacoes(byCliente);
     }
   }, [user]);
@@ -335,13 +333,36 @@ export function ClientesPage() {
 
   const buscarResumoIA = async (numProc: string): Promise<string | null> => {
     try {
-      // Busca intimações do localStorage (mesma chave usada em IntimacoesPage)
-      const storeKey = INTIMACOES_STORE_KEY;
-      const stored = localStorage.getItem(storeKey);
+      const procLimpo = numProc.replace(/\D/g, "");
+
+      // 1. Busca primeiro no Supabase (tabela intimacoes) — mesma fonte usada ao enviar e-mail
+      const { data: rowsDB } = await supabase
+        .from("intimacoes")
+        .select("resumo_ia, dados_raw")
+        .eq("user_id", user!.id)
+        .eq("origem", "aasp")
+        .not("resumo_ia", "is", null)
+        .order("data_publicacao", { ascending: false })
+        .limit(200);
+
+      if (rowsDB && rowsDB.length > 0) {
+        const matchDB = rowsDB.find((row: any) => {
+          const numRaw =
+            row.dados_raw?._numProc ||
+            row.dados_raw?.NumeroProcesso ||
+            row.dados_raw?.numero_processo ||
+            "";
+          const iLimpo = String(numRaw).replace(/\D/g, "");
+          return iLimpo && (iLimpo.includes(procLimpo) || procLimpo.includes(iLimpo));
+        });
+        if (matchDB?.resumo_ia) return matchDB.resumo_ia;
+      }
+
+      // 2. Fallback: busca no localStorage
+      const stored = localStorage.getItem(INTIMACOES_STORE_KEY);
       if (!stored) return null;
 
       const intimacoes: IntimacaoLocal[] = JSON.parse(stored);
-      const procLimpo = numProc.replace(/\D/g, "");
       const match = intimacoes.find((i) => {
         if (!i._numProc) return false;
         const iLimpo = i._numProc.replace(/\D/g, "");
@@ -351,7 +372,7 @@ export function ClientesPage() {
       if (!match) return null;
       if (match._resumoIA) return match._resumoIA;
 
-      // Gera resumo via Groq se não existir
+      // 3. Gera resumo via Groq se não existir em nenhuma fonte
       const texto = (match.textoPublicacao || match.Texto || match.texto || match.Conteudo || match.conteudo || "") as string;
       if (!texto || texto.length < 50) return null;
 
@@ -397,7 +418,7 @@ export function ClientesPage() {
         const updated = intimacoes.map((i) =>
           i._id === match._id ? { ...i, _resumoIA: resumo } : i
         );
-        localStorage.setItem(storeKey, JSON.stringify(updated));
+        localStorage.setItem(INTIMACOES_STORE_KEY, JSON.stringify(updated));
       }
 
       return resumo;
@@ -1044,10 +1065,6 @@ export function ClientesPage() {
                           {/* Último envio */}
                           {ultimaNotif ? (
                             <>
-                              {console.log("📧 ultimaNotif:", ultimaNotif)}
-                              {console.log("✨ resumo_ia:", ultimaNotif.resumo_ia)}
-                              {console.log("📊 Tipo:", typeof ultimaNotif.resumo_ia)}
-                              {console.log("✅ Truthy?:", !!ultimaNotif.resumo_ia)}
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3" />
                                 {fmtDateTime(ultimaNotif.created_at)}
