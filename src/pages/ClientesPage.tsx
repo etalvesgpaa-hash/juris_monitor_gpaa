@@ -335,24 +335,20 @@ export function ClientesPage() {
     try {
       const procLimpo = numProc.replace(/\D/g, "");
 
-      // 1. Busca primeiro no Supabase (tabela intimacoes) — mesma fonte usada ao enviar e-mail
+      // 1. Busca no Supabase pelo campo numero_processo (coluna indexada, mesma fonte do envio)
       const { data: rowsDB } = await supabase
         .from("intimacoes")
-        .select("resumo_ia, dados_raw")
+        .select("resumo_ia, numero_processo")
         .eq("user_id", user!.id)
         .eq("origem", "aasp")
         .not("resumo_ia", "is", null)
         .order("data_publicacao", { ascending: false })
-        .limit(200);
+        .limit(500);
 
       if (rowsDB && rowsDB.length > 0) {
         const matchDB = rowsDB.find((row: any) => {
-          const numRaw =
-            row.dados_raw?._numProc ||
-            row.dados_raw?.NumeroProcesso ||
-            row.dados_raw?.numero_processo ||
-            "";
-          const iLimpo = String(numRaw).replace(/\D/g, "");
+          if (!row.numero_processo) return false;
+          const iLimpo = String(row.numero_processo).replace(/\D/g, "");
           return iLimpo && (iLimpo.includes(procLimpo) || procLimpo.includes(iLimpo));
         });
         if (matchDB?.resumo_ia) return matchDB.resumo_ia;
