@@ -1250,6 +1250,19 @@ export function ClientesPage() {
                             {sendingEmail[c.id] ? "Enviando..." : "Enviar E-mail"}
                           </Button>
 
+                          {/* Row 2b: Send WhatsApp */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => enviarWhatsApp(c, lastNotificacoes[c.id]?.resumo_ia)}
+                            disabled={!c.telefone}
+                            className="h-7 px-2 text-xs gap-1 text-green-600 border-green-200 hover:bg-green-50"
+                            title={c.telefone ? "Enviar WhatsApp com resumo IA" : "Telefone não cadastrado"}
+                          >
+                            <MessageCircle className="h-3 w-3" />
+                            Enviar WA
+                          </Button>
+
                           {/* Row 3: Reprocess + Update Resumos */}
                           <div className="flex gap-1">
                             <Button
