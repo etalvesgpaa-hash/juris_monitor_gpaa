@@ -135,12 +135,7 @@ export function ClientesPage() {
   }).length;
 
   // Load last notifications for each client
-  useEffect(() => {
-    if (!user || clientes.length === 0) return;
-    loadLastNotificacoes();
-  }, [user, clientes]);
-
-  const loadLastNotificacoes = async () => {
+  const loadLastNotificacoes = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from("notificacoes_enviadas")
@@ -158,7 +153,12 @@ export function ClientesPage() {
       }
       setLastNotificacoes(byCliente);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadLastNotificacoes();
+  }, [user, loadLastNotificacoes]);
 
   // ── Form helpers ────────────────────────────────────────────────────────────
 
