@@ -1028,10 +1028,26 @@ export function ClientesPage() {
                         <div className="space-y-1.5">
                           {/* Último envio */}
                           {ultimaNotif ? (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              {fmtDateTime(ultimaNotif.created_at)}
-                            </div>
+                            <>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                {fmtDateTime(ultimaNotif.created_at)}
+                              </div>
+                              {/* Resumo da IA */}
+                              {ultimaNotif.resumo_ia && (
+                                <div className="mt-1.5 p-2 bg-accent/5 border border-accent/20 rounded-md">
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <Sparkles className="h-3 w-3 text-accent" />
+                                    <span className="text-[0.65rem] font-semibold text-accent uppercase tracking-wide">
+                                      Resumo IA
+                                    </span>
+                                  </div>
+                                  <p className="text-[0.7rem] text-foreground/80 leading-relaxed line-clamp-3">
+                                    {ultimaNotif.resumo_ia}
+                                  </p>
+                                </div>
+                              )}
+                            </>
                           ) : (
                             <div className="text-xs text-muted-foreground italic">
                               Nenhum envio ainda

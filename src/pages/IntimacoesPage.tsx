@@ -1088,7 +1088,7 @@ export function IntimacoesPage() {
         <td className="px-3 py-2.5 align-top">
           {intim._numProc ? (
             <button
-              className="font-mono text-xs font-bold text-accent hover:underline underline-offset-2 text-left transition-colors break-all"
+              className="font-mono text-xs font-bold text-accent hover:underline underline-offset-2 text-left transition-colors whitespace-nowrap"
               title="Visualizar intimação"
               onClick={handleClickProcesso}
             >
@@ -1220,7 +1220,7 @@ export function IntimacoesPage() {
             </div>
             {intim._numProc && (
               <button
-                className="font-mono text-sm font-bold text-accent break-all hover:underline underline-offset-2 text-left transition-colors"
+                className="font-mono text-sm font-bold text-accent whitespace-nowrap hover:underline underline-offset-2 text-left transition-colors"
                 title="Visualizar intimação"
                 onClick={handleClickProcesso}
               >
