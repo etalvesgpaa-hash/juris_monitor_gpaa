@@ -251,7 +251,23 @@ export function ProcessosPage() {
   const { toast } = useToast();
 
   // Estado local enriquecido (adiciona _movimentacoes etc.)
-  const [processos, setProcessos] = useState<ProcessoRico[]>(() => rawProcessos as ProcessoRico[]);
+  // hidratarDoSupabase é definida logo abaixo — usamos inline aqui para o estado inicial
+  const [processos, setProcessos] = useState<ProcessoRico[]>(() =>
+    (rawProcessos as ProcessoRico[]).map(rp => {
+      const djd = rp.dados_datajud as any;
+      if (!djd) return rp;
+      return {
+        ...rp,
+        tribunalNome:    djd.tribunalNome    || rp.tribunal || undefined,
+        autor:           djd.autor           || undefined,
+        reu:             djd.reu             || undefined,
+        orgaoJulgador:   djd.orgaoJulgador   || rp.vara     || undefined,
+        dataAjuizamento: djd.dataAjuizamento || undefined,
+        ultimaMov:       djd.ultimaMov       || undefined,
+        _movimentacoes:  djd._movimentacoes  || [],
+      };
+    })
+  );
   const [search, setSearch]       = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [panelProcesso, setPanelProcesso] = useState<ProcessoRico | null>(null);
@@ -261,6 +277,25 @@ export function ProcessosPage() {
   const [syncingAll, setSyncingAll] = useState(false);
   const [tribunalDetect, setTribunalDetect] = useState("");
 
+  // Hidrata campos ricos a partir de dados_datajud salvo no Supabase
+  function hidratarDoSupabase(rp: ProcessoRico): ProcessoRico {
+    const djd = rp.dados_datajud as any;
+    if (!djd) return rp;
+    return {
+      ...rp,
+      tribunalNome:    rp.tribunalNome    || djd.tribunalNome    || rp.tribunal || undefined,
+      autor:           rp.autor           || djd.autor           || undefined,
+      reu:             rp.reu             || djd.reu             || undefined,
+      orgaoJulgador:   rp.orgaoJulgador   || djd.orgaoJulgador   || rp.vara     || undefined,
+      dataAjuizamento: rp.dataAjuizamento || djd.dataAjuizamento || undefined,
+      ultimaMov:       rp.ultimaMov       || djd.ultimaMov       || undefined,
+      // Só hidrata _movimentacoes do banco se ainda não tiver local (sync pós-página)
+      _movimentacoes:  rp._movimentacoes?.length
+        ? rp._movimentacoes
+        : (djd._movimentacoes || []),
+    };
+  }
+
   // Mantém processos locais sincronizados com Supabase
   const prevRaw = useRef<string>("");
   const rawStr = JSON.stringify(rawProcessos.map(p => p.id));
@@ -269,7 +304,26 @@ export function ProcessosPage() {
     setProcessos(prev => {
       return (rawProcessos as ProcessoRico[]).map(rp => {
         const existing = prev.find(p => p.id === rp.id);
-        return existing ? { ...rp, ...existing } : rp;
+        if (existing) {
+          // Campos enriquecidos localmente (pós-sync na sessão) têm prioridade
+          // mas dados do Supabase preenchem o que ainda não existe localmente
+          const hidratado = hidratarDoSupabase(rp);
+          return {
+            ...hidratado,
+            // Preserva campos enriquecidos pela sync local desta sessão
+            tribunalNome:    existing.tribunalNome    || hidratado.tribunalNome,
+            autor:           existing.autor           || hidratado.autor,
+            reu:             existing.reu             || hidratado.reu,
+            orgaoJulgador:   existing.orgaoJulgador   || hidratado.orgaoJulgador,
+            dataAjuizamento: existing.dataAjuizamento || hidratado.dataAjuizamento,
+            ultimaMov:       existing.ultimaMov       || hidratado.ultimaMov,
+            _movimentacoes:  existing._movimentacoes?.length
+              ? existing._movimentacoes
+              : hidratado._movimentacoes,
+            resumo_ia:       rp.resumo_ia || existing.resumo_ia,
+          };
+        }
+        return hidratarDoSupabase(rp);
       });
     });
   }
