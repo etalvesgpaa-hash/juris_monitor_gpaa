@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useProcessos } from "@/hooks/useProcessos";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 // ─────────────────────────────────────────────
 // TABELA OAB-SP 2024 (default embutida)
@@ -646,8 +648,10 @@ type TabKey = "consulta" | "judicial" | "extrajudicial" | "trabalhista" | "famil
 
 export function HonorariosPage() {
   const { data: processos = [] } = useProcessos();
+  const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>("judicial");
   const [tabela, setTabela] = useState(() => getTabelaOAB());
+  const [tabelaLoading, setTabelaLoading] = useState(true);
   const [propostaTexto, setPropostaTexto] = useState<string | null>(null);
 
   // ── Consulta rápida
@@ -700,6 +704,35 @@ export function HonorariosPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const vigencia = `Tabela OAB-SP v${tabela.versao || "—"} · ${(tabela.fonte || "OAB-SP").replace("Tabela de Honorários ", "")}`;
+
+  // ── Carrega tabela do Supabase ao montar (sincroniza entre dispositivos)
+  const carregarTabelaSupabase = useCallback(async () => {
+    if (!user) { setTabelaLoading(false); return; }
+    try {
+      const { data } = await supabase
+        .from("user_configs" as any)
+        .select("valor")
+        .eq("user_id", user.id)
+        .eq("chave", "tabela_honorarios")
+        .maybeSingle();
+
+      if (data?.valor) {
+        const tabelaRemota = data.valor as any;
+        if (tabelaRemota?.versao) {
+          salvarTabelaOAB(tabelaRemota); // atualiza cache local
+          setTabela(tabelaRemota);
+        }
+      }
+    } catch (err) {
+      console.error("[honorarios] Erro ao carregar tabela do Supabase:", err);
+    } finally {
+      setTabelaLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    carregarTabelaSupabase();
+  }, [carregarTabelaSupabase]);
 
   // ── Init selects with first item
   useEffect(() => {
@@ -813,21 +846,44 @@ export function HonorariosPage() {
     setConsultaResult({ ...r, label: getLabel(consultaCat, consultaKey) });
   }
 
-  // ── Importar JSON
+  // ── Importar JSON — salva no Supabase (sincroniza entre dispositivos) e localStorage (cache)
   function handleImport(file: File) {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const nova = JSON.parse(e.target?.result as string);
         if (!nova.versao) throw new Error('Campo "versao" ausente.');
         if (!nova.extrajudicial && !nova.civel && !nova.trabalhista && !nova.criminal)
           throw new Error("Nenhuma categoria de honorários encontrada.");
         nova.importadoEm = new Date().toLocaleDateString("pt-BR");
+
+        // Salva no localStorage (cache local imediato)
         salvarTabelaOAB(nova);
         setTabela(nova);
         const cats = Object.keys(nova).filter((k) => typeof nova[k] === "object" && k !== "observacoes").length;
-        setImportResult(`✅ Tabela importada com sucesso! Versão: ${nova.versao} · ${nova.fonte || ""} · ${cats} categorias.`);
-        toast.success("✅ Tabela OAB-SP atualizada!");
+
+        // Salva no Supabase (sincroniza com mobile e outros dispositivos)
+        if (user) {
+          // Salva na tabela user_configs (JSONB) — requer migration abaixo
+          const { error } = await supabase
+            .from("user_configs" as any)
+            .upsert(
+              { user_id: user.id, chave: "tabela_honorarios", valor: nova },
+              { onConflict: "user_id,chave" }
+            );
+          if (error) {
+            console.error("[honorarios] Erro ao salvar no Supabase:", error.message);
+            // Fallback: só localStorage se a tabela ainda não existir
+            setImportResult(`✅ Tabela salva localmente. Para sincronizar entre dispositivos, execute a migration SQL. Versão: ${nova.versao} · ${cats} categorias.`);
+            toast.success("✅ Tabela OAB-SP atualizada localmente!");
+          } else {
+            setImportResult(`✅ Tabela importada e sincronizada! Versão: ${nova.versao} · ${nova.fonte || ""} · ${cats} categorias.`);
+            toast.success("✅ Tabela OAB-SP sincronizada em todos os dispositivos!");
+          }
+        } else {
+          setImportResult(`✅ Tabela importada com sucesso! Versão: ${nova.versao} · ${nova.fonte || ""} · ${cats} categorias.`);
+          toast.success("✅ Tabela OAB-SP atualizada!");
+        }
       } catch (err: any) {
         setImportResult(`❌ Erro: ${err.message}`);
       }
