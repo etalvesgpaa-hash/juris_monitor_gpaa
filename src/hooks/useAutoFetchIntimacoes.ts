@@ -233,6 +233,94 @@ async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
   return items;
 }
 
+// ── Geração de Resumo IA via Groq ────────────────────────────
+async function gerarResumoIA(intim: AaspIntimacao, userId: string): Promise<string | null> {
+  try {
+    // 1. Já tem resumo — retorna direto
+    if (intim._resumoIA) return intim._resumoIA;
+
+    // 2. Verifica se já foi gerado e salvo no Supabase (por outro dispositivo)
+    const { data: row } = await supabase
+      .from("intimacoes")
+      .select("resumo_ia")
+      .eq("id", intim._id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (row?.resumo_ia) return row.resumo_ia;
+
+    // 3. Monta o texto da publicação
+    const texto = String(
+      intim.textoPublicacao || intim.Texto || intim.texto ||
+      intim.Conteudo || intim.conteudo || ""
+    );
+    if (!texto || texto.length < 50) return null;
+
+    // 4. Busca chave Groq do usuário
+    const { data: apiKeys } = await supabase
+      .from("api_keys")
+      .select("groq_api_key")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const groqKey = apiKeys?.groq_api_key;
+    if (!groqKey) return null;
+
+    // 5. Gera o resumo via Groq
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${groqKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+          },
+          {
+            role: "user",
+            content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const resumo: string | null = data.choices?.[0]?.message?.content || null;
+
+    // 6. Salva o resumo gerado no Supabase e no localStorage
+    if (resumo) {
+      await supabase
+        .from("intimacoes")
+        .update({ resumo_ia: resumo })
+        .eq("id", intim._id)
+        .eq("user_id", userId)
+        .catch(() => {});
+
+      // Atualiza também no localStorage para consistência
+      try {
+        const store = JSON.parse(localStorage.getItem("jm_aasp_intimacoes") || "[]");
+        const updated = store.map((i: AaspIntimacao) =>
+          i._id === intim._id ? { ...i, _resumoIA: resumo } : i
+        );
+        localStorage.setItem("jm_aasp_intimacoes", JSON.stringify(updated));
+      } catch (_) {}
+    }
+
+    return resumo;
+  } catch (e: any) {
+    console.error("[ResumoIA] Erro ao gerar resumo:", e.message);
+    return null;
+  }
+}
+
 // ── Notificações automáticas por e-mail ──────────────────────
 async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: string) {
   if (!novas.length) return;
@@ -277,6 +365,9 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
         if (enviados.has(chave)) continue;
 
         try {
+          // Gera resumo IA antes de enviar o e-mail (busca no Supabase ou gera via Groq)
+          const resumoGerado = await gerarResumoIA(intim, userId);
+
           const res = await fetch("/api/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -286,7 +377,7 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
               numeroProcesso: intim._numProc,
               dataPublicacao: fmtDataBR(intim._data),
               assunto:       intim._titulo || "Nova Publicação AASP",
-              resumoIA:      intim._resumoIA || null,
+              resumoIA:      resumoGerado || null,
               textoCompleto: "",
             }),
           });
@@ -298,7 +389,7 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
             intimacao_id:   intim._id,
             numero_processo: intim._numProc || "",
             assunto:        intim._titulo || "Nova Publicação AASP",
-            resumo_ia:      intim._resumoIA || null,
+            resumo_ia:      resumoGerado || null,
             email_destino:  cliente.email,
             status,
           });
