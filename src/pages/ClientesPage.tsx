@@ -213,6 +213,25 @@ export function ClientesPage() {
     loadLastNotificacoes();
   }, [user, loadLastNotificacoes]);
 
+  // Contagem de notificações hoje — query direta idêntica ao Dashboard
+  useEffect(() => {
+    if (!user) return;
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    supabase
+      .from("notificacoes_enviadas")
+      .select("cliente_id")
+      .eq("user_id", user.id)
+      .eq("status", "enviado")
+      .gte("created_at", `${hoje}T00:00:00`)
+      .lte("created_at", `${hoje}T23:59:59`)
+      .then(({ data }) => {
+        if (!data) return;
+        const uniq = new Set((data as any[]).map((n: any) => n.cliente_id));
+        setNotificacoesHoje(uniq.size);
+      });
+  }, [user, lastNotificacoes]);
+
   // ── Form helpers ────────────────────────────────────────────────────────────
 
   const resetForm = () => {
