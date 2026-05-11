@@ -5,11 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 // ─────────────────────────────────────────────
-// TABELA OAB-SP 2024 (default embutida)
+// TABELA OAB-SP 2026 (default embutida)
 // ─────────────────────────────────────────────
 const TABELA_OABSP_DEFAULT: any = {
-  versao: "2024",
-  fonte: "Tabela de Honorários OAB/SP 2024",
+  versao: "2026",
+  fonte: "Tabela de Honorários OAB/SP 2026",
   observacoes: {
     geral: "Salvo outra disposição, serão devidos honorários no percentual de 20% sobre o valor econômico da questão, havendo ou não benefício patrimonial.",
     valores_minimos: "As importâncias anotadas, em reais, são sugeridas como valores mínimos.",
@@ -456,7 +456,7 @@ function ResultBox({ result, acordado, tipo, onProposta }: {
       </div>
       {rawMin > 0 && (
         <div className={`flex justify-between items-center ${destMin ? "" : "opacity-50"}`}>
-          <span className="text-xs text-white">Mínimo fixo OAB-SP 2024{destMin ? " ✅" : ""}</span>
+          <span className="text-xs text-white">Mínimo fixo OAB-SP 2026{destMin ? " ✅" : ""}</span>
           <span className="font-mono font-bold text-white">{fmtBRL(rawMin)}</span>
         </div>
       )}
@@ -476,7 +476,7 @@ function ResultBox({ result, acordado, tipo, onProposta }: {
         <div className="text-2xl font-black font-mono" style={{ color: "#e8874a" }}>{fmtBRL(usarVal)}</div>
       </div>
       <div className="text-[0.65rem] opacity-40 text-white">
-        ⓘ Valores mínimos conforme Tabela OAB-SP 2024 · art. 22 §2º Estatuto OAB
+        ⓘ Valores mínimos conforme Tabela OAB-SP 2026 · art. 22 §2º Estatuto OAB
       </div>
       {/* ações */}
       <div className="flex gap-2 mt-1">
@@ -518,11 +518,11 @@ function MultiResultBox({ results, total, acordado, tipo, onProposta }: {
         </div>
       ))}
       <div className="border-t pt-3 flex justify-between items-center" style={{ borderColor: "rgba(255,255,255,0.15)" }}>
-        <div className="text-xs font-bold" style={{ color: "#e8874a" }}>Total Mínimo OAB-SP 2024</div>
+        <div className="text-xs font-bold" style={{ color: "#e8874a" }}>Total Mínimo OAB-SP 2026</div>
         <div className="text-2xl font-black font-mono" style={{ color: "#e8874a" }}>{fmtBRL(usarVal)}</div>
       </div>
       <div className="text-[0.65rem] opacity-40 text-white">
-        ⓘ Valores mínimos conforme Tabela OAB-SP 2024 · art. 22 §2º Estatuto OAB
+        ⓘ Valores mínimos conforme Tabela OAB-SP 2026 · art. 22 §2º Estatuto OAB
       </div>
       <div className="flex gap-2 mt-1">
         <button onClick={onProposta} className="flex-1 py-2 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1" style={{ background: "#1a6b3a" }}>
@@ -912,7 +912,7 @@ Cliente: ${cliente || "[CLIENTE]"}
 MODALIDADE: ${tipo}
 SERVIÇO: ${label}${valorBase > 0 ? `\nValor da causa: ${fmtBRL(valorBase)}` : ""}${pctInfo ? `\nBase de cálculo: ${pctInfo}` : ""}
 
-HONORÁRIOS CONFORME TABELA OAB-SP ${tabela.versao || "2024"}
+HONORÁRIOS CONFORME TABELA OAB-SP ${tabela.versao || "2026"}
   Valor mínimo sugerido: ${fmtBRL(minVal)}
 
 VALOR PROPOSTO: ${fmtBRL(minVal)}
@@ -926,7 +926,7 @@ FORMA DE PAGAMENTO (sugestão)
 OBSERVAÇÕES
 • Honorários contratuais, independentes dos sucumbenciais (art. 85, §14 CPC).
 • Recursos ou instâncias superiores objeto de aditivo.
-• Base: Tabela OAB-SP, vigência ${tabela.vigencia || tabela.versao || "2024"}.`;
+• Base: Tabela OAB-SP, vigência ${tabela.vigencia || tabela.versao || "2026"}.`;
   }
 
   // ── Tabs config
@@ -1238,7 +1238,7 @@ OBSERVAÇÕES
           <div className="flex justify-between items-center mb-5 flex-wrap gap-3">
             <div>
               <div className="font-bold">📋 Tabela de Honorários OAB-SP Vigente</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{tabela.fonte} · {tabela.importadoEm ? `importada em ${tabela.importadoEm}` : "padrão 2024"}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{tabela.fonte} · {tabela.importadoEm ? `importada em ${tabela.importadoEm}` : "padrão 2026"}</div>
             </div>
             <button onClick={baixarModelo} className="px-3 py-1.5 text-xs rounded-lg border border-border hover:bg-muted flex items-center gap-1">⬇ Baixar modelo .json</button>
           </div>
@@ -1282,8 +1282,8 @@ OBSERVAÇÕES
           <div className="mt-6">
             <div className="text-[0.7rem] font-bold uppercase tracking-widest text-muted-foreground mb-3">Estrutura Esperada do JSON</div>
             <pre className="bg-muted/60 rounded-xl p-4 text-[0.7rem] font-mono overflow-x-auto text-foreground leading-relaxed">{`{
-  "versao": "2024",
-  "fonte": "Tabela de Honorários OAB/SP 2024",
+  "versao": "2026",
+  "fonte": "Tabela de Honorários OAB/SP 2026",
   "observacoes": {
     "geral": "Salvo outra disposição...",
     "valores_minimos": "As importâncias...",
