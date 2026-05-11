@@ -136,13 +136,12 @@ export function ClientesPage() {
   const totalClientes = clientes.length;
   const clientesAtivos = clientes.filter((c) => c.status_monitoramento === "ativo").length;
   const notificacoesHoje = Object.values(lastNotificacoes).filter((n) => {
-    const d = new Date(n.created_at);
+    // Exclui registros sintéticos (vindos direto de intimacoes, sem e-mail enviado)
+    if (n.id.startsWith("local-")) return false;
+    // Compara só a parte da data (YYYY-MM-DD) para evitar problema de timezone
     const hoje = new Date();
-    return (
-      d.getDate() === hoje.getDate() &&
-      d.getMonth() === hoje.getMonth() &&
-      d.getFullYear() === hoje.getFullYear()
-    );
+    const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-${String(hoje.getDate()).padStart(2,"0")}`;
+    return n.created_at.slice(0, 10) === hojeStr;
   }).length;
 
   // Load last notifications for each client.
