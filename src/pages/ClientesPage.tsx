@@ -135,14 +135,7 @@ export function ClientesPage() {
   // Stats
   const totalClientes = clientes.length;
   const clientesAtivos = clientes.filter((c) => c.status_monitoramento === "ativo").length;
-  const notificacoesHoje = Object.values(lastNotificacoes).filter((n) => {
-    // Exclui registros sintéticos (vindos direto de intimacoes, sem e-mail enviado)
-    if (n.id.startsWith("local-")) return false;
-    // Compara só a parte da data (YYYY-MM-DD) para evitar problema de timezone
-    const hoje = new Date();
-    const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-${String(hoje.getDate()).padStart(2,"0")}`;
-    return n.created_at.slice(0, 10) === hojeStr;
-  }).length;
+  const [notificacoesHoje, setNotificacoesHoje] = useState(0);
 
   // Load last notifications for each client.
   // Para clientes sem notificação enviada, busca o resumo direto da tabela intimacoes.
