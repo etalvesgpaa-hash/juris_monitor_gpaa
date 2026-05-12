@@ -473,23 +473,26 @@ export function useAutoFetchIntimacoes() {
         }
         saveStore(uniq);
 
-        // 5. Verifica no Supabase quais IDs JÁ EXISTIAM antes desta sync
-        //    (deve ser feito ANTES do syncParaSupabase para não confundir
-        //     recém-inseridos com "já conhecidos")
-        const idsNovas = novas.map(n => n._id).filter(Boolean);
+        // 5. Filtra apenas as intimações de HOJE (dias[0])
+        //    As de dias anteriores já foram processadas em execuções anteriores
+        const hoje = dias[0]; // formato YYYY-MM-DD
+        const novasDeHoje = novas.filter(n => n._data === hoje);
+
+        // Verifica no Supabase quais IDs de hoje JÁ EXISTIAM antes desta sync
+        // (feito ANTES do syncParaSupabase para não confundir recém-inseridos)
         let idsJaNoSupabase = new Set<string>();
 
-        if (idsNovas.length > 0) {
+        if (novasDeHoje.length > 0) {
           const { data: jaNoSupabase } = await supabase
             .from("intimacoes")
             .select("id")
             .eq("user_id", user.id)
-            .in("id", idsNovas);
+            .in("id", novasDeHoje.map(n => n._id).filter(Boolean));
           idsJaNoSupabase = new Set((jaNoSupabase || []).map((r: any) => r.id));
         }
 
-        // Intimação é "nova" somente se não existia no Supabase antes desta busca
-        const recentementeNovas = novas.filter(n => !idsJaNoSupabase.has(n._id));
+        // Intimação é "nova" somente se é de hoje E não existia no Supabase
+        const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
 
         // 5b. Agora sincroniza para Supabase — aguarda antes de disparar notificações
         await syncParaSupabase(uniq, user.id).catch(() => {});
