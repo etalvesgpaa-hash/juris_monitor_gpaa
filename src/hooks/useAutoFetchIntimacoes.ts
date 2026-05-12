@@ -473,12 +473,9 @@ export function useAutoFetchIntimacoes() {
         }
         saveStore(uniq);
 
-        // 5. Sincroniza para Supabase — aguarda para garantir que os IDs existam
-        //    antes de gerar resumos e disparar notificações
-        await syncParaSupabase(uniq, user.id).catch(() => {});
-
-        // 6. Descobre quais são realmente novas consultando o Supabase
-        //    (não o localStorage, que é vazio em outro dispositivo)
+        // 5. Verifica no Supabase quais IDs JÁ EXISTIAM antes desta sync
+        //    (deve ser feito ANTES do syncParaSupabase para não confundir
+        //     recém-inseridos com "já conhecidos")
         const idsNovas = novas.map(n => n._id).filter(Boolean);
         let idsJaNoSupabase = new Set<string>();
 
@@ -493,6 +490,9 @@ export function useAutoFetchIntimacoes() {
 
         // Intimação é "nova" somente se não existia no Supabase antes desta busca
         const recentementeNovas = novas.filter(n => !idsJaNoSupabase.has(n._id));
+
+        // 5b. Agora sincroniza para Supabase — aguarda antes de disparar notificações
+        await syncParaSupabase(uniq, user.id).catch(() => {});
 
         toast.dismiss("auto-fetch");
         if (recentementeNovas.length > 0) {
