@@ -465,7 +465,10 @@ export function useAutoFetchIntimacoes() {
         }
 
         // 4. Merge + dedup
-        const merged = [...novas, ...storeAtual];
+        // storeAtual pode estar vazio no mobile — garante que o histórico
+        // do Supabase (já carregado pelo useEffect anterior) seja incluído
+        const storeComHistorico = loadStore(); // relê após carregarDoSupabase
+        const merged = [...novas, ...storeComHistorico];
         const uniq: AaspIntimacao[] = [];
         const seen = new Set<string>();
         for (const it of merged) {
