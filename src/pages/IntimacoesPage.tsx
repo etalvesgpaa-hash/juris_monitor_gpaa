@@ -382,6 +382,21 @@ export function IntimacoesPage() {
     return () => window.removeEventListener("intimacoes-sincronizadas", handler);
   }, []);
 
+  // ── Atualiza resumo IA em tempo real conforme são gerados ──────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { id, resumo } = (e as CustomEvent<{ id: string; resumo: string }>).detail;
+      setIntimacoes(prev =>
+        prev.map(i => i._id === id ? { ...i, _resumoIA: resumo } : i)
+      );
+      setSelected(prev =>
+        prev?._id === id ? { ...prev, _resumoIA: resumo } : prev
+      );
+    };
+    window.addEventListener("intimacao-resumo-gerado", handler);
+    return () => window.removeEventListener("intimacao-resumo-gerado", handler);
+  }, []);
+
   // Refs para evitar stale closures nos callbacks assíncronos
   const aaspKeyRef = useRef(aaspKey);
   const intimacoesRef = useRef(intimacoes);

@@ -497,8 +497,71 @@ export function useAutoFetchIntimacoes() {
         // Intimação é "nova" somente se é de hoje E não existia no Supabase
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
 
-        // 5b. Agora sincroniza para Supabase — aguarda antes de disparar notificações
+        // 5b. Agora sincroniza para Supabase — aguarda antes de gerar resumos
         await syncParaSupabase(uniq, user.id).catch(() => {});
+
+        // 6. Gera resumo IA para TODAS as intimações novas (sem _resumoIA)
+        //    Roda em paralelo, sem bloquear a UI, salva no Supabase e localStorage
+        const semResumo = uniq.filter(n => !n._resumoIA && n._id);
+        if (semResumo.length > 0) {
+          (async () => {
+            const { data: apiKeys } = await supabase
+              .from("api_keys")
+              .select("groq_api_key")
+              .eq("user_id", user.id)
+              .maybeSingle();
+            const groqKey = apiKeys?.groq_api_key;
+            if (!groqKey) return;
+
+            for (const intim of semResumo) {
+              try {
+                const texto = String(
+                  intim.textoPublicacao || intim.Texto || intim.texto ||
+                  intim.Conteudo || intim.conteudo || ""
+                );
+                if (!texto || texto.length < 50) continue;
+
+                const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+                  body: JSON.stringify({
+                    model: "llama-3.3-70b-versatile",
+                    messages: [
+                      { role: "system", content: "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português." },
+                      { role: "user", content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.
+
+Publicação:
+${texto.slice(0, 2000)}` },
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 300,
+                  }),
+                });
+                if (!resp.ok) continue;
+                const aiData = await resp.json();
+                const resumo: string | null = aiData.choices?.[0]?.message?.content || null;
+                if (!resumo) continue;
+
+                // Salva no Supabase
+                await supabase
+                  .from("intimacoes")
+                  .update({ resumo_ia: resumo })
+                  .eq("id", intim._id)
+                  .eq("user_id", user.id)
+                  .catch(() => {});
+
+                // Atualiza localStorage
+                const store = loadStore();
+                saveStore(store.map(i => i._id === intim._id ? { ...i, _resumoIA: resumo } : i));
+
+                // Notifica a IntimacoesPage para atualizar a UI em tempo real
+                window.dispatchEvent(new CustomEvent("intimacao-resumo-gerado", {
+                  detail: { id: intim._id, resumo },
+                }));
+              } catch (_) {}
+            }
+          })();
+        }
 
         toast.dismiss("auto-fetch");
         if (recentementeNovas.length > 0) {
