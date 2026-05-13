@@ -363,39 +363,8 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
-  // ── Escuta o evento de resumo IA gerado pelo hook (assíncrono) ───────────────
-  useEffect(() => {
-    // Spinner: resumo sendo gerado em background
-    const handlerGerando = (e: Event) => {
-      const { id } = (e as CustomEvent<{ id: string }>).detail;
-      if (!id) return;
-      setIntimacoes(prev =>
-        prev.map(i => i._id === id ? { ...i, _aguardandoResumoIA: true } : i)
-      );
-      setSelected(prev =>
-        prev && prev._id === id ? { ...prev, _aguardandoResumoIA: true } : prev
-      );
-    };
-
-    // Resumo pronto: atualiza lista e modal
-    const handlerPronto = (e: Event) => {
-      const { id, resumo } = (e as CustomEvent<{ id: string; resumo: string }>).detail;
-      if (!id || !resumo) return;
-      setIntimacoes(prev =>
-        prev.map(i => i._id === id ? { ...i, _resumoIA: resumo, _aguardandoResumoIA: false } : i)
-      );
-      setSelected(prev =>
-        prev && prev._id === id ? { ...prev, _resumoIA: resumo, _aguardandoResumoIA: false } : prev
-      );
-    };
-
-    window.addEventListener("intimacao-resumo-gerando", handlerGerando);
-    window.addEventListener("intimacao-resumo-gerado", handlerPronto);
-    return () => {
-      window.removeEventListener("intimacao-resumo-gerando", handlerGerando);
-      window.removeEventListener("intimacao-resumo-gerado", handlerPronto);
-    };
-  }, []);
+  // ── Set de IDs já conhecidos — detecta chegada de novas publicações ──────────
+  const idsConhecidosRef = useRef<Set<string>>(new Set());
 
   // ── Reage ao evento do hook useAutoFetchIntimacoes (sincronização cross-device) ─
   useEffect(() => {
@@ -1738,16 +1707,6 @@ function ModalDetalhe({
                 ✦ Análise IA
               </div>
               <p className="text-sm text-foreground leading-relaxed">{intim._resumoIA}</p>
-            </div>
-          ) : intim._aguardandoResumoIA ? (
-            <div className="bg-accent/5 border-l-2 border-accent/40 rounded-r-xl p-4 flex items-center gap-3">
-              <Loader2 className="h-4 w-4 animate-spin text-accent flex-shrink-0" />
-              <div>
-                <div className="text-[0.65rem] font-black uppercase tracking-widest text-accent mb-1">
-                  ✦ Análise IA
-                </div>
-                <p className="text-sm text-muted-foreground">Gerando resumo automaticamente…</p>
-              </div>
             </div>
           ) : (
             <Button
