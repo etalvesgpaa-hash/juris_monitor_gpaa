@@ -1345,7 +1345,7 @@ export function IntimacoesPage() {
   };
 
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <div>
       <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
