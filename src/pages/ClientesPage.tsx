@@ -707,7 +707,7 @@ export function ClientesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
@@ -755,7 +755,7 @@ export function ClientesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
             TOTAL CLIENTES
@@ -1021,7 +1021,7 @@ export function ClientesPage() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl">
-          <div className="overflow-x-auto rounded-xl">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ minWidth: "900px" }}>
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
