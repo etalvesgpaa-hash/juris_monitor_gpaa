@@ -363,14 +363,36 @@ export function IntimacoesPage() {
       .catch(() => {});
   }, [user]);
 
+  // ── Set de IDs já conhecidos — detecta chegada de novas publicações ──────────
+  const idsConhecidosRef = useRef<Set<string>>(new Set());
+
   // ── Reage ao evento do hook useAutoFetchIntimacoes (sincronização cross-device) ─
   useEffect(() => {
+    // Popula o set com os IDs já carregados inicialmente (evita falsos positivos)
+    intimacoes.forEach(i => idsConhecidosRef.current.add(i._id));
+
     const handler = (e: Event) => {
       const merged = (e as CustomEvent<AaspIntimacao[]>).detail;
-      if (Array.isArray(merged) && merged.length > 0) {
-        setIntimacoes(merged);
-        // Mantém o modal aberto atualizando o selected com os dados mais recentes
-        // (ex: resumo_ia que acabou de ser sincronizado do banco)
+      if (!Array.isArray(merged) || merged.length === 0) return;
+
+      setIntimacoes(merged);
+
+      // Detecta publicações que não existiam antes (genuinamente novas)
+      const novas = merged.filter(
+        i => !idsConhecidosRef.current.has(i._id) && i._status === "ativa"
+      );
+
+      // Atualiza o set de IDs conhecidos com todos os recebidos
+      merged.forEach(i => idsConhecidosRef.current.add(i._id));
+
+      if (novas.length > 0) {
+        // Abre o modal automaticamente na intimação mais recente
+        const maisRecente = [...novas].sort((a, b) =>
+          b._data.localeCompare(a._data)
+        )[0];
+        setSelected(maisRecente);
+      } else {
+        // Sem novas: apenas mantém modal aberto atualizado (ex: resumo_ia)
         setSelected(prev => {
           if (!prev) return null;
           const atualizado = merged.find(i => i._id === prev._id);
@@ -378,9 +400,10 @@ export function IntimacoesPage() {
         });
       }
     };
+
     window.addEventListener("intimacoes-sincronizadas", handler);
     return () => window.removeEventListener("intimacoes-sincronizadas", handler);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Atualiza resumo IA em tempo real conforme são gerados ──────
   useEffect(() => {
@@ -411,7 +434,7 @@ export function IntimacoesPage() {
   const [filtroDia, setFiltroDia] = useState<string>("");
   const [filtroData, setFiltroData] = useState<string>("todos"); // "todos" ou YYYY-MM-DD
   const [viewMode, setViewMode] = useState<"tabela" | "cards">(() =>
-    window.innerWidth < 768 ? "cards" : "tabela"
+    typeof window !== "undefined" && window.innerWidth < 768 ? "cards" : "tabela"
   );
   const [selected, setSelected] = useState<AaspIntimacao | null>(null);
 
@@ -1340,45 +1363,46 @@ export function IntimacoesPage() {
   };
 
   return (
-    <div className="min-w-0 overflow-x-auto">
-      <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
+    <div className="w-full overflow-x-hidden">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-4 md:mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {intimacoes.length} intimação(ões) armazenada(s) localmente
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Intimações AASP</h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
+            {intimacoes.length} intimação(ões) armazenada(s)
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant={viewMode === "tabela" ? "default" : "outline"} size="sm" onClick={() => setViewMode("tabela")}>
+        <div className="flex gap-1.5 md:gap-2 flex-wrap">
+          <Button variant={viewMode === "tabela" ? "default" : "outline"} size="sm" onClick={() => setViewMode("tabela")} className="hidden md:flex">
             <TableIcon className="w-4 h-4" />
           </Button>
-          <Button variant={viewMode === "cards" ? "default" : "outline"} size="sm" onClick={() => setViewMode("cards")}>
+          <Button variant={viewMode === "cards" ? "default" : "outline"} size="sm" onClick={() => setViewMode("cards")} className="hidden md:flex">
             <LayoutGrid className="w-4 h-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={atualizar} disabled={loading || !aaspKey}>
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline ml-1.5">Atualizar</span>
           </Button>
           <Button variant="outline" size="sm" onClick={gerarTodosResumosIA} disabled={loadingIA || loadingIAHook || !groqKey}
-            title="Gerar resumo IA para todas as intimações sem resumo">
+            title="Gerar resumo IA para todas as intimações sem resumo" className="hidden sm:flex">
             {(loadingIA || loadingIAHook)
               ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />{progresso.total > 0 ? `${progresso.atual}/${progresso.total}` : "..."}</span>
-              : <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Resumir Todos</span>}
+              : <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Resumir</span>}
           </Button>
-          <Button variant="destructive" size="sm" onClick={limparTudo}>
+          <Button variant="destructive" size="sm" onClick={limparTudo} title="Limpar todas">
             <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
       {/* Barra de controles: status + filtro por dia + ações */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <div className="flex items-center gap-2 md:gap-3 mb-4 md:mb-5 flex-wrap">
         {/* Filtros de status */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
           {(["ativa", "finalizada", "pausada"] as const).map((st) => (
             <button
               key={st}
               onClick={() => setFiltroStatus(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg text-[0.7rem] md:text-xs font-semibold transition-all ${
                 filtroStatus === st
                   ? "bg-accent text-primary"
                   : "bg-card border border-border text-muted-foreground hover:text-foreground"
@@ -1396,17 +1420,16 @@ export function IntimacoesPage() {
         {/* Dropdown: últimos 7 dias com contagem */}
         <div className="ml-auto">
           <Select value={filtroData} onValueChange={setFiltroData}>
-            <SelectTrigger className="w-52 text-xs h-9 border border-border bg-card">
+            <SelectTrigger className="w-40 md:w-52 text-xs h-8 md:h-9 border border-border bg-card">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos" className="text-xs">
-                Todos os dias ({intimacoes.filter(i => i._status === filtroStatus).length})
+                Todos ({intimacoes.filter(i => i._status === filtroStatus).length})
               </SelectItem>
               {ultimos7Dias.map((dia) => {
                 const count = intimacoes.filter(i => (i._data || "").slice(0, 10) === dia && i._status === filtroStatus).length;
-                const countTotal = intimacoes.filter(i => (i._data || "").slice(0, 10) === dia).length;
-                const [ano, mes, d] = dia.split("-");
+                const [, mes, d] = dia.split("-");
                 const dow = new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
                 const label = `${dow}, ${d}/${mes}`;
                 return (
@@ -1423,10 +1446,10 @@ export function IntimacoesPage() {
       </div>
 
       {/* Busca por dia específico (API AASP) */}
-      <div className="bg-card border border-border rounded-xl p-4 mb-6">
+      <div className="bg-card border border-border rounded-xl p-3 md:p-4 mb-4 md:mb-6">
         <div className="flex gap-2 items-end flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar novo dia na AASP</label>
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Buscar dia na AASP</label>
             <input
               type="date"
               value={filtroDia}
@@ -1456,11 +1479,11 @@ export function IntimacoesPage() {
         </div>
       ) : viewMode === "tabela" ? (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: "860px" }}>
+          <div className="overflow-x-auto -mx-0" style={{ WebkitOverflowScrolling: "touch" }}>
+            <table className="w-full text-sm" style={{ minWidth: "760px" }}>
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["DATA", "PROCESSO", "TÍTULO / ÓRGÃO / TIPO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
+                  {["DATA", "PROCESSO", "TÍTULO / ÓRGÃO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (
                     <th key={h} className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
@@ -1472,7 +1495,7 @@ export function IntimacoesPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filtradas.map(renderCard)}
         </div>
       )}
@@ -1604,18 +1627,18 @@ function ModalDetalhe({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       style={{ background: "rgba(13,42,30,0.78)", backdropFilter: "blur(5px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-card rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-card rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
-        <div className="flex items-start justify-between p-6 pb-4 border-b border-border">
+        <div className="flex items-start justify-between p-4 sm:p-6 pb-4 border-b border-border">
           <div className="flex-1 pr-4">
             <div className="text-[0.65rem] font-bold tracking-[0.12em] uppercase text-accent mb-2">
               📋 Publicação AASP
             </div>
-            <h2 className="font-display text-lg font-bold text-foreground leading-snug">
+            <h2 className="font-display text-base sm:text-lg font-bold text-foreground leading-snug">
               {titulo}
               {intim._numProc ? ` — ${intim._numProc}` : ""}
             </h2>
@@ -1629,7 +1652,7 @@ function ModalDetalhe({
         </div>
 
         {/* Badges de meta */}
-        <div className="px-6 pt-4 pb-0 flex flex-wrap gap-2">
+        <div className="px-4 sm:px-6 pt-4 pb-0 flex flex-wrap gap-2">
           <span className="text-xs bg-muted/60 border border-border px-3 py-1 rounded-full font-medium">
             📅 {dataFmt}
           </span>
@@ -1646,7 +1669,7 @@ function ModalDetalhe({
         </div>
 
         {/* Corpo */}
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4">
           {/* Clientes vinculados */}
           {temCliente && (
             <div className="bg-emerald-500/8 border border-emerald-400/30 rounded-xl p-4">
@@ -1658,7 +1681,7 @@ function ModalDetalhe({
                 {clientesVinculados.map(c => (
                   <div key={c.id} className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-foreground">{c.nome}</span>
-                    {c.email && <span className="text-xs text-muted-foreground">{c.email}</span>}
+                    {c.email && <span className="text-xs text-muted-foreground truncate">{c.email}</span>}
                   </div>
                 ))}
               </div>
@@ -1702,13 +1725,13 @@ function ModalDetalhe({
               <div className="text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground">
                 Texto da Publicação
               </div>
-              <div className="bg-muted/30 border border-border rounded-xl p-4 text-sm text-foreground leading-relaxed max-h-80 overflow-y-auto whitespace-pre-wrap">
+              <div className="bg-muted/30 border border-border rounded-xl p-4 text-sm text-foreground leading-relaxed max-h-60 sm:max-h-80 overflow-y-auto whitespace-pre-wrap">
                 {texto}
               </div>
             </>
           )}
 
-          {/* Campos extras da API (para diagnóstico) */}
+          {/* Nenhum conteúdo */}
           {!texto && !partes && !orgao && (
             <div className="text-sm text-muted-foreground italic">
               Nenhum conteúdo textual disponível nesta publicação.
@@ -1717,7 +1740,7 @@ function ModalDetalhe({
         </div>
 
         {/* Ações */}
-        <div className="px-6 pb-6 flex flex-wrap gap-2 border-t border-border pt-4">
+        <div className="px-4 sm:px-6 pb-6 flex flex-wrap gap-2 border-t border-border pt-4">
           <Button variant="outline" size="sm" onClick={onClose}>Fechar</Button>
           <Button variant="gold" size="sm" onClick={() => { onCriarTarefa(intim); onClose(); }}>
             <Plus className="h-4 w-4 mr-1.5" /> Criar Tarefa
@@ -1731,7 +1754,7 @@ function ModalDetalhe({
             title={temCliente ? `Já cadastrado: ${clientesVinculados.map(c => c.nome).join(", ")}` : "Cadastrar novo cliente"}
           >
             {temCliente
-              ? <><UserCheck className="h-4 w-4 mr-1.5" /> Cliente Cadastrado</>
+              ? <><UserCheck className="h-4 w-4 mr-1.5" /> Cliente ✓</>
               : <><UserPlus className="h-4 w-4 mr-1.5" /> Novo Cliente</>}
           </Button>
           {temCliente && (
@@ -1740,12 +1763,11 @@ function ModalDetalhe({
               className="text-blue-500 border-blue-300/60 hover:bg-blue-50"
               onClick={() => onReenviarEmail(intim)}
               disabled={enviandoEmail.has(intim._id)}
-              title="Enviar e-mail para os clientes vinculados"
             >
               {enviandoEmail.has(intim._id)
                 ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                 : <Mail className="h-4 w-4 mr-1.5" />}
-              Enviar E-mail
+              E-mail
             </Button>
           )}
           {(intim._status || "ativa") === "ativa" ? (

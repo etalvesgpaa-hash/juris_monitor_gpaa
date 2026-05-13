@@ -52,8 +52,8 @@ export function AppLayout() {
       <TopNav activePage={activePage} onPageChange={setActivePage} user={user} onSignOut={signOut} />
 
       {/* w-full garante que o main nunca ultrapasse a viewport no zoom */}
-      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 sm:px-6 md:px-8 py-5 md:py-8 pb-24 md:pb-10 overflow-x-auto">
-        <div className="animate-fade-in" style={{ minWidth: "900px" }}>
+      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-2 sm:px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-10 overflow-x-hidden">
+        <div className="animate-fade-in w-full">
           {renderPage()}
         </div>
       </main>
