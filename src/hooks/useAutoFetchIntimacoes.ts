@@ -23,6 +23,7 @@ export interface AaspIntimacao {
   _lida: boolean;
   _status: "ativa" | "finalizada" | "pausada";
   _resumoIA?: string | null;
+  _aguardandoResumoIA?: boolean; // true enquanto o hook está gerando o resumo em background
   _titulo?: string;
   _numProc?: string;
   _orgaoPublicacao?: string;
@@ -515,11 +516,19 @@ export function useAutoFetchIntimacoes() {
 
             for (const intim of semResumo) {
               try {
+                // Usa o texto da publicação; se vazio, usa título + partes como contexto mínimo
                 const texto = String(
                   intim.textoPublicacao || intim.Texto || intim.texto ||
-                  intim.Conteudo || intim.conteudo || ""
+                  intim.Conteudo || intim.conteudo ||
+                  [intim._titulo, intim._partes, intim._orgaoJulgador].filter(Boolean).join(" — ") ||
+                  ""
                 );
-                if (!texto || texto.length < 50) continue;
+                if (!texto) continue;
+
+                // Avisa a UI que o resumo está sendo gerado (exibe spinner no modal)
+                window.dispatchEvent(new CustomEvent("intimacao-resumo-gerando", {
+                  detail: { id: intim._id },
+                }));
 
                 const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
                   method: "POST",
