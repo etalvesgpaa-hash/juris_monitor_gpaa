@@ -298,12 +298,14 @@ export function IntimacoesPage() {
     // 2. Função de merge: Supabase tem prioridade em todos os campos
     const mapRow = (row: any): AaspIntimacao => {
       const raw = (row.dados_raw as AaspIntimacao) || {};
+      // Achata jornal aninhado para que textoPublicacao seja encontrado pelo modal
+      const jornalFlat = (raw as any).jornal ? { ...(raw as any).jornal } : {};
       return {
         ...raw,
+        ...jornalFlat,
         _id:              row.id,
         _data:            ((row.data_publicacao ?? raw._data ?? "") as string).slice(0, 10),
         _lida:            raw._lida ?? false,
-        // ?? garante que resumo_ia do banco nunca é descartado
         _status:          (row.status as any) ?? "ativa",
         _resumoIA:        row.resumo_ia ?? raw._resumoIA ?? null,
         _titulo:          row.tipo ?? raw._titulo ?? "Publicação AASP",
@@ -311,6 +313,9 @@ export function IntimacoesPage() {
         _orgaoPublicacao: raw._orgaoPublicacao ?? "",
         _partes:          row.partes ?? raw._partes ?? "",
         _orgaoJulgador:   row.orgao_julgador ?? raw._orgaoJulgador ?? "",
+        textoPublicacao:  raw.textoPublicacao || (raw as any).Texto || (raw as any).texto ||
+                          (raw as any).Conteudo || (raw as any).conteudo ||
+                          jornalFlat.textoPublicacao || jornalFlat.Texto || jornalFlat.texto || "",
       };
     };
 
