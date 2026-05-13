@@ -48,7 +48,7 @@ export function AppLayout() {
      * extra-largo quebre o layout e crie barra de scroll horizontal,
      * especialmente ao aumentar o zoom do browser.
      */
-    <div className="relative z-[1] flex flex-col min-h-screen overflow-x-hidden">
+    <div className="relative z-[1] flex flex-col min-h-screen overflow-x-auto">
       <TopNav activePage={activePage} onPageChange={setActivePage} user={user} onSignOut={signOut} />
 
       {/* w-full garante que o main nunca ultrapasse a viewport no zoom */}

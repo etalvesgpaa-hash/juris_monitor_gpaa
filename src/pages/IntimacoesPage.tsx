@@ -1340,7 +1340,7 @@ export function IntimacoesPage() {
   };
 
   return (
-    <div>
+    <div className="min-w-0 overflow-x-auto">
       <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Intimações AASP</h1>
@@ -1457,7 +1457,7 @@ export function IntimacoesPage() {
       ) : viewMode === "tabela" ? (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: "780px" }}>
+            <table className="w-full text-sm" style={{ minWidth: "860px" }}>
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
                   {["DATA", "PROCESSO", "TÍTULO / ÓRGÃO / TIPO", "PARTES", "RESUMO IA", "STATUS", "AÇÕES"].map((h) => (

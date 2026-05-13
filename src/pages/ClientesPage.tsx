@@ -690,7 +690,7 @@ export function ClientesPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div>
+    <div className="min-w-0 overflow-x-auto">
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
@@ -755,7 +755,7 @@ export function ClientesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6 min-w-0">
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
             TOTAL CLIENTES
@@ -1022,7 +1022,7 @@ export function ClientesPage() {
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" style={{ minWidth: "900px" }}>
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   {[
