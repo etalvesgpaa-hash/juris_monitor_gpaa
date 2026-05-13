@@ -690,7 +690,7 @@ export function ClientesPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div>
+    <div style={{ minWidth: "900px" }}>
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
@@ -707,7 +707,7 @@ export function ClientesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -755,7 +755,7 @@ export function ClientesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: "repeat(3, minmax(200px, 1fr))" }}>
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
             TOTAL CLIENTES
@@ -1020,7 +1020,7 @@ export function ClientesPage() {
           )}
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl">
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ minWidth: "900px" }}>
               <thead className="bg-muted/50 border-b border-border">

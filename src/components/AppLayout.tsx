@@ -48,12 +48,12 @@ export function AppLayout() {
      * extra-largo quebre o layout e crie barra de scroll horizontal,
      * especialmente ao aumentar o zoom do browser.
      */
-    <div className="relative z-[1] flex flex-col min-h-screen">
+    <div className="relative z-[1] flex flex-col min-h-screen overflow-x-auto">
       <TopNav activePage={activePage} onPageChange={setActivePage} user={user} onSignOut={signOut} />
 
       {/* w-full garante que o main nunca ultrapasse a viewport no zoom */}
-      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 sm:px-6 md:px-8 py-5 md:py-8 pb-24 md:pb-10">
-        <div className="animate-fade-in">
+      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-3 sm:px-6 md:px-8 py-5 md:py-8 pb-24 md:pb-10 overflow-x-auto">
+        <div className="animate-fade-in" style={{ minWidth: "900px" }}>
           {renderPage()}
         </div>
       </main>

@@ -211,14 +211,14 @@ async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
 
   const items: AaspIntimacao[] = data.map((row: any) => {
     const raw = (row.dados_raw as AaspIntimacao) || {};
-    // Achata o objeto jornal aninhado (mesmo padrão do novas.push)
-    const jornalFlat = (raw as any).jornal ? { ...(raw as any).jornal } : {};
     return {
       ...raw,
-      ...jornalFlat,
       _id:              row.id,
       _data:            ((row.data_publicacao ?? raw._data ?? "") as string).slice(0, 10),
       _lida:            raw._lida ?? false,
+      // Supabase tem prioridade absoluta em status e resumo_ia.
+      // ?? garante que um resumo salvo no banco nunca é ignorado,
+      // mesmo que raw._resumoIA seja null ou undefined no dados_raw.
       _status:          (row.status as any) ?? "ativa",
       _resumoIA:        row.resumo_ia ?? raw._resumoIA ?? null,
       _titulo:          row.tipo ?? raw._titulo ?? "Publicação AASP",
@@ -226,10 +226,6 @@ async function carregarDoSupabase(userId: string): Promise<AaspIntimacao[]> {
       _orgaoPublicacao: raw._orgaoPublicacao ?? "",
       _partes:          row.partes ?? raw._partes ?? "",
       _orgaoJulgador:   row.orgao_julgador ?? raw._orgaoJulgador ?? "",
-      // Normaliza texto para garantir que o modal sempre encontre
-      textoPublicacao:  raw.textoPublicacao || (raw as any).Texto || (raw as any).texto ||
-                        (raw as any).Conteudo || (raw as any).conteudo ||
-                        jornalFlat.textoPublicacao || jornalFlat.Texto || jornalFlat.texto || "",
     };
   });
 
@@ -451,13 +447,8 @@ export function useAutoFetchIntimacoes() {
               if (isoM) dataReal = `${isoM[1]}-${isoM[2]}-${isoM[3]}`;
               else if (brM) dataReal = `${brM[3]}-${brM[2]}-${brM[1]}`;
 
-              // Achata o objeto jornal (aninhado) para o nível raiz
-              // para que textoPublicacao, nomeJornal etc. sejam encontrados pelo modal
-              const jornalFlat = it.jornal ? { ...it.jornal } : {};
-
               novas.push({
                 ...it,
-                ...jornalFlat,          // achata jornal.textoPublicacao → textoPublicacao etc.
                 _id:             id,
                 _data:           dataReal,
                 _lida:           existente?._lida || false,
@@ -468,10 +459,6 @@ export function useAutoFetchIntimacoes() {
                 _orgaoPublicacao: extrairOrgaoPublicacao(it),
                 _partes:         extrairPartes(it),
                 _orgaoJulgador:  extrairOrgaoJulgador(it),
-                // Garante que o texto sempre esteja acessível independente do campo da API
-                textoPublicacao: it.textoPublicacao || it.Texto || it.texto ||
-                                 it.Conteudo || it.conteudo ||
-                                 jornalFlat.textoPublicacao || jornalFlat.Texto || jornalFlat.texto || "",
               });
             });
           } catch (_) {}
