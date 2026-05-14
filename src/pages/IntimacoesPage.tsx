@@ -6,6 +6,7 @@ import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
+import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +272,7 @@ export function IntimacoesPage() {
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
+  const { forceBusca } = useAutoFetchIntimacoes();
 
   // Estado do modal de novo cliente (pré-preenchido da intimação)
   const [novoClienteIntimacao, setNovoClienteIntimacao] = useState<AaspIntimacao | null>(null);
@@ -667,60 +669,13 @@ export function IntimacoesPage() {
     [aaspFetch, fetchComTimeout]
   );
 
-  /** Atualizar (últimos 7 dias úteis) — busca SEQUENCIAL igual ao projeto de referência */
-  const atualizar = async () => {
+  /** Atualizar — delega ao hook completo que gera resumo IA e dispara e-mails */
+  const atualizar = () => {
     if (!aaspKey) {
       toast.error("Configure sua chave AASP nas Configurações.");
       return;
     }
-    setLoading(true);
-    const dias = diasUteisRecentes(7);
-    const novas: AaspIntimacao[] = [];
-
-    // Busca sequencialmente — evita rate limiting no proxy e na API da AASP
-    for (const d of dias) {
-      setLoadingDia(d);
-      const arr = await buscarDia(d, true);
-      novas.push(...arr);
-    }
-
-    setLoadingDia(null);
-    setLoading(false);
-
-    const merged = [...novas, ...intimacoesRef.current];
-    const uniq: AaspIntimacao[] = [];
-    const seen = new Set<string>();
-    for (const it of merged) {
-      if (!seen.has(it._id)) {
-        seen.add(it._id);
-        uniq.push(it);
-      }
-    }
-
-    setIntimacoes(uniq);
-    saveStore(uniq);
-
-    // Persiste novas intimações no Supabase para sincronização cross-device
-    if (novas.length > 0) {
-      const rows = novas.map(it => ({
-        id:               it._id,
-        user_id:          user!.id,
-        origem:           "aasp",
-        numero_processo:  it._numProc || null,
-        tipo:             it._titulo || null,
-        data_publicacao:  it._data || null,
-        status:           it._status || "ativa",
-        partes:           it._partes || null,
-        orgao_julgador:   it._orgaoJulgador || null,
-        resumo_ia:        it._resumoIA || null,
-        dados_raw:        it,
-      }));
-      try {
-        await supabase.from("intimacoes").upsert(rows, { onConflict: "id" });
-      } catch (_) {}
-    }
-
-    toast.success(`${novas.length} intimação(ões) encontrada(s) nos últimos 7 dias úteis.`);
+    forceBusca();
   };
 
   /** Buscar dia específico */

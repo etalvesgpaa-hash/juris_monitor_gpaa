@@ -9,7 +9,7 @@
  * 4. Após salvar, cruza com clientes e dispara e-mails automáticos.
  */
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -359,6 +359,14 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
 export function useAutoFetchIntimacoes() {
   const { user } = useAuth();
   const rodandoRef = useRef(false);
+  const [buscarTrigger, setBuscarTrigger] = useState(0);
+
+  /** Força uma nova busca completa na AASP (reseta o guard de "já rodou") */
+  const forceBusca = useCallback(() => {
+    ultimoUserIdFetched = null;
+    rodandoRef.current = false;
+    setBuscarTrigger(t => t + 1);
+  }, []);
 
   const fetchComTimeout = useCallback((url: string, ms: number): Promise<Response> => {
     return Promise.race([
@@ -649,5 +657,7 @@ export function useAutoFetchIntimacoes() {
         rodandoRef.current = false;
       }
     })();
-  }, [user, fetchComTimeout]);
+  }, [user, fetchComTimeout, buscarTrigger]);
+
+  return { forceBusca };
 }
