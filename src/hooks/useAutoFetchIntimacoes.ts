@@ -368,6 +368,14 @@ export function useAutoFetchIntimacoes() {
     setBuscarTrigger(t => t + 1);
   }, []);
 
+  // Escuta o evento global — permite que qualquer página acione a busca
+  // sem precisar instanciar o hook diretamente (evita múltiplas instâncias)
+  useEffect(() => {
+    const handler = () => forceBusca();
+    window.addEventListener("force-busca-intimacoes", handler);
+    return () => window.removeEventListener("force-busca-intimacoes", handler);
+  }, [forceBusca]);
+
   const fetchComTimeout = useCallback((url: string, ms: number): Promise<Response> => {
     return Promise.race([
       fetch(url, { headers: { Accept: "application/json" } }),

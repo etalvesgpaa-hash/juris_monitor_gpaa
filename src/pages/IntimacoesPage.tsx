@@ -6,7 +6,6 @@ import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
-import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -272,7 +271,6 @@ export function IntimacoesPage() {
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
-  const { forceBusca } = useAutoFetchIntimacoes();
 
   // Estado do modal de novo cliente (pré-preenchido da intimação)
   const [novoClienteIntimacao, setNovoClienteIntimacao] = useState<AaspIntimacao | null>(null);
@@ -669,13 +667,13 @@ export function IntimacoesPage() {
     [aaspFetch, fetchComTimeout]
   );
 
-  /** Atualizar — delega ao hook completo que gera resumo IA e dispara e-mails */
+  /** Atualizar — aciona o hook completo (resumo IA + e-mail) via evento global */
   const atualizar = () => {
     if (!aaspKey) {
       toast.error("Configure sua chave AASP nas Configurações.");
       return;
     }
-    forceBusca();
+    window.dispatchEvent(new CustomEvent("force-busca-intimacoes"));
   };
 
   /** Buscar dia específico */
