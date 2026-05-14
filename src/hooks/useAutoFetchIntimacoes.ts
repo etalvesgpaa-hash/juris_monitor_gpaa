@@ -49,16 +49,18 @@ function diasUteisRecentes(n: number): string[] {
   return dias;
 }
 
-function gerarId(intim: any, idx = 0): string {
+function gerarId(intim: any, _idx = 0): string {
   const codRel = intim.codigoRelacionamento || intim.CodigoRelacionamento;
   if (codRel && String(codRel) !== "0") return "aasp_" + String(codRel);
   const idApi = intim.Id || intim.id || intim.CodigoIntimacao || intim.codigoIntimacao;
   if (idApi && String(idApi) !== "0") return String(idApi);
+  // Hash baseado SOMENTE no conteúdo — nunca no índice posicional,
+  // pois a AASP pode retornar as intimações em ordens diferentes entre chamadas.
   const numProc = intim.numeroUnicoProcesso || intim.NumeroProcesso || intim.numeroProcesso || "";
   const data = (intim.jornal?.dataDisponibilizacao_Publicacao) || intim.DataDisponibilizacao || intim.dataDisponibilizacao || intim.Data || "";
   const titulo = intim.titulo || intim.TituloAssunto || intim.Assunto || "";
   const texto = String(intim.textoPublicacao || intim.Texto || intim.texto || "").slice(0, 400);
-  const raw = `${numProc}|${String(data).slice(0,19)}|${titulo}|${idx}|${texto}`;
+  const raw = `${numProc}|${String(data).slice(0,19)}|${titulo}|${texto}`;
   let hash = 5381;
   for (let i = 0; i < raw.length; i++) hash = ((hash << 5) + hash + raw.charCodeAt(i)) | 0;
   return "det_" + Math.abs(hash).toString(36);
@@ -248,15 +250,40 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
 
     if (!clientes?.length) return;
 
-    const { data: jaEnviadas } = await supabase
+    // Busca por ID exato das intimações novas
+    const { data: jaEnviadasPorId } = await supabase
       .from("notificacoes_enviadas")
-      .select("intimacao_id, cliente_id")
+      .select("intimacao_id, cliente_id, numero_processo, created_at")
       .eq("user_id", userId)
       .eq("status", "enviado")
-      .in("intimacao_id", novas.map(i => i._id));
+      .in("intimacao_id", novas.map(i => i._id).filter(Boolean));
 
+    // Busca adicional por número de processo (protege contra IDs instáveis do gerarId)
+    const numProcs = novas.map(i => i._numProc).filter(Boolean);
+    const { data: jaEnviadasPorProc } = numProcs.length > 0
+      ? await supabase
+          .from("notificacoes_enviadas")
+          .select("intimacao_id, cliente_id, numero_processo, created_at")
+          .eq("user_id", userId)
+          .eq("status", "enviado")
+          .in("numero_processo", numProcs)
+      : { data: [] };
+
+    const todasEnviadas = [...(jaEnviadasPorId || []), ...(jaEnviadasPorProc || [])];
+
+    // Chave primária: cliente_id + intimacao_id
     const enviados = new Set(
-      (jaEnviadas || []).map((n: any) => `${n.cliente_id}::${n.intimacao_id}`)
+      todasEnviadas.map((n: any) => `${n.cliente_id}::${n.intimacao_id}`)
+    );
+
+    // Chave secundária: cliente_id + numero_processo_limpo + data_envio
+    // Evita reenvio mesmo quando o ID hash mudou entre execuções
+    const enviadosPorProcData = new Set(
+      todasEnviadas
+        .filter((n: any) => n.numero_processo && n.created_at)
+        .map((n: any) =>
+          `${n.cliente_id}::${String(n.numero_processo).replace(/\D/g, "")}::${String(n.created_at).slice(0, 10)}`
+        )
     );
 
     let totalEnviados = 0;
@@ -275,6 +302,10 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
 
         const chave = `${cliente.id}::${intim._id}`;
         if (enviados.has(chave)) continue;
+
+        // Segunda camada: bloqueia reenvio por numero_processo+data mesmo se o ID hash mudou
+        const chaveProcData = `${cliente.id}::${intimLimpo}::${intim._data || ""}`;
+        if (enviadosPorProcData.has(chaveProcData)) continue;
 
         try {
           const res = await fetch("/api/send-email", {
@@ -500,79 +531,108 @@ export function useAutoFetchIntimacoes() {
         // 5b. Agora sincroniza para Supabase — aguarda antes de gerar resumos
         await syncParaSupabase(uniq, user.id).catch(() => {});
 
-        // 6. Gera resumo IA para TODAS as intimações novas (sem _resumoIA)
-        //    Roda em paralelo, sem bloquear a UI, salva no Supabase e localStorage
-        const semResumo = uniq.filter(n => !n._resumoIA && n._id);
-        if (semResumo.length > 0) {
-          (async () => {
-            const { data: apiKeys } = await supabase
-              .from("api_keys")
-              .select("groq_api_key")
+        // 6. Gera resumo IA
+        //    6a. Para as intimações NOVAS DE HOJE: aguarda antes de enviar e-mail
+        //    6b. Para as demais (históricas sem resumo): roda em background sem bloquear
+
+        // Busca a chave Groq uma única vez
+        const { data: apiKeys } = await supabase
+          .from("api_keys")
+          .select("groq_api_key")
+          .eq("user_id", user.id)
+          .maybeSingle().catch(() => ({ data: null }));
+        const groqKey = apiKeys?.groq_api_key ?? null;
+
+        // Função reutilizável: gera resumo para uma intimação e persiste
+        const gerarResumo = async (intim: AaspIntimacao): Promise<string | null> => {
+          if (!groqKey || intim._resumoIA) return intim._resumoIA ?? null;
+          try {
+            const texto = String(
+              intim.textoPublicacao || intim.Texto || intim.texto ||
+              intim.Conteudo || intim.conteudo || ""
+            );
+            if (!texto || texto.length < 50) return null;
+
+            const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+              body: JSON.stringify({
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                  { role: "system", content: "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português." },
+                  { role: "user", content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}` },
+                ],
+                temperature: 0.3,
+                max_tokens: 300,
+              }),
+            });
+            if (!resp.ok) return null;
+            const aiData = await resp.json();
+            const resumo: string | null = aiData.choices?.[0]?.message?.content || null;
+            if (!resumo) return null;
+
+            // Persiste no Supabase
+            await supabase
+              .from("intimacoes")
+              .update({ resumo_ia: resumo })
+              .eq("id", intim._id)
               .eq("user_id", user.id)
-              .maybeSingle();
-            const groqKey = apiKeys?.groq_api_key;
-            if (!groqKey) return;
+              .catch(() => {});
 
-            for (const intim of semResumo) {
-              try {
-                const texto = String(
-                  intim.textoPublicacao || intim.Texto || intim.texto ||
-                  intim.Conteudo || intim.conteudo || ""
-                );
-                if (!texto || texto.length < 50) continue;
+            // Persiste no localStorage
+            const store = loadStore();
+            saveStore(store.map(i => i._id === intim._id ? { ...i, _resumoIA: resumo } : i));
 
-                const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-                  body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
-                    messages: [
-                      { role: "system", content: "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português." },
-                      { role: "user", content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.
+            // Notifica a IntimacoesPage para atualizar a UI em tempo real
+            window.dispatchEvent(new CustomEvent("intimacao-resumo-gerado", {
+              detail: { id: intim._id, resumo },
+            }));
 
-Publicação:
-${texto.slice(0, 2000)}` },
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 300,
-                  }),
-                });
-                if (!resp.ok) continue;
-                const aiData = await resp.json();
-                const resumo: string | null = aiData.choices?.[0]?.message?.content || null;
-                if (!resumo) continue;
+            return resumo;
+          } catch (_) { return null; }
+        };
 
-                // Salva no Supabase
-                await supabase
-                  .from("intimacoes")
-                  .update({ resumo_ia: resumo })
-                  .eq("id", intim._id)
-                  .eq("user_id", user.id)
-                  .catch(() => {});
+        // 6a. Aguarda resumos das intimações NOVAS (necessário antes do e-mail)
+        let novasComResumo = recentementeNovas;
+        if (recentementeNovas.length > 0 && groqKey) {
+          toast.info("Gerando resumos IA antes de enviar e-mails…", { duration: 4000, id: "resumo-ia" });
+          const resumosGerados = await Promise.all(
+            recentementeNovas.map(async intim => {
+              const resumo = await gerarResumo(intim);
+              return resumo ? { ...intim, _resumoIA: resumo } : intim;
+            })
+          );
+          novasComResumo = resumosGerados;
+          toast.dismiss("resumo-ia");
+        }
 
-                // Atualiza localStorage
-                const store = loadStore();
-                saveStore(store.map(i => i._id === intim._id ? { ...i, _resumoIA: resumo } : i));
-
-                // Notifica a IntimacoesPage para atualizar a UI em tempo real
-                window.dispatchEvent(new CustomEvent("intimacao-resumo-gerado", {
-                  detail: { id: intim._id, resumo },
-                }));
-              } catch (_) {}
+        // 6b. Resumos históricos (sem bloquear — roda após os e-mails)
+        const historicasSemResumo = uniq.filter(
+          n => !n._resumoIA && n._id && !recentementeNovas.some(r => r._id === n._id)
+        );
+        if (historicasSemResumo.length > 0 && groqKey) {
+          (async () => {
+            for (const intim of historicasSemResumo) {
+              await gerarResumo(intim);
             }
           })();
         }
 
         toast.dismiss("auto-fetch");
-        if (recentementeNovas.length > 0) {
-          toast.success(`✅ ${recentementeNovas.length} nova(s) intimação(ões) encontrada(s)!`, { duration: 5000 });
+        if (novasComResumo.length > 0) {
+          toast.success(`✅ ${novasComResumo.length} nova(s) intimação(ões) encontrada(s)!`, { duration: 5000 });
         } else {
           toast.success("Intimações atualizadas — nenhuma novidade.", { duration: 3000 });
         }
 
-        // 7. Notificações automáticas por e-mail — só para as realmente novas
-        if (recentementeNovas.length > 0) {
-          dispararNotificacoesAutomaticas(recentementeNovas, user.id).catch(() => {});
+        // Emite evento com a contagem exata de novas para o TopNav
+        window.dispatchEvent(new CustomEvent("intimacoes-novas-count", {
+          detail: { count: novasComResumo.length },
+        }));
+
+        // 7. Notificações automáticas por e-mail — agora com resumo_ia preenchido
+        if (novasComResumo.length > 0) {
+          dispararNotificacoesAutomaticas(novasComResumo, user.id).catch(() => {});
         }
 
       } catch (err: any) {
