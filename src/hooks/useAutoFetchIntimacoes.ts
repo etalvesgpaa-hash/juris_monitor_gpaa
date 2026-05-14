@@ -496,8 +496,6 @@ export function useAutoFetchIntimacoes() {
         }
 
         // 4. Merge + dedup
-        // storeAtual pode estar vazio no mobile — garante que o histórico
-        // do Supabase (já carregado pelo useEffect anterior) seja incluído
         const storeComHistorico = loadStore(); // relê após carregarDoSupabase
         const merged = [...novas, ...storeComHistorico];
         const uniq: AaspIntimacao[] = [];
@@ -525,8 +523,11 @@ export function useAutoFetchIntimacoes() {
           idsJaNoSupabase = new Set((jaNoSupabase || []).map((r: any) => r.id));
         }
 
-        // Intimação é "nova" somente se é de hoje E não existia no Supabase
+        // Intimação é "nova" (para fins de e-mail) somente se é de hoje E não existia no Supabase
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
+
+        // Intimações de hoje sem resumo — inclui as "novas" + as que voltaram após exclusão
+        const hojesSemResumo = novasDeHoje.filter(n => !n._resumoIA);
 
         // 5b. Agora sincroniza para Supabase — aguarda antes de gerar resumos
         await syncParaSupabase(uniq, user.id).catch(() => {});
@@ -592,23 +593,29 @@ export function useAutoFetchIntimacoes() {
           } catch (_) { return null; }
         };
 
-        // 6a. Aguarda resumos das intimações NOVAS (necessário antes do e-mail)
+        // 6a. Aguarda resumos de todas as intimações de HOJE sem resumo
+        //     (inclui novas + as que voltaram após exclusão)
+        //     Necessário antes do e-mail para garantir que o resumo vai no corpo
         let novasComResumo = recentementeNovas;
-        if (recentementeNovas.length > 0 && groqKey) {
-          toast.info("Gerando resumos IA antes de enviar e-mails…", { duration: 4000, id: "resumo-ia" });
-          const resumosGerados = await Promise.all(
-            recentementeNovas.map(async intim => {
+        if (hojesSemResumo.length > 0 && groqKey) {
+          toast.info("Gerando resumos IA…", { duration: 4000, id: "resumo-ia" });
+          const resumosMap = new Map<string, string>();
+          await Promise.all(
+            hojesSemResumo.map(async intim => {
               const resumo = await gerarResumo(intim);
-              return resumo ? { ...intim, _resumoIA: resumo } : intim;
+              if (resumo) resumosMap.set(intim._id, resumo);
             })
           );
-          novasComResumo = resumosGerados;
+          // Aplica os resumos gerados às novas (para o e-mail)
+          novasComResumo = recentementeNovas.map(intim =>
+            resumosMap.has(intim._id) ? { ...intim, _resumoIA: resumosMap.get(intim._id)! } : intim
+          );
           toast.dismiss("resumo-ia");
         }
 
-        // 6b. Resumos históricos (sem bloquear — roda após os e-mails)
+        // 6b. Resumos históricos (dias anteriores, sem bloquear)
         const historicasSemResumo = uniq.filter(
-          n => !n._resumoIA && n._id && !recentementeNovas.some(r => r._id === n._id)
+          n => !n._resumoIA && n._id && !hojesSemResumo.some(r => r._id === n._id)
         );
         if (historicasSemResumo.length > 0 && groqKey) {
           (async () => {
