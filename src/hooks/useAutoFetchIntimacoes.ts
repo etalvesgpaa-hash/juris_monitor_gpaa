@@ -542,11 +542,24 @@ export function useAutoFetchIntimacoes() {
         // Intimação é "nova" (para fins de e-mail) somente se é de hoje E não existia no Supabase
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
 
-        // Intimações de hoje sem resumo — inclui as "novas" + as que voltaram após exclusão
-        const hojesSemResumo = novasDeHoje.filter(n => !n._resumoIA);
-
-        // 5b. Agora sincroniza para Supabase — aguarda antes de gerar resumos
+        // 5b. Sincroniza para Supabase — aguarda antes de gerar resumos
         await syncParaSupabase(uniq, user.id).catch(() => {});
+
+        // 5c. Relê do Supabase o resumo_ia atual de hoje — fonte de verdade
+        //     O localStorage pode estar desatualizado (ex: após exclusão da intimação)
+        const resumosNoSupabase = new Map<string, string | null>();
+        if (novasDeHoje.length > 0) {
+          const { data: rows } = await supabase
+            .from("intimacoes")
+            .select("id, resumo_ia")
+            .eq("user_id", user.id)
+            .in("id", novasDeHoje.map(n => n._id).filter(Boolean))
+            .catch(() => ({ data: null }));
+          (rows || []).forEach((r: any) => resumosNoSupabase.set(r.id, r.resumo_ia ?? null));
+        }
+
+        // Intimações de hoje sem resumo — baseado no Supabase, não no localStorage
+        const hojesSemResumo = novasDeHoje.filter(n => !resumosNoSupabase.get(n._id));
 
         // 6. Gera resumo IA
         //    6a. Para as intimações NOVAS DE HOJE: aguarda antes de enviar e-mail
