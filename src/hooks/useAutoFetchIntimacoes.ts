@@ -531,18 +531,22 @@ export function useAutoFetchIntimacoes() {
         const novasDeHoje = novas.filter(n => n._data === hoje);
         console.log("[AutoFetch] hoje:", hoje, "novas total:", novas.length, "novasDeHoje:", novasDeHoje.length);
 
-        let idsJaNoSupabase = new Set<string>();
+        // CORRIGIDO: verifica notificacoes_enviadas (não intimacoes) para saber
+        // se o e-mail JÁ foi disparado. A tabela intimacoes sempre terá os IDs
+        // após o primeiro login, causando recentementeNovas=[] eternamente.
+        let idsJaNotificados = new Set<string>();
         if (novasDeHoje.length > 0) {
-          const { data: jaNoSupabase } = await supabase
-            .from("intimacoes")
-            .select("id")
+          const { data: jaNotificados } = await supabase
+            .from("notificacoes_enviadas")
+            .select("intimacao_id")
             .eq("user_id", user.id)
-            .in("id", novasDeHoje.map(n => n._id).filter(Boolean));
-          idsJaNoSupabase = new Set((jaNoSupabase || []).map((r: any) => r.id));
+            .eq("status", "enviado")
+            .in("intimacao_id", novasDeHoje.map(n => n._id).filter(Boolean));
+          idsJaNotificados = new Set((jaNotificados || []).map((r: any) => r.intimacao_id));
         }
 
-        const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
-        console.log("[AutoFetch] idsJaNoSupabase:", idsJaNoSupabase.size, "recentementeNovas:", recentementeNovas.length);
+        const recentementeNovas = novasDeHoje.filter(n => !idsJaNotificados.has(n._id));
+        console.log("[AutoFetch] idsJaNotificados:", idsJaNotificados.size, "recentementeNovas:", recentementeNovas.length);
 
         // 5b. Sincroniza para Supabase
         await syncParaSupabase(uniq, user.id).catch(() => {});
