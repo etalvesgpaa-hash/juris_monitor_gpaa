@@ -19,7 +19,7 @@ const GROQ_URL  = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const DELAY_MS   = 600; // evita rate limit da Groq
 
-async function chamarGroq(apiKey: string, systemPrompt: string, userContent: string): Promise<string> {
+async function chamarGroq(apiKey: string, systemPrompt: string, userContent: string, tentativa = 1): Promise<string> {
   const resp = await fetch(GROQ_URL, {
     method: "POST",
     headers: {
@@ -38,9 +38,16 @@ async function chamarGroq(apiKey: string, systemPrompt: string, userContent: str
     signal: AbortSignal.timeout(30000),
   });
 
+  // Rate limit — aguarda e tenta novamente (até 3x)
+  if (resp.status === 429 && tentativa <= 3) {
+    const wait = tentativa * 8000; // 8s, 16s, 24s
+    await new Promise(r => setTimeout(r, wait));
+    return chamarGroq(apiKey, systemPrompt, userContent, tentativa + 1);
+  }
+
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(`Groq HTTP ${resp.status}: ${err?.error?.message || resp.statusText}`);
+    throw new Error(`Erro na API Groq: ${err?.error?.message || `HTTP ${resp.status}`}`);
   }
 
   const data = await resp.json();
@@ -79,11 +86,26 @@ export function useGroqIA() {
     const apiKey = await getGroqKey();
     if (!apiKey) { toast.error("Configure a chave Groq em Configurações → API Keys."); return null; }
 
-    const texto = String(
+    const textoRaw = String(
       intimacao.textoPublicacao || intimacao.Texto || intimacao.texto ||
       intimacao.Conteudo || intimacao.conteudo || ""
     );
-    if (texto.trim().length < 50) { toast.error("Texto insuficiente para resumo."); return null; }
+
+    // Quando texto principal vazio, monta a partir dos campos estruturados
+    const texto = textoRaw.trim().length >= 50 ? textoRaw : [
+      intimacao._numProc && `Processo: ${intimacao._numProc}`,
+      intimacao._titulo && `Tipo: ${intimacao._titulo}`,
+      intimacao._orgaoJulgador && `Órgão: ${intimacao._orgaoJulgador}`,
+      intimacao._data && `Data: ${intimacao._data}`,
+      intimacao._partes && `Partes: ${intimacao._partes}`,
+      intimacao._orgaoPublicacao && `Publicação: ${intimacao._orgaoPublicacao}`,
+      intimacao.TituloAssunto && `Assunto: ${intimacao.TituloAssunto}`,
+    ].filter(Boolean).join("\n");
+
+    if (texto.trim().length < 20) {
+      toast.error("Sem informações suficientes para gerar resumo.");
+      return null;
+    }
 
     try {
       const resumo = await chamarGroq(

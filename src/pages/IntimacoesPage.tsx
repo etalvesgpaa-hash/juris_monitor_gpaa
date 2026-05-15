@@ -727,7 +727,7 @@ export function IntimacoesPage() {
       return;
     }
 
-    const texto = (
+    const textoRaw = (
       intimacao.textoPublicacao ||
       intimacao.Texto ||
       intimacao.texto ||
@@ -736,7 +736,18 @@ export function IntimacoesPage() {
       ""
     ) as string;
 
-    if (!texto || texto.trim().length < 50) {
+    // Quando o texto principal está vazio, monta a partir dos campos estruturados
+    const texto = textoRaw.trim().length >= 50 ? textoRaw : [
+      intimacao._numProc && `Processo: ${intimacao._numProc}`,
+      intimacao._titulo && `Tipo: ${intimacao._titulo}`,
+      intimacao._orgaoJulgador && `Órgão: ${intimacao._orgaoJulgador}`,
+      intimacao._data && `Data: ${intimacao._data}`,
+      intimacao._partes && `Partes: ${intimacao._partes}`,
+      intimacao._orgaoPublicacao && `Publicação: ${intimacao._orgaoPublicacao}`,
+      intimacao.TituloAssunto && `Assunto: ${intimacao.TituloAssunto}`,
+    ].filter(Boolean).join("\n");
+
+    if (!texto || texto.trim().length < 20) {
       toast.error("Texto insuficiente para gerar resumo.");
       return;
     }

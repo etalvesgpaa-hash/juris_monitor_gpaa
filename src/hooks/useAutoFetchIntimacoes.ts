@@ -583,11 +583,19 @@ export function useAutoFetchIntimacoes() {
         const gerarResumo = async (intim: AaspIntimacao): Promise<string | null> => {
           if (!groqKey || intim._resumoIA) return intim._resumoIA ?? null;
           try {
-            const texto = String(
-              intim.textoPublicacao || intim.Texto || intim.texto ||
-              intim.Conteudo || intim.conteudo || ""
-            );
-            if (!texto || texto.length < 50) return null;
+          const textoRaw = String(
+            intim.textoPublicacao || intim.Texto || intim.texto ||
+            intim.Conteudo || intim.conteudo || ""
+          );
+          const texto = textoRaw.trim().length >= 50 ? textoRaw : [
+            intim._numProc && `Processo: ${intim._numProc}`,
+            intim._titulo && `Tipo: ${intim._titulo}`,
+            intim._orgaoJulgador && `Órgão: ${intim._orgaoJulgador}`,
+            intim._data && `Data: ${intim._data}`,
+            intim._partes && `Partes: ${intim._partes}`,
+            intim._orgaoPublicacao && `Publicação: ${intim._orgaoPublicacao}`,
+          ].filter(Boolean).join("\n");
+          if (!texto || texto.length < 20) return null;
 
             const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
               method: "POST",
