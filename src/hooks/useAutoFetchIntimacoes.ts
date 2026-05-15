@@ -140,13 +140,16 @@ async function syncParaSupabase(items: AaspIntimacao[], userId: string) {
   const ids = items.map(i => i._id);
   const existentes = new Set<string>();
   for (let i = 0; i < ids.length; i += 100) {
-    const { data } = await supabase
-      .from("intimacoes")
-      .select("id")
-      .in("id", ids.slice(i, i + 100))
-      .eq("user_id", userId)
-      .catch(() => ({ data: null }));
-    (data || []).forEach((r: any) => existentes.add(r.id));
+    let fetchedData: any[] = [];
+    try {
+      const { data } = await supabase
+        .from("intimacoes")
+        .select("id")
+        .in("id", ids.slice(i, i + 100))
+        .eq("user_id", userId);
+      fetchedData = data || [];
+    } catch (_) {}
+    fetchedData.forEach((r: any) => existentes.add(r.id));
   }
 
   const novas  = items.filter(it => !existentes.has(it._id));
@@ -184,11 +187,12 @@ async function syncParaSupabase(items: AaspIntimacao[], userId: string) {
     };
     // Só atualiza resumo_ia se tiver valor (não apaga resumo existente)
     if (it._resumoIA) update.resumo_ia = it._resumoIA;
-    await supabase.from("intimacoes")
-      .update(update)
-      .eq("id", it._id)
-      .eq("user_id", userId)
-      .catch(() => {});
+    try {
+      await supabase.from("intimacoes")
+        .update(update)
+        .eq("id", it._id)
+        .eq("user_id", userId);
+    } catch (_) {}
   }
 }
 
@@ -546,13 +550,14 @@ export function useAutoFetchIntimacoes() {
         // 5c. Relê resumo_ia do Supabase — fonte de verdade
         const resumosNoSupabase = new Map<string, string | null>();
         if (novasDeHoje.length > 0) {
-          const { data: rows } = await supabase
-            .from("intimacoes")
-            .select("id, resumo_ia")
-            .eq("user_id", user.id)
-            .in("id", novasDeHoje.map(n => n._id).filter(Boolean))
-            .catch(() => ({ data: null }));
-          (rows || []).forEach((r: any) => resumosNoSupabase.set(r.id, r.resumo_ia ?? null));
+          try {
+            const { data: rows } = await supabase
+              .from("intimacoes")
+              .select("id, resumo_ia")
+              .eq("user_id", user.id)
+              .in("id", novasDeHoje.map(n => n._id).filter(Boolean));
+            (rows || []).forEach((r: any) => resumosNoSupabase.set(r.id, r.resumo_ia ?? null));
+          } catch (_) {}
         }
 
         const hojesSemResumo = novasDeHoje.filter(n => !resumosNoSupabase.get(n._id));
@@ -563,12 +568,15 @@ export function useAutoFetchIntimacoes() {
         //    6b. Para as demais (históricas sem resumo): roda em background sem bloquear
 
         // Busca a chave Groq uma única vez
-        const { data: apiKeys } = await supabase
-          .from("api_keys")
-          .select("groq_api_key")
-          .eq("user_id", user.id)
-          .maybeSingle().catch(() => ({ data: null }));
-        const groqKey = apiKeys?.groq_api_key ?? null;
+        let groqKey: string | null = null;
+        try {
+          const { data: apiKeys } = await supabase
+            .from("api_keys")
+            .select("groq_api_key")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          groqKey = apiKeys?.groq_api_key ?? null;
+        } catch (_) {}
         console.log("[AutoFetch] groqKey presente:", !!groqKey, "hojesSemResumo:", hojesSemResumo.length, "recentementeNovas:", recentementeNovas.length);
 
         // Função reutilizável: gera resumo para uma intimação e persiste
@@ -600,12 +608,13 @@ export function useAutoFetchIntimacoes() {
             if (!resumo) return null;
 
             // Persiste no Supabase
-            await supabase
-              .from("intimacoes")
-              .update({ resumo_ia: resumo })
-              .eq("id", intim._id)
-              .eq("user_id", user.id)
-              .catch(() => {});
+            try {
+              await supabase
+                .from("intimacoes")
+                .update({ resumo_ia: resumo })
+                .eq("id", intim._id)
+                .eq("user_id", user.id);
+            } catch (_) {}
 
             // Persiste no localStorage
             const store = loadStore();
