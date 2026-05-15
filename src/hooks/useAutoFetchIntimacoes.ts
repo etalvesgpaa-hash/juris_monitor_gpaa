@@ -423,8 +423,9 @@ export function useAutoFetchIntimacoes() {
       ultimoUserIdFetched = null;
       return;
     }
-    if (ultimoUserIdFetched === user.id) return;
-    if (rodandoRef.current) return;
+    console.log("[AutoFetch] useEffect disparado. ultimoUserIdFetched:", ultimoUserIdFetched, "user.id:", user.id, "rodando:", rodandoRef.current, "trigger:", buscarTrigger);
+    if (ultimoUserIdFetched === user.id) { console.log("[AutoFetch] BLOQUEADO: já rodou para este user."); return; }
+    if (rodandoRef.current) { console.log("[AutoFetch] BLOQUEADO: já está rodando."); return; }
 
     rodandoRef.current = true;
     ultimoUserIdFetched = user.id;
@@ -522,14 +523,11 @@ export function useAutoFetchIntimacoes() {
         saveStore(uniq);
 
         // 5. Filtra apenas as intimações de HOJE (dias[0])
-        //    As de dias anteriores já foram processadas em execuções anteriores
-        const hoje = dias[0]; // formato YYYY-MM-DD
+        const hoje = dias[0];
         const novasDeHoje = novas.filter(n => n._data === hoje);
+        console.log("[AutoFetch] hoje:", hoje, "novas total:", novas.length, "novasDeHoje:", novasDeHoje.length);
 
-        // Verifica no Supabase quais IDs de hoje JÁ EXISTIAM antes desta sync
-        // (feito ANTES do syncParaSupabase para não confundir recém-inseridos)
         let idsJaNoSupabase = new Set<string>();
-
         if (novasDeHoje.length > 0) {
           const { data: jaNoSupabase } = await supabase
             .from("intimacoes")
@@ -539,14 +537,13 @@ export function useAutoFetchIntimacoes() {
           idsJaNoSupabase = new Set((jaNoSupabase || []).map((r: any) => r.id));
         }
 
-        // Intimação é "nova" (para fins de e-mail) somente se é de hoje E não existia no Supabase
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNoSupabase.has(n._id));
+        console.log("[AutoFetch] idsJaNoSupabase:", idsJaNoSupabase.size, "recentementeNovas:", recentementeNovas.length);
 
-        // 5b. Sincroniza para Supabase — aguarda antes de gerar resumos
+        // 5b. Sincroniza para Supabase
         await syncParaSupabase(uniq, user.id).catch(() => {});
 
-        // 5c. Relê do Supabase o resumo_ia atual de hoje — fonte de verdade
-        //     O localStorage pode estar desatualizado (ex: após exclusão da intimação)
+        // 5c. Relê resumo_ia do Supabase — fonte de verdade
         const resumosNoSupabase = new Map<string, string | null>();
         if (novasDeHoje.length > 0) {
           const { data: rows } = await supabase
@@ -558,8 +555,8 @@ export function useAutoFetchIntimacoes() {
           (rows || []).forEach((r: any) => resumosNoSupabase.set(r.id, r.resumo_ia ?? null));
         }
 
-        // Intimações de hoje sem resumo — baseado no Supabase, não no localStorage
         const hojesSemResumo = novasDeHoje.filter(n => !resumosNoSupabase.get(n._id));
+        console.log("[AutoFetch] hojesSemResumo:", hojesSemResumo.length);
 
         // 6. Gera resumo IA
         //    6a. Para as intimações NOVAS DE HOJE: aguarda antes de enviar e-mail
@@ -572,6 +569,7 @@ export function useAutoFetchIntimacoes() {
           .eq("user_id", user.id)
           .maybeSingle().catch(() => ({ data: null }));
         const groqKey = apiKeys?.groq_api_key ?? null;
+        console.log("[AutoFetch] groqKey presente:", !!groqKey, "hojesSemResumo:", hojesSemResumo.length, "recentementeNovas:", recentementeNovas.length);
 
         // Função reutilizável: gera resumo para uma intimação e persiste
         const gerarResumo = async (intim: AaspIntimacao): Promise<string | null> => {
@@ -667,6 +665,7 @@ export function useAutoFetchIntimacoes() {
         }));
 
         // 7. Notificações automáticas por e-mail — agora com resumo_ia preenchido
+        console.log("[AutoFetch] novasComResumo:", novasComResumo.length, "disparando email:", novasComResumo.length > 0);
         if (novasComResumo.length > 0) {
           dispararNotificacoesAutomaticas(novasComResumo, user.id).catch(() => {});
         }
