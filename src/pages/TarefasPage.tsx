@@ -227,13 +227,6 @@ export function TarefasPage() {
   });
 
   const now = new Date();
-  const totalTarefas = tarefas.length;
-  const emAberto = tarefas.filter((t) => t.status !== "concluida" && t.status !== "cancelada").length;
-  const vencidas = tarefas.filter((t) => {
-    if (!t.data_vencimento || t.status === "concluida" || t.status === "cancelada") return false;
-    return new Date(t.data_vencimento) < now;
-  }).length;
-  const concluidas = tarefas.filter((t) => t.status === "concluida").length;
 
   const prioridadeColor = (p: string) => {
     if (p === "alta") return "text-red-alert bg-red-alert/10";
@@ -267,7 +260,7 @@ export function TarefasPage() {
   return (
     <div>
       {/* ── Header ── */}
-      <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
+      <div className="flex items-end justify-between flex-wrap gap-4 mb-5">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Gerenciar Demandas</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie tarefas com controle de prazo em dias úteis</p>
@@ -288,101 +281,9 @@ export function TarefasPage() {
         </div>
       </div>
 
-      {/* ── Cards de Resumo ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div className="bg-card border-t-4 border-t-accent rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">TOTAL</div>
-          <div className="text-3xl font-bold text-foreground">{totalTarefas}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">tarefas</div>
-        </div>
-        <div className="bg-card border-t-4 border-t-yellow-500 rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">EM ABERTO</div>
-          <div className="text-3xl font-bold text-yellow-600">{emAberto}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">pendente/andamento</div>
-        </div>
-        <div className="bg-card border-t-4 border-t-red-500 rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">VENCIDAS</div>
-          <div className="text-3xl font-bold text-red-alert">{vencidas}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">prazo expirado</div>
-        </div>
-        <div className="bg-card border-t-4 border-t-green-500 rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">CONCLUÍDAS</div>
-          <div className="text-3xl font-bold text-green-ok">{concluidas}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">este mês</div>
-        </div>
-      </div>
-
-      {/* ── Feriados e Suspensões ── */}
-      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-primary">
-              FERIADOS E SUSPENSÕES DE PRAZO
-            </h2>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowFeriados(!showFeriados)}>
-              {showFeriados ? "Ocultar" : "Ver Todos"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowFormFeriado(true)}>
-              <Plus className="w-4 h-4 mr-1" /> Adicionar
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground italic mb-3">
-          Cadastrados aqui, válidos para <strong>todas as tarefas</strong>. Os feriados nacionais já são automáticos.
-        </p>
-
-        {!showFeriados && feriadosFuturos.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
-            {feriadosFuturos.map(f => (
-              <div key={f.id} className="text-xs text-foreground flex items-center gap-2">
-                <span className="font-mono">{fmtDataLocal(f.data)}</span>
-                <span>•</span>
-                <span>{f.descricao}</span>
-                {f.abrangencia !== 'nacional' && (
-                  <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {showFeriados && (
-          <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
-            {feriados.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">Nenhum feriado cadastrado.</p>
-            ) : (
-              feriados.map(f => (
-                <div key={f.id} className="bg-card border border-border rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono font-semibold">{fmtDataLocal(f.data)}</span>
-                      <span className="text-xs text-muted-foreground">•</span>
-                      <span className="text-sm">{f.descricao}</span>
-                    </div>
-                    <div className="flex gap-2 mt-1">
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.tipo}</span>
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
-                    </div>
-                  </div>
-                  {f.abrangencia !== 'nacional' && (
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" onClick={() => handleDeleteFeriado(f.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
       {/* ── Formulário de Feriado ── */}
       {showFormFeriado && (
-        <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
+        <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold">Novo Feriado/Suspensão</h2>
             <Button variant="ghost" size="sm" onClick={resetFormFeriado}><X className="w-4 h-4" /></Button>
@@ -417,7 +318,7 @@ export function TarefasPage() {
 
       {/* ── Formulário de Tarefa ── */}
       {showForm && (
-        <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
+        <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-5 shadow-sm">
           <h2 className="font-display text-xl font-bold mb-4">{editingId ? "Editar Demanda" : "Nova Demanda"}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <InputField label="Título *" value={form.titulo} onChange={(v) => setForm({ ...form, titulo: v })} placeholder="Título da tarefa" />
@@ -481,7 +382,6 @@ export function TarefasPage() {
                 className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
                 value={form.cliente_id}
                 onChange={(e) => {
-                  // Ao trocar cliente, limpa processo se não pertencer ao novo cliente
                   const novoClienteId = e.target.value;
                   const processoAtual = processos.find(p => p.id === form.processo_id) as any;
                   const processoValido = processoAtual?.cliente_id === novoClienteId;
@@ -499,7 +399,6 @@ export function TarefasPage() {
                 value={form.processo_id}
                 onChange={(e) => {
                   const proc = processos.find(p => p.id === e.target.value) as any;
-                  // Ao escolher processo, auto-preenche cliente se houver
                   setForm({ ...form, processo_id: e.target.value, cliente_id: proc?.cliente_id || form.cliente_id });
                 }}
               >
@@ -657,6 +556,78 @@ export function TarefasPage() {
           })}
         </div>
       )}
+
+      {/* ── Feriados e Suspensões — exibido abaixo do kanban/lista/agenda ── */}
+      <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mt-8">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-primary">
+              FERIADOS E SUSPENSÕES DE PRAZO
+            </h2>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowFeriados(!showFeriados)}>
+              {showFeriados ? "Ocultar" : "Ver Todos"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowFormFeriado(true)}>
+              <Plus className="w-4 h-4 mr-1" /> Adicionar
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground italic mb-3">
+          Cadastrados aqui, válidos para <strong>todas as tarefas</strong>. Os feriados nacionais já são automáticos.
+        </p>
+
+        {!showFeriados && feriadosFuturos.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
+            {feriadosFuturos.map(f => (
+              <div key={f.id} className="text-xs text-foreground flex items-center gap-2">
+                <span className="font-mono">{fmtDataLocal(f.data)}</span>
+                <span>•</span>
+                <span>{f.descricao}</span>
+                {f.abrangencia !== 'nacional' && (
+                  <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!showFeriados && feriadosFuturos.length === 0 && (
+          <p className="text-xs text-muted-foreground italic">Nenhum feriado próximo cadastrado.</p>
+        )}
+
+        {showFeriados && (
+          <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+            {feriados.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">Nenhum feriado cadastrado.</p>
+            ) : (
+              feriados.map(f => (
+                <div key={f.id} className="bg-card border border-border rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono font-semibold">{fmtDataLocal(f.data)}</span>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-sm">{f.descricao}</span>
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.tipo}</span>
+                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
+                    </div>
+                  </div>
+                  {f.abrangencia !== 'nacional' && (
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" onClick={() => handleDeleteFeriado(f.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
