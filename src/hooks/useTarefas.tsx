@@ -20,7 +20,9 @@ export function useTarefas() {
             numero_cnj,
             status,
             classe,
-            assunto
+            assunto,
+            cliente_id,
+            cliente:clientes(id, nome)
           )
         `)
         .order("data_vencimento", { ascending: true });

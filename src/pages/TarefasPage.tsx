@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useTarefas, useCreateTarefa, useUpdateTarefa, useDeleteTarefa } from "@/hooks/useTarefas";
 import { useFeriados, useCreateFeriado, useDeleteFeriado, calcularDiasUteis } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
+import { useClientes } from "@/hooks/useClientes";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List } from "lucide-react";
@@ -52,16 +53,17 @@ function getAvatarColor(name: string): string {
 
 // ── Colunas do Kanban ──────────────────────────────────────────────────────
 const KANBAN_COLUMNS = [
-  { key: "pendente",    label: "Aguardando Propostas", color: "#6b7280" },
-  { key: "andamento",   label: "Em Andamento",         color: "#1565c0" },
-  { key: "ag_cliente",  label: "Ag. Cliente",          color: "#b45309" },
-  { key: "ag_tribunal", label: "Ag. Tribunal",         color: "#6d28d9" },
-  { key: "concluida",   label: "Concluídos",           color: "#166534" },
+  { key: "pendente",    label: "AGUARDANDO",    color: "#6b7280" },
+  { key: "andamento",   label: "EM ANDAMENTO",  color: "#1565c0" },
+  { key: "ag_cliente",  label: "AG. CLIENTE",   color: "#b45309" },
+  { key: "ag_tribunal", label: "AG. TRIBUNAL",  color: "#6d28d9" },
+  { key: "concluida",   label: "CONCLUÍDOS",    color: "#166534" },
 ];
 
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
   const { data: processos = [] } = useProcessos();
+  const { data: clientes = [] } = useClientes();
   const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const updateTarefa = useUpdateTarefa();
@@ -85,6 +87,7 @@ export function TarefasPage() {
     prioridade: "media",
     status: "pendente",
     processo_id: "",
+    cliente_id: "",
   });
 
   const [formFeriado, setFormFeriado] = useState({
@@ -95,7 +98,7 @@ export function TarefasPage() {
   });
 
   const resetForm = () => {
-    setForm({ titulo: "", descricao: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente", processo_id: "" });
+    setForm({ titulo: "", descricao: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente", processo_id: "", cliente_id: "" });
     setShowForm(false);
     setEditingId(null);
   };
@@ -114,6 +117,7 @@ export function TarefasPage() {
       prioridade: t.prioridade,
       status: t.status || "pendente",
       processo_id: t.processo_id || "",
+      cliente_id: (t.processo as any)?.cliente_id || "",
     });
     setEditingId(t.id);
     setShowForm(true);
@@ -470,12 +474,43 @@ export function TarefasPage() {
                 )}
               </div>
             </div>
+            {/* ── Vínculo: Cliente e Processo ── */}
+            <div>
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Cliente vinculado</label>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.cliente_id}
+                onChange={(e) => {
+                  // Ao trocar cliente, limpa processo se não pertencer ao novo cliente
+                  const novoClienteId = e.target.value;
+                  const processoAtual = processos.find(p => p.id === form.processo_id) as any;
+                  const processoValido = processoAtual?.cliente_id === novoClienteId;
+                  setForm({ ...form, cliente_id: novoClienteId, processo_id: processoValido ? form.processo_id : "" });
+                }}
+              >
+                <option value="">Nenhum</option>
+                {clientes.map((c) => (<option key={c.id} value={c.id}>{c.nome}</option>))}
+              </select>
+            </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={form.processo_id} onChange={(e) => setForm({ ...form, processo_id: e.target.value })}>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.processo_id}
+                onChange={(e) => {
+                  const proc = processos.find(p => p.id === e.target.value) as any;
+                  // Ao escolher processo, auto-preenche cliente se houver
+                  setForm({ ...form, processo_id: e.target.value, cliente_id: proc?.cliente_id || form.cliente_id });
+                }}
+              >
                 <option value="">Nenhum</option>
-                {processos.map((p) => (<option key={p.id} value={p.id}>{p.numero_cnj}</option>))}
+                {processos
+                  .filter((p: any) => !form.cliente_id || p.cliente_id === form.cliente_id)
+                  .map((p) => (<option key={p.id} value={p.id}>{p.numero_cnj}</option>))}
               </select>
+              {form.cliente_id && processos.filter((p: any) => p.cliente_id === form.cliente_id).length === 0 && (
+                <p className="text-[0.68rem] text-muted-foreground mt-1 italic">Nenhum processo cadastrado para este cliente.</p>
+              )}
             </div>
             <div className="md:col-span-2">
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Descrição</label>
@@ -593,7 +628,10 @@ export function TarefasPage() {
                       </div>
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
                       {processo && (
-                        <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          {(processo as any)?.cliente?.nome && (
+                            <span className="text-xs font-semibold text-accent/80">👤 {(processo as any).cliente.nome}</span>
+                          )}
                           <span className="text-xs text-muted-foreground font-mono">📋 {processo.numero_cnj}</span>
                         </div>
                       )}
@@ -754,6 +792,11 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
 
         {/* Localidade */}
         {localidade && <p className="text-[0.68rem] text-muted-foreground mb-1 truncate">{localidade}</p>}
+
+        {/* Cliente */}
+        {(tarefa.processo as any)?.cliente?.nome && (
+          <p className="text-[0.62rem] font-semibold text-accent/80 mb-1 truncate">👤 {(tarefa.processo as any).cliente.nome}</p>
+        )}
 
         {/* Processo */}
         {processoNumero && (
