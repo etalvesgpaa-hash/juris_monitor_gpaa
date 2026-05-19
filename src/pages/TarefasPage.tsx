@@ -658,18 +658,18 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
     });
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
       {KANBAN_COLUMNS.map((col) => {
         const cards = tarefasPorColuna(col.key);
         return (
-          <div key={col.key} className="flex-shrink-0 w-72 flex flex-col">
+          <div key={col.key} className="flex flex-col min-w-0">
             {/* Cabeçalho da coluna */}
             <div
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl mb-3"
+              className="flex items-center justify-between px-2 py-2 rounded-xl mb-3 gap-1"
               style={{ borderTop: `4px solid ${col.color}`, background: `${col.color}18` }}
             >
-              <span className="text-sm font-bold" style={{ color: col.color }}>{col.label}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col.color }}>
+              <span className="text-xs font-bold leading-tight min-w-0 break-words" style={{ color: col.color }}>{col.label}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white shrink-0" style={{ backgroundColor: col.color }}>
                 {cards.length}
               </span>
             </div>
@@ -728,14 +728,14 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
   const ps = prioridadeStyle(tarefa.prioridade);
 
   return (
-    <div className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md ${
+    <div className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md w-full min-w-0 ${
       isVencida ? "border-red-300" : "border-border hover:border-accent/40"
     } ${tarefa.status === "concluida" ? "opacity-75" : ""}`}>
-      <div className="p-3">
+      <div className="p-2">
         {/* Título + prioridade */}
-        <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-start justify-between gap-1 mb-1.5">
           <h3
-            className={`text-sm font-bold leading-snug cursor-pointer hover:text-accent transition-colors flex-1 ${
+            className={`text-xs font-bold leading-snug cursor-pointer hover:text-accent transition-colors flex-1 min-w-0 break-words ${
               tarefa.status === "concluida" ? "line-through text-muted-foreground" : "text-foreground"
             }`}
             onClick={() => onEdit(tarefa)}
@@ -744,7 +744,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
           </h3>
           {tarefa.prioridade && (
             <span
-              className="text-[0.6rem] px-1.5 py-0.5 rounded font-bold uppercase shrink-0"
+              className="text-[0.55rem] px-1 py-0.5 rounded font-bold uppercase shrink-0 leading-tight"
               style={{ backgroundColor: ps.bg, color: ps.text, border: `1px solid ${ps.border}` }}
             >
               {tarefa.prioridade}
@@ -753,63 +753,62 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
         </div>
 
         {/* Localidade */}
-        {localidade && <p className="text-xs text-muted-foreground mb-1">{localidade}</p>}
+        {localidade && <p className="text-[0.68rem] text-muted-foreground mb-1 truncate">{localidade}</p>}
 
         {/* Processo */}
         {processoNumero && (
-          <p className="text-[0.68rem] text-muted-foreground font-mono mb-1 truncate">📋 {processoNumero}</p>
+          <p className="text-[0.62rem] text-muted-foreground font-mono mb-1 truncate">📋 {processoNumero}</p>
         )}
 
         {/* Prazo */}
         {prazoFormatado && (
-          <p className={`text-xs font-semibold mb-2 ${isVencida ? "text-red-600" : "text-muted-foreground"}`}>
-            {isVencida ? "⚠️ " : "🗓 "}Prazo: {prazoFormatado}
+          <p className={`text-[0.68rem] font-semibold mb-1.5 break-words ${isVencida ? "text-red-600" : "text-muted-foreground"}`}>
+            {isVencida ? "⚠️ " : "🗓 "}{prazoFormatado}
           </p>
         )}
 
-        {/* Descrição */}
+        {/* Descrição — oculta em colunas muito estreitas para não poluir */}
         {tarefa.descricao && (
-          <p className="text-[0.7rem] text-muted-foreground line-clamp-2 mb-2">{tarefa.descricao}</p>
+          <p className="text-[0.65rem] text-muted-foreground line-clamp-2 mb-1.5 hidden sm:block">{tarefa.descricao}</p>
         )}
 
         {/* Rodapé do card: responsável + ações */}
-        <div className="border-t border-border pt-2 mt-1 flex items-center gap-2">
+        <div className="border-t border-border pt-1.5 mt-1 flex items-center gap-1.5">
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[0.65rem] font-bold shrink-0"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[0.6rem] font-bold shrink-0"
             style={{ backgroundColor: userAvatarColor }}
           >
             {userInitials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold truncate text-foreground">{userName}</p>
-            <p className="text-[0.65rem] text-muted-foreground">Responsável</p>
+            <p className="text-[0.65rem] font-semibold truncate text-foreground">{userName}</p>
           </div>
-          <div className="flex items-center gap-1 ml-auto shrink-0">
+          <div className="flex items-center gap-0.5 ml-auto shrink-0">
             <button
               onClick={() => onEdit(tarefa)}
-              className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
+              className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
               title="Editar"
             >
-              <Edit2 className="w-3.5 h-3.5" />
+              <Edit2 className="w-3 h-3" />
             </button>
             <button
               onClick={() => onDelete(tarefa.id)}
-              className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
               title="Excluir"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3 h-3" />
             </button>
           </div>
         </div>
       </div>
 
       {/* Mover para outra coluna */}
-      <div className="border-t border-border px-3 py-1.5">
+      <div className="border-t border-border px-2 py-1.5">
         <button
           onClick={() => setShowMover(!showMover)}
-          className="text-[0.65rem] text-muted-foreground hover:text-accent font-semibold transition-colors w-full text-left"
+          className="text-[0.6rem] text-muted-foreground hover:text-accent font-semibold transition-colors w-full text-left"
         >
-          {showMover ? "▲ Fechar" : "▼ Mover para..."}
+          {showMover ? "▲ Fechar" : "▼ Mover..."}
         </button>
         {showMover && (
           <div className="flex flex-wrap gap-1 mt-1.5 pb-1">
@@ -817,7 +816,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
               <button
                 key={col.key}
                 onClick={() => { onMoveStatus(tarefa, col.key); setShowMover(false); }}
-                className="text-[0.6rem] px-2 py-0.5 rounded-full font-semibold text-white transition-opacity hover:opacity-80"
+                className="text-[0.55rem] px-1.5 py-0.5 rounded-full font-semibold text-white transition-opacity hover:opacity-80 leading-tight"
                 style={{ backgroundColor: col.color }}
               >
                 {col.label}
