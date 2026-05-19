@@ -79,6 +79,7 @@ export function TarefasPage() {
   const [showFormFeriado, setShowFormFeriado] = useState(false);
   const [filter, setFilter] = useState<FilterType>("todas");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [showConcluidas, setShowConcluidas] = useState(false);
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
@@ -223,6 +224,8 @@ export function TarefasPage() {
     if (filter === "ag_tribunal") return t.status === "ag_tribunal";
     if (filter === "concluidas") return t.status === "concluida";
     if (filter === "canceladas") return t.status === "cancelada";
+    // filtro "todas" respeita o toggle de concluídas
+    if (!showConcluidas && t.status === "concluida") return false;
     return true;
   });
 
@@ -274,6 +277,14 @@ export function TarefasPage() {
           </Button>
           <Button variant={viewMode === "agenda" ? "default" : "outline"} size="sm" onClick={() => setViewMode("agenda")}>
             <Calendar className="w-4 h-4 mr-1" /> Agenda
+          </Button>
+          <Button
+            variant={showConcluidas ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowConcluidas(!showConcluidas)}
+            className={showConcluidas ? "bg-green-700 hover:bg-green-800 border-green-700" : "text-muted-foreground"}
+          >
+            {showConcluidas ? "✓ Ocultar Concluídas" : "Mostrar Concluídas"}
           </Button>
           <Button variant="gold" onClick={() => setShowForm(true)}>
             <Plus className="w-4 h-4 mr-1" /> Criar Demanda
@@ -465,6 +476,7 @@ export function TarefasPage() {
           userInitials={userInitials}
           userAvatarColor={userAvatarColor}
           getLocalidade={getLocalidade}
+          showConcluidas={showConcluidas}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onMoveStatus={handleMoveStatus}
@@ -649,9 +661,9 @@ function InputField({ label, value, onChange, placeholder, type = "text" }: {
 }
 
 // ── KanbanBoard ────────────────────────────────────────────────────────────
-function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, onEdit, onDelete, onMoveStatus }: {
+function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, onEdit, onDelete, onMoveStatus }: {
   tarefas: any[]; userName: string; userInitials: string; userAvatarColor: string;
-  getLocalidade: (t: any) => string;
+  getLocalidade: (t: any) => string; showConcluidas: boolean;
   onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
 }) {
   const now = new Date();
@@ -666,9 +678,13 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
       return false;
     });
 
+  const colunas = showConcluidas
+    ? KANBAN_COLUMNS
+    : KANBAN_COLUMNS.filter(c => c.key !== "concluida");
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-      {KANBAN_COLUMNS.map((col) => {
+    <div className={`grid gap-3 ${showConcluidas ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-5" : "grid-cols-2 md:grid-cols-2 lg:grid-cols-4"}`}>
+      {colunas.map((col) => {
         const cards = tarefasPorColuna(col.key);
         return (
           <div key={col.key} className="flex flex-col min-w-0">
