@@ -3,12 +3,10 @@ import { Button } from "@/components/ui/button";
 import { useTarefas, useCreateTarefa, useUpdateTarefa, useDeleteTarefa } from "@/hooks/useTarefas";
 import { useFeriados, useCreateFeriado, useDeleteFeriado, calcularDiasUteis } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List } from "lucide-react";
+import { Calendar, Edit2, Trash2, Plus, X } from "lucide-react";
 
 type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
-type ViewMode = "kanban" | "lista" | "agenda";
 
 /** Formata data YYYY-MM-DD para DD/MM/YYYY sem offset de fuso horário */
 function fmtDataLocal(iso: string): string {
@@ -16,48 +14,6 @@ function fmtDataLocal(iso: string): string {
   const p = iso.slice(0, 10).split("-");
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
 }
-
-/** Formata data+hora para exibição no card kanban */
-function fmtPrazoKanban(iso: string): string {
-  if (!iso) return "";
-  const slice = iso.slice(0, 16);
-  const p = slice.split("T");
-  if (p.length < 2) return fmtDataLocal(iso);
-  const dateParts = p[0].split("-");
-  const timeParts = p[1].split(":");
-  if (dateParts.length === 3 && timeParts.length >= 2) {
-    return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`;
-  }
-  return fmtDataLocal(iso);
-}
-
-/** Gera iniciais do nome para o avatar */
-function getInitials(name: string): string {
-  if (!name) return "?";
-  const parts = name.trim().split(" ").filter(Boolean);
-  if (parts.length === 1) return parts[0][0].toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-/** Cor de fundo do avatar baseada no nome */
-function getAvatarColor(name: string): string {
-  const colors = [
-    "#2e7d32", "#1565c0", "#6a1b9a", "#ad1457",
-    "#e65100", "#00695c", "#4527a0", "#283593",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
-}
-
-// ── Colunas do Kanban ──────────────────────────────────────────────────────
-const KANBAN_COLUMNS = [
-  { key: "pendente",    label: "Aguardando Propostas", color: "#6b7280" },
-  { key: "andamento",   label: "Em Andamento",         color: "#1565c0" },
-  { key: "ag_cliente",  label: "Ag. Cliente",          color: "#b45309" },
-  { key: "ag_tribunal", label: "Ag. Tribunal",         color: "#6d28d9" },
-  { key: "concluida",   label: "Concluídos",           color: "#166534" },
-];
 
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
@@ -68,7 +24,6 @@ export function TarefasPage() {
   const deleteTarefa = useDeleteTarefa();
   const createFeriado = useCreateFeriado();
   const deleteFeriado = useDeleteFeriado();
-  const { user } = useAuth();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
@@ -76,7 +31,7 @@ export function TarefasPage() {
   const [showFeriados, setShowFeriados] = useState(false);
   const [showFormFeriado, setShowFormFeriado] = useState(false);
   const [filter, setFilter] = useState<FilterType>("todas");
-  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [viewMode, setViewMode] = useState<"lista" | "agenda">("agenda");
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
@@ -200,18 +155,6 @@ export function TarefasPage() {
     }
   };
 
-  const handleMoveStatus = async (t: typeof tarefas[0], newStatus: string) => {
-    try {
-      await updateTarefa.mutateAsync({
-        id: t.id,
-        status: newStatus,
-        concluida_em: newStatus === "concluida" ? new Date().toISOString() : null,
-      });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    }
-  };
-
   const filtered = tarefas.filter((t) => {
     if (filter === "pendente") return t.status === "pendente";
     if (filter === "andamento") return t.status === "andamento";
@@ -223,6 +166,8 @@ export function TarefasPage() {
   });
 
   const now = new Date();
+  
+  // Cálculos para os cards
   const totalTarefas = tarefas.length;
   const emAberto = tarefas.filter((t) => t.status !== "concluida" && t.status !== "cancelada").length;
   const vencidas = tarefas.filter((t) => {
@@ -237,54 +182,42 @@ export function TarefasPage() {
     return "text-muted-foreground bg-muted";
   };
 
-  const hoje = new Date().toISOString().split("T")[0];
+  // Filtrar feriados futuros e ordenar por data
+  const hoje = new Date().toISOString().split("T")[0]; // YYYY-MM-DD local-safe
   const feriadosFuturos = feriados
     .filter(f => f.data >= hoje)
     .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 5);
 
-  // Dados do usuário logado para o card do kanban
-  const userName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Usuário";
-  const userInitials = getInitials(userName);
-  const userAvatarColor = getAvatarColor(userName);
-
-  // Localidade: pega do processo vinculado, se houver
-  const getLocalidade = (t: typeof tarefas[0]): string => {
-    const proc = t.processo as any;
-    if (!proc) return "";
-    const cidade = proc.cidade || proc.municipio || "";
-    const uf = proc.uf || proc.estado || "";
-    if (cidade && uf) return `${cidade} - ${uf}`;
-    if (cidade) return cidade;
-    if (proc.vara) return proc.vara;
-    return "";
-  };
-
   return (
     <div>
-      {/* ── Header ── */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Gerenciar Demandas</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Tarefas</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie tarefas com controle de prazo em dias úteis</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant={viewMode === "kanban" ? "default" : "outline"} size="sm" onClick={() => setViewMode("kanban")}>
-            <LayoutGrid className="w-4 h-4 mr-1" /> Kanban
+        <div className="flex gap-2">
+          <Button 
+            variant={viewMode === "lista" ? "default" : "outline"} 
+            size="sm"
+            onClick={() => setViewMode("lista")}
+          >
+            ☰ Lista
           </Button>
-          <Button variant={viewMode === "lista" ? "default" : "outline"} size="sm" onClick={() => setViewMode("lista")}>
-            <List className="w-4 h-4 mr-1" /> Lista
-          </Button>
-          <Button variant={viewMode === "agenda" ? "default" : "outline"} size="sm" onClick={() => setViewMode("agenda")}>
+          <Button 
+            variant={viewMode === "agenda" ? "default" : "outline"} 
+            size="sm"
+            onClick={() => setViewMode("agenda")}
+          >
             <Calendar className="w-4 h-4 mr-1" /> Agenda
           </Button>
           <Button variant="gold" onClick={() => setShowForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Criar Demanda
+            <Plus className="w-4 h-4 mr-1" /> Nova Tarefa
           </Button>
         </div>
       </div>
 
-      {/* ── Cards de Resumo ── */}
+      {/* Cards de Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="bg-card border-t-4 border-t-accent rounded-xl p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">TOTAL</div>
@@ -308,7 +241,7 @@ export function TarefasPage() {
         </div>
       </div>
 
-      {/* ── Feriados e Suspensões ── */}
+      {/* Feriados e Suspensões */}
       <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-5">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -318,10 +251,18 @@ export function TarefasPage() {
             </h2>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowFeriados(!showFeriados)}>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowFeriados(!showFeriados)}
+            >
               {showFeriados ? "Ocultar" : "Ver Todos"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowFormFeriado(true)}>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowFormFeriado(true)}
+            >
               <Plus className="w-4 h-4 mr-1" /> Adicionar
             </Button>
           </div>
@@ -329,7 +270,7 @@ export function TarefasPage() {
         <p className="text-xs text-muted-foreground italic mb-3">
           Cadastrados aqui, válidos para <strong>todas as tarefas</strong>. Os feriados nacionais já são automáticos.
         </p>
-
+        
         {!showFeriados && feriadosFuturos.length > 0 && (
           <div className="space-y-1">
             <p className="text-xs font-semibold text-muted-foreground mb-2">Próximos feriados:</p>
@@ -339,7 +280,9 @@ export function TarefasPage() {
                 <span>•</span>
                 <span>{f.descricao}</span>
                 {f.abrangencia !== 'nacional' && (
-                  <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
+                  <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
+                    {f.abrangencia}
+                  </span>
                 )}
               </div>
             ))}
@@ -360,12 +303,21 @@ export function TarefasPage() {
                       <span className="text-sm">{f.descricao}</span>
                     </div>
                     <div className="flex gap-2 mt-1">
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.tipo}</span>
-                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">{f.abrangencia}</span>
+                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
+                        {f.tipo}
+                      </span>
+                      <span className="text-[0.65rem] bg-muted px-2 py-0.5 rounded-full">
+                        {f.abrangencia}
+                      </span>
                     </div>
                   </div>
                   {f.abrangencia !== 'nacional' && (
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" onClick={() => handleDeleteFeriado(f.id)}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert"
+                      onClick={() => handleDeleteFeriado(f.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   )}
@@ -376,19 +328,35 @@ export function TarefasPage() {
         )}
       </div>
 
-      {/* ── Formulário de Feriado ── */}
+      {/* Formulário de Feriado */}
       {showFormFeriado && (
         <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold">Novo Feriado/Suspensão</h2>
-            <Button variant="ghost" size="sm" onClick={resetFormFeriado}><X className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={resetFormFeriado}>
+              <X className="w-4 h-4" />
+            </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <InputField label="Data *" value={formFeriado.data} onChange={(v) => setFormFeriado({ ...formFeriado, data: v })} type="date" />
-            <InputField label="Descrição *" value={formFeriado.descricao} onChange={(v) => setFormFeriado({ ...formFeriado, descricao: v })} placeholder="Ex: Feriado Municipal" />
+            <InputField 
+              label="Data *" 
+              value={formFeriado.data} 
+              onChange={(v) => setFormFeriado({ ...formFeriado, data: v })} 
+              type="date" 
+            />
+            <InputField 
+              label="Descrição *" 
+              value={formFeriado.descricao} 
+              onChange={(v) => setFormFeriado({ ...formFeriado, descricao: v })} 
+              placeholder="Ex: Feriado Municipal" 
+            />
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Tipo</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={formFeriado.tipo} onChange={(e) => setFormFeriado({ ...formFeriado, tipo: e.target.value as any })}>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={formFeriado.tipo}
+                onChange={(e) => setFormFeriado({ ...formFeriado, tipo: e.target.value as any })}
+              >
                 <option value="feriado">Feriado</option>
                 <option value="suspensao">Suspensão de Prazo</option>
                 <option value="recesso">Recesso</option>
@@ -396,7 +364,11 @@ export function TarefasPage() {
             </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Abrangência</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={formFeriado.abrangencia} onChange={(e) => setFormFeriado({ ...formFeriado, abrangencia: e.target.value as any })}>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={formFeriado.abrangencia}
+                onChange={(e) => setFormFeriado({ ...formFeriado, abrangencia: e.target.value as any })}
+              >
                 <option value="local">Local</option>
                 <option value="municipal">Municipal</option>
                 <option value="estadual">Estadual</option>
@@ -405,21 +377,59 @@ export function TarefasPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Button variant="gold" onClick={handleCreateFeriado} disabled={createFeriado.isPending}>{createFeriado.isPending ? "Salvando..." : "Salvar"}</Button>
+            <Button variant="gold" onClick={handleCreateFeriado} disabled={createFeriado.isPending}>
+              {createFeriado.isPending ? "Salvando..." : "Salvar"}
+            </Button>
             <Button variant="outline" onClick={resetFormFeriado}>Cancelar</Button>
           </div>
         </div>
       )}
 
-      {/* ── Formulário de Tarefa ── */}
+      {/* Filters */}
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {([
+          ["todas", "Todas"],
+          ["pendente", "Pendente"],
+          ["andamento", "Andamento"],
+          ["ag_cliente", "Ag. Cliente"],
+          ["ag_tribunal", "Ag. Tribunal"],
+          ["concluidas", "Concluídas"],
+          ["canceladas", "Canceladas"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              filter === key
+                ? "bg-accent text-primary"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Formulário de Tarefa */}
       {showForm && (
         <div className="bg-card border border-accent/30 rounded-2xl p-6 mb-6 shadow-sm">
-          <h2 className="font-display text-xl font-bold mb-4">{editingId ? "Editar Demanda" : "Nova Demanda"}</h2>
+          <h2 className="font-display text-xl font-bold mb-4">
+            {editingId ? "Editar Tarefa" : "Nova Tarefa"}
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <InputField label="Título *" value={form.titulo} onChange={(v) => setForm({ ...form, titulo: v })} placeholder="Título da tarefa" />
+            <InputField 
+              label="Título *" 
+              value={form.titulo} 
+              onChange={(v) => setForm({ ...form, titulo: v })} 
+              placeholder="Título da tarefa" 
+            />
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Prioridade</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: e.target.value })}>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.prioridade}
+                onChange={(e) => setForm({ ...form, prioridade: e.target.value })}
+              >
                 <option value="baixa">Baixa</option>
                 <option value="media">Média</option>
                 <option value="alta">Alta</option>
@@ -427,8 +437,12 @@ export function TarefasPage() {
             </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Status</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="pendente">Aguardando</option>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+              >
+                <option value="pendente">Pendente</option>
                 <option value="andamento">Em Andamento</option>
                 <option value="ag_cliente">Aguardando Cliente</option>
                 <option value="ag_tribunal">Aguardando Tribunal</option>
@@ -438,9 +452,14 @@ export function TarefasPage() {
             </div>
             <div className="md:col-span-2 bg-accent/5 rounded-xl border border-accent/20 p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">Dias Úteis para Vencimento</label>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Dias Úteis para Vencimento
+                </label>
                 <input
-                  type="number" min="1" placeholder="Ex: 15" value={form.diasUteis}
+                  type="number"
+                  min="1"
+                  placeholder="Ex: 15"
+                  value={form.diasUteis}
                   onChange={(e) => {
                     const dias = e.target.value;
                     const num = parseInt(dias);
@@ -456,25 +475,38 @@ export function TarefasPage() {
                   }}
                   className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
                 />
-                <p className="text-[0.68rem] text-muted-foreground mt-1">Exclui sáb, dom e {feriados.length > 0 ? `${feriados.length} feriado(s)` : "feriados"}</p>
+                <p className="text-[0.68rem] text-muted-foreground mt-1">
+                  Exclui sáb, dom e {feriados.length > 0 ? `${feriados.length} feriado(s)` : "feriados"}
+                </p>
               </div>
               <div>
-                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">Data de Vencimento</label>
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-1">
+                  Data de Vencimento
+                </label>
                 <input
-                  type="date" value={form.data_vencimento}
+                  type="date"
+                  value={form.data_vencimento}
                   onChange={(e) => setForm({ ...form, data_vencimento: e.target.value, diasUteis: "" })}
                   className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
                 />
                 {form.data_vencimento && form.diasUteis && (
-                  <p className="text-[0.7rem] font-semibold text-accent mt-1">📅 {form.diasUteis} dias úteis a partir de hoje</p>
+                  <p className="text-[0.7rem] font-semibold text-accent mt-1">
+                    📅 {form.diasUteis} dias úteis a partir de hoje
+                  </p>
                 )}
               </div>
             </div>
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
-              <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={form.processo_id} onChange={(e) => setForm({ ...form, processo_id: e.target.value })}>
+              <select
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
+                value={form.processo_id}
+                onChange={(e) => setForm({ ...form, processo_id: e.target.value })}
+              >
                 <option value="">Nenhum</option>
-                {processos.map((p) => (<option key={p.id} value={p.id}>{p.numero_cnj}</option>))}
+                {processos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.numero_cnj}</option>
+                ))}
               </select>
             </div>
             <div className="md:col-span-2">
@@ -488,7 +520,11 @@ export function TarefasPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Button variant="gold" onClick={handleCreateOrUpdate} disabled={createTarefa.isPending || updateTarefa.isPending}>
+            <Button 
+              variant="gold" 
+              onClick={handleCreateOrUpdate} 
+              disabled={createTarefa.isPending || updateTarefa.isPending}
+            >
               {(createTarefa.isPending || updateTarefa.isPending) ? "Salvando..." : "Salvar"}
             </Button>
             <Button variant="outline" onClick={resetForm}>Cancelar</Button>
@@ -496,45 +532,8 @@ export function TarefasPage() {
         </div>
       )}
 
-      {/* ── Filtros (apenas lista e agenda) ── */}
-      {viewMode !== "kanban" && (
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {([
-            ["todas", "Todas"],
-            ["pendente", "Aguardando"],
-            ["andamento", "Andamento"],
-            ["ag_cliente", "Ag. Cliente"],
-            ["ag_tribunal", "Ag. Tribunal"],
-            ["concluidas", "Concluídas"],
-            ["canceladas", "Canceladas"],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setFilter(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filter === key ? "bg-accent text-primary" : "bg-card border border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Conteúdo principal ── */}
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
-      ) : viewMode === "kanban" ? (
-        <KanbanBoard
-          tarefas={tarefas}
-          userName={userName}
-          userInitials={userInitials}
-          userAvatarColor={userAvatarColor}
-          getLocalidade={getLocalidade}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onMoveStatus={handleMoveStatus}
-        />
       ) : viewMode === "agenda" ? (
         <AgendaCalendario tarefas={tarefas} onEditTarefa={handleEdit} />
       ) : filtered.length === 0 ? (
@@ -546,22 +545,25 @@ export function TarefasPage() {
           {filtered.map((t) => {
             const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
             const processo = t.processo;
+            
             const statusTarefaColor = (status: string) => {
               if (status === "concluida") return "text-green-ok bg-green-ok/10";
               if (status === "cancelada") return "text-muted-foreground bg-muted";
               if (status === "andamento") return "text-blue-500 bg-blue-500/10";
               if (status === "ag_cliente") return "text-amber-500 bg-amber-500/10";
               if (status === "ag_tribunal") return "text-purple-500 bg-purple-500/10";
-              return "text-muted-foreground bg-muted/50";
+              return "text-muted-foreground bg-muted/50"; // pendente
             };
+
             const statusTarefaLabel = (status: string) => {
               if (status === "concluida") return "Concluída";
               if (status === "cancelada") return "Cancelada";
               if (status === "andamento") return "Em Andamento";
               if (status === "ag_cliente") return "Ag. Cliente";
               if (status === "ag_tribunal") return "Ag. Tribunal";
-              return "Aguardando";
+              return "Pendente";
             };
+
             return (
               <div
                 key={t.id}
@@ -581,7 +583,7 @@ export function TarefasPage() {
                     </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <div
+                        <div 
                           className={`font-semibold text-sm cursor-pointer hover:text-accent transition-colors ${t.status === "concluida" ? "line-through" : ""}`}
                           onClick={() => handleEdit(t)}
                         >
@@ -594,22 +596,36 @@ export function TarefasPage() {
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
                       {processo && (
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-xs text-muted-foreground font-mono">📋 {processo.numero_cnj}</span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            📋 {processo.numero_cnj}
+                          </span>
                         </div>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${prioridadeColor(t.prioridade)}`}>{t.prioridade}</span>
+                    <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-bold uppercase ${prioridadeColor(t.prioridade)}`}>
+                      {t.prioridade}
+                    </span>
                     {t.data_vencimento && (
                       <span className={`text-xs font-mono ${isVencida ? "text-red-alert font-bold" : "text-muted-foreground"}`}>
                         {fmtDataLocal(t.data_vencimento)}
                       </span>
                     )}
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-accent" onClick={() => handleEdit(t)}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-accent" 
+                      onClick={() => handleEdit(t)}
+                    >
                       <Edit2 className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" onClick={() => handleDelete(t.id)}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-alert" 
+                      onClick={() => handleDelete(t.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -623,15 +639,26 @@ export function TarefasPage() {
   );
 }
 
-// ── InputField ─────────────────────────────────────────────────────────────
-function InputField({ label, value, onChange, placeholder, type = "text" }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+function InputField({ 
+  label, 
+  value, 
+  onChange, 
+  placeholder, 
+  type = "text" 
+}: { 
+  label: string; 
+  value: string; 
+  onChange: (v: string) => void; 
+  placeholder?: string; 
+  type?: string;
 }) {
   return (
     <div>
       <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">{label}</label>
       <input
-        type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
         placeholder={placeholder}
       />
@@ -639,201 +666,11 @@ function InputField({ label, value, onChange, placeholder, type = "text" }: {
   );
 }
 
-// ── KanbanBoard ────────────────────────────────────────────────────────────
-function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, onEdit, onDelete, onMoveStatus }: {
-  tarefas: any[]; userName: string; userInitials: string; userAvatarColor: string;
-  getLocalidade: (t: any) => string;
-  onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
-}) {
-  const now = new Date();
-
-  const tarefasPorColuna = (colKey: string) =>
-    tarefas.filter((t) => {
-      if (colKey === "pendente")    return t.status === "pendente";
-      if (colKey === "andamento")   return t.status === "andamento";
-      if (colKey === "ag_cliente")  return t.status === "ag_cliente";
-      if (colKey === "ag_tribunal") return t.status === "ag_tribunal";
-      if (colKey === "concluida")   return t.status === "concluida";
-      return false;
-    });
-
-  return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {KANBAN_COLUMNS.map((col) => {
-        const cards = tarefasPorColuna(col.key);
-        return (
-          <div key={col.key} className="flex-shrink-0 w-72 flex flex-col">
-            {/* Cabeçalho da coluna */}
-            <div
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl mb-3"
-              style={{ borderTop: `4px solid ${col.color}`, background: `${col.color}18` }}
-            >
-              <span className="text-sm font-bold" style={{ color: col.color }}>{col.label}</span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col.color }}>
-                {cards.length}
-              </span>
-            </div>
-
-            {/* Cards */}
-            <div className="flex flex-col gap-3 min-h-[100px]">
-              {cards.length === 0 ? (
-                <div className="border-2 border-dashed border-border rounded-xl p-5 text-center">
-                  <p className="text-xs text-muted-foreground">Nenhuma demanda</p>
-                </div>
-              ) : (
-                cards.map((t) => {
-                  const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
-                  return (
-                    <KanbanCard
-                      key={t.id}
-                      tarefa={t}
-                      isVencida={!!isVencida}
-                      localidade={getLocalidade(t)}
-                      processoNumero={(t.processo as any)?.numero_cnj || ""}
-                      userName={userName}
-                      userInitials={userInitials}
-                      userAvatarColor={userAvatarColor}
-                      currentColKey={col.key}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onMoveStatus={onMoveStatus}
-                    />
-                  );
-                })
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── KanbanCard ─────────────────────────────────────────────────────────────
-function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus }: {
-  tarefa: any; isVencida: boolean; localidade: string; processoNumero: string;
-  userName: string; userInitials: string; userAvatarColor: string; currentColKey: string;
-  onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
-}) {
-  const [showMover, setShowMover] = useState(false);
-
-  const prazoFormatado = tarefa.data_vencimento ? fmtPrazoKanban(tarefa.data_vencimento) : null;
-  const opcoesMovimento = KANBAN_COLUMNS.filter((c) => c.key !== currentColKey);
-
-  const prioridadeStyle = (p: string) => {
-    if (p === "alta")  return { bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" };
-    if (p === "media") return { bg: "#fef9c3", text: "#a16207", border: "#fde047" };
-    return { bg: "#f3f4f6", text: "#6b7280", border: "#d1d5db" };
-  };
-  const ps = prioridadeStyle(tarefa.prioridade);
-
-  return (
-    <div className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md ${
-      isVencida ? "border-red-300" : "border-border hover:border-accent/40"
-    } ${tarefa.status === "concluida" ? "opacity-75" : ""}`}>
-      <div className="p-3">
-        {/* Título + prioridade */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <h3
-            className={`text-sm font-bold leading-snug cursor-pointer hover:text-accent transition-colors flex-1 ${
-              tarefa.status === "concluida" ? "line-through text-muted-foreground" : "text-foreground"
-            }`}
-            onClick={() => onEdit(tarefa)}
-          >
-            {tarefa.titulo}
-          </h3>
-          {tarefa.prioridade && (
-            <span
-              className="text-[0.6rem] px-1.5 py-0.5 rounded font-bold uppercase shrink-0"
-              style={{ backgroundColor: ps.bg, color: ps.text, border: `1px solid ${ps.border}` }}
-            >
-              {tarefa.prioridade}
-            </span>
-          )}
-        </div>
-
-        {/* Localidade */}
-        {localidade && <p className="text-xs text-muted-foreground mb-1">{localidade}</p>}
-
-        {/* Processo */}
-        {processoNumero && (
-          <p className="text-[0.68rem] text-muted-foreground font-mono mb-1 truncate">📋 {processoNumero}</p>
-        )}
-
-        {/* Prazo */}
-        {prazoFormatado && (
-          <p className={`text-xs font-semibold mb-2 ${isVencida ? "text-red-600" : "text-muted-foreground"}`}>
-            {isVencida ? "⚠️ " : "🗓 "}Prazo: {prazoFormatado}
-          </p>
-        )}
-
-        {/* Descrição */}
-        {tarefa.descricao && (
-          <p className="text-[0.7rem] text-muted-foreground line-clamp-2 mb-2">{tarefa.descricao}</p>
-        )}
-
-        {/* Rodapé do card: responsável + ações */}
-        <div className="border-t border-border pt-2 mt-1 flex items-center gap-2">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[0.65rem] font-bold shrink-0"
-            style={{ backgroundColor: userAvatarColor }}
-          >
-            {userInitials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold truncate text-foreground">{userName}</p>
-            <p className="text-[0.65rem] text-muted-foreground">Responsável</p>
-          </div>
-          <div className="flex items-center gap-1 ml-auto shrink-0">
-            <button
-              onClick={() => onEdit(tarefa)}
-              className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
-              title="Editar"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onDelete(tarefa.id)}
-              className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-              title="Excluir"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Mover para outra coluna */}
-      <div className="border-t border-border px-3 py-1.5">
-        <button
-          onClick={() => setShowMover(!showMover)}
-          className="text-[0.65rem] text-muted-foreground hover:text-accent font-semibold transition-colors w-full text-left"
-        >
-          {showMover ? "▲ Fechar" : "▼ Mover para..."}
-        </button>
-        {showMover && (
-          <div className="flex flex-wrap gap-1 mt-1.5 pb-1">
-            {opcoesMovimento.map((col) => (
-              <button
-                key={col.key}
-                onClick={() => { onMoveStatus(tarefa, col.key); setShowMover(false); }}
-                className="text-[0.6rem] px-2 py-0.5 rounded-full font-semibold text-white transition-opacity hover:opacity-80"
-                style={{ backgroundColor: col.color }}
-              >
-                {col.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── AgendaCalendario ───────────────────────────────────────────────────────
+// ── Componente de Agenda / Calendário Mensal ────────────────────────────────
 function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTarefa?: (t: any) => void }) {
   const hoje = new Date();
   const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+
   const [mes, setMes] = useState(hoje.getMonth());
   const [ano, setAno] = useState(hoje.getFullYear());
 
@@ -844,11 +681,14 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
   const mesAnterior = () => { if (mes === 0) { setMes(11); setAno(a => a - 1); } else setMes(m => m - 1); };
   const proximoMes  = () => { if (mes === 11) { setMes(0); setAno(a => a + 1); } else setMes(m => m + 1); };
 
+  // Monta grid do calendário (lunedì = index 0)
   const primeiroDia = new Date(ano, mes, 1);
   const ultimoDia   = new Date(ano, mes + 1, 0);
+  // getDay(): 0=dom,1=seg...6=sab → queremos seg=0
   const offsetInicio = (primeiroDia.getDay() + 6) % 7;
   const totalCelulas = Math.ceil((offsetInicio + ultimoDia.getDate()) / 7) * 7;
 
+  // Index de tarefas por data "YYYY-MM-DD"
   const tarefasPorDia = tarefas.reduce<Record<string, any[]>>((acc, t) => {
     if (!t.data_vencimento) return acc;
     const d = t.data_vencimento.slice(0, 10);
@@ -861,7 +701,7 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
     const d = t.data_vencimento?.slice(0, 10) || "";
     if (d < hojeStr) return "bg-[#8b2020] text-white";
     if (d === hojeStr) return "bg-[#c9a84c] text-white";
-    return "bg-[#a08a50] text-white";
+    return "bg-[#a08a50] text-white"; // próximos dias
   };
 
   const cells = Array.from({ length: totalCelulas }, (_, i) => {
@@ -873,13 +713,26 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      {/* Header do calendário */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <button onClick={mesAnterior} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold">‹</button>
-          <h2 className="font-display text-lg font-bold tracking-tight">{nomesMeses[mes]} · {ano}</h2>
-          <button onClick={proximoMes} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold">›</button>
-          <button onClick={irParaHoje} className="px-3 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors">Hoje</button>
+          <button
+            onClick={mesAnterior}
+            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold"
+          >‹</button>
+          <h2 className="font-display text-lg font-bold tracking-tight">
+            {nomesMeses[mes]} · {ano}
+          </h2>
+          <button
+            onClick={proximoMes}
+            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors text-sm font-bold"
+          >›</button>
+          <button
+            onClick={irParaHoje}
+            className="px-3 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors"
+          >Hoje</button>
         </div>
+        {/* Legenda */}
         <div className="hidden sm:flex items-center gap-4 text-[0.65rem] font-semibold">
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#8b2020]" /> Vencida</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#c9a84c]" /> Hoje</span>
@@ -887,38 +740,63 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d6cfc4]" /> Concluída</span>
         </div>
       </div>
+
+      {/* Dias da semana */}
       <div className="grid grid-cols-7 border-b border-border">
         {diasSemana.map(d => (
-          <div key={d} className="py-2 text-center text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground">{d}</div>
+          <div key={d} className="py-2 text-center text-[0.65rem] font-bold uppercase tracking-widest text-muted-foreground">
+            {d}
+          </div>
         ))}
       </div>
+
+      {/* Células */}
       <div className="grid grid-cols-7">
         {cells.map((cell, idx) => {
-          if (!cell) return <div key={`empty-${idx}`} className="min-h-[100px] border-b border-r border-border bg-muted/20 last:border-r-0" />;
+          if (!cell) {
+            return (
+              <div
+                key={`empty-${idx}`}
+                className="min-h-[100px] border-b border-r border-border bg-muted/20 last:border-r-0"
+              />
+            );
+          }
           const { diaNum, diaStr } = cell;
           const isHoje = diaStr === hojeStr;
           const isWeekend = ((idx % 7) === 5 || (idx % 7) === 6);
           const tarefasDia = tarefasPorDia[diaStr] || [];
+
           return (
             <div
               key={diaStr}
-              className={`min-h-[100px] border-b border-r border-border p-1.5 last:border-r-0 relative transition-colors ${isWeekend ? "bg-muted/30" : "bg-card"} ${isHoje ? "ring-2 ring-inset ring-accent" : ""}`}
+              className={`min-h-[100px] border-b border-r border-border p-1.5 last:border-r-0 relative transition-colors
+                ${isWeekend ? "bg-muted/30" : "bg-card"}
+                ${isHoje ? "ring-2 ring-inset ring-accent" : ""}
+              `}
             >
               <div className="flex items-center gap-1 mb-1">
-                <span className={`text-xs font-semibold leading-none ${isHoje ? "bg-accent text-white rounded-full w-5 h-5 flex items-center justify-center text-[0.65rem] font-bold" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>
+                <span className={`text-xs font-semibold leading-none
+                  ${isHoje ? "bg-accent text-white rounded-full w-5 h-5 flex items-center justify-center text-[0.65rem] font-bold" : isWeekend ? "text-muted-foreground" : "text-foreground"}
+                `}>
                   {diaNum}
                 </span>
                 {isHoje && <span className="text-[0.55rem] font-bold uppercase tracking-wide text-accent">Hoje</span>}
               </div>
               <div className="space-y-0.5">
                 {tarefasDia.slice(0, 3).map((t: any) => (
-                  <div key={t.id} title={t.titulo} onClick={() => onEditTarefa?.(t)}
-                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug cursor-pointer hover:opacity-80 transition-opacity ${corTarefa(t)}`}>
+                  <div
+                    key={t.id}
+                    title={t.titulo}
+                    onClick={() => onEditTarefa?.(t)}
+                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug cursor-pointer hover:opacity-80 transition-opacity ${corTarefa(t)}`}
+                  >
                     {t.titulo}
                   </div>
                 ))}
                 {tarefasDia.length > 3 && (
-                  <div className="text-[0.6rem] text-muted-foreground font-semibold px-1">+{tarefasDia.length - 3} mais</div>
+                  <div className="text-[0.6rem] text-muted-foreground font-semibold px-1">
+                    +{tarefasDia.length - 3} mais
+                  </div>
                 )}
               </div>
             </div>
