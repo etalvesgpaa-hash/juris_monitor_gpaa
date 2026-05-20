@@ -299,9 +299,22 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
       for (const intim of novas) {
         if (!intim._numProc) continue;
         const intimLimpo = intim._numProc.replace(/\D/g, "");
-        if (!intimLimpo) continue;
+        if (!intimLimpo || intimLimpo.length < 7) continue;
 
-        const bate = procLimpas.some(p => intimLimpo.includes(p) || p.includes(intimLimpo));
+        // Matching robusto: considera igual se os dígitos relevantes coincidem.
+        // Extrai os 7 dígitos iniciais (NNNNNNN) + 4 do ano para comparação núcleo.
+        const nucleoIntim = intimLimpo.slice(0, 7) + intimLimpo.slice(9, 13);
+        const bate = procLimpas.some(p => {
+          if (!p || p.length < 7) return false;
+          // Igualdade exata após limpar
+          if (p === intimLimpo) return true;
+          // Um contém o outro (casos de número parcial)
+          if (intimLimpo.includes(p) || p.includes(intimLimpo)) return true;
+          // Comparação por núcleo (7 dígitos do número + 4 do ano)
+          const nucleoCliente = p.slice(0, 7) + p.slice(9, 13);
+          if (nucleoCliente.length >= 11 && nucleoIntim.length >= 11 && nucleoCliente === nucleoIntim) return true;
+          return false;
+        });
         if (!bate) continue;
 
         const chave = `${cliente.id}::${intim._id}`;
@@ -531,9 +544,20 @@ export function useAutoFetchIntimacoes() {
         const novasDeHoje = novas.filter(n => n._data === hoje);
         console.log("[AutoFetch] hoje:", hoje, "novas total:", novas.length, "novasDeHoje:", novasDeHoje.length);
 
-        // CORRIGIDO: verifica notificacoes_enviadas (não intimacoes) para saber
-        // se o e-mail JÁ foi disparado. A tabela intimacoes sempre terá os IDs
-        // após o primeiro login, causando recentementeNovas=[] eternamente.
+        // CORRIGIDO Bug 2: "recentementeNovas" = IDs que não existiam no Supabase
+        // ANTES desta execução (i.e., foram inseridos agora pelo syncParaSupabase).
+        // Usamos os IDs que já estavam no banco antes do sync como referência.
+        let idsJaNoSupabaseAntes = new Set<string>();
+        if (novasDeHoje.length > 0) {
+          const { data: jaNoSupabase } = await supabase
+            .from("intimacoes")
+            .select("id")
+            .eq("user_id", user.id)
+            .in("id", novasDeHoje.map(n => n._id).filter(Boolean));
+          idsJaNoSupabaseAntes = new Set((jaNoSupabase || []).map((r: any) => r.id));
+        }
+
+        // Também verifica notificacoes_enviadas para não reenviar e-mail
         let idsJaNotificados = new Set<string>();
         if (novasDeHoje.length > 0) {
           const { data: jaNotificados } = await supabase
@@ -545,8 +569,11 @@ export function useAutoFetchIntimacoes() {
           idsJaNotificados = new Set((jaNotificados || []).map((r: any) => r.intimacao_id));
         }
 
+        // recentementeNovas = novas de hoje que ainda não foram notificadas por e-mail
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNotificados.has(n._id));
-        console.log("[AutoFetch] idsJaNotificados:", idsJaNotificados.size, "recentementeNovas:", recentementeNovas.length);
+        // paraExibirNoToast = novas de hoje que não estavam no Supabase antes (realmente novas)
+        const paraExibirNoToast = novasDeHoje.filter(n => !idsJaNoSupabaseAntes.has(n._id));
+        console.log("[AutoFetch] idsJaNoSupabaseAntes:", idsJaNoSupabaseAntes.size, "recentementeNovas:", recentementeNovas.length, "paraExibirNoToast:", paraExibirNoToast.length);
 
         // 5b. Sincroniza para Supabase
         await syncParaSupabase(uniq, user.id).catch(() => {});
@@ -674,15 +701,15 @@ export function useAutoFetchIntimacoes() {
         }
 
         toast.dismiss("auto-fetch");
-        if (novasComResumo.length > 0) {
-          toast.success(`✅ ${novasComResumo.length} nova(s) intimação(ões) encontrada(s)!`, { duration: 5000 });
+        if (paraExibirNoToast.length > 0) {
+          toast.success(`✅ ${paraExibirNoToast.length} nova(s) intimação(ões) encontrada(s)!`, { duration: 5000 });
         } else {
           toast.success("Intimações atualizadas — nenhuma novidade.", { duration: 3000 });
         }
 
         // Emite evento com a contagem exata de novas para o TopNav
         window.dispatchEvent(new CustomEvent("intimacoes-novas-count", {
-          detail: { count: novasComResumo.length },
+          detail: { count: paraExibirNoToast.length },
         }));
 
         // 7. Notificações automáticas por e-mail — agora com resumo_ia preenchido
