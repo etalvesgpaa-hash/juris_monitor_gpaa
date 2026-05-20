@@ -578,11 +578,11 @@ function AgendaCalendario({ tarefas, onNavigate }: { tarefas: any[]; onNavigate?
   }, {});
 
   const corTarefa = (t: any) => {
-    if (t.status === "concluida") return "bg-[#d6cfc4] text-[#6b6358]";
+    if (t.status === "concluida") return "bg-[#1e40af] text-white";           // azul — concluída
     const d = t.data_vencimento?.slice(0, 10) || "";
-    if (d < hojeStr) return "bg-[#8b2020] text-white";
-    if (d === hojeStr) return "bg-[#c9a84c] text-white";
-    return "bg-[#a08a50] text-white"; // próximos dias
+    if (d < hojeStr) return "bg-[#dc2626] text-white";                        // vermelho — vencida
+    if (d === hojeStr) return "bg-[#d97706] text-white";                      // amarelo — hoje
+    return "bg-[#16a34a] text-white";                                         // verde — próximos dias
   };
 
   const cells = Array.from({ length: totalCelulas }, (_, i) => {
@@ -615,10 +615,10 @@ function AgendaCalendario({ tarefas, onNavigate }: { tarefas: any[]; onNavigate?
         </div>
         {/* Legenda */}
         <div className="hidden sm:flex items-center gap-4 text-[0.65rem] font-semibold">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#8b2020]" /> Vencida</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#c9a84c]" /> Hoje</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#a08a50]" /> Próximos dias</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d6cfc4]" /> Concluída</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#dc2626]" /> Vencida</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d97706]" /> Hoje</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#16a34a]" /> Próximos dias</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#1e40af]" /> Concluída</span>
         </div>
       </div>
 

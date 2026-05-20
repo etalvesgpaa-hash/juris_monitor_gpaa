@@ -767,6 +767,33 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
   );
 }
 
+// ── Helpers de status para o card do Kanban ────────────────────────────────
+function statusKanbanLabel(status: string): string {
+  if (status === "triagem" || status === "pendente") return "Triagem";
+  if (status === "ag_documentos") return "Ag. Documentos";
+  if (status === "ag_cliente")    return "Ag. Cliente";
+  if (status === "elaboracao")    return "Em Elaboração";
+  if (status === "andamento")     return "Em Andamento";
+  if (status === "audiencia")     return "Audiência";
+  if (status === "ag_tribunal")   return "Ag. Tribunal";
+  if (status === "concluida")     return "Concluída";
+  if (status === "cancelada")     return "Cancelada";
+  return status;
+}
+
+function statusKanbanStyle(status: string): { bg: string; text: string } {
+  if (status === "triagem" || status === "pendente") return { bg: "#f3f4f6", text: "#374151" };
+  if (status === "ag_documentos") return { bg: "#fff7ed", text: "#92400e" };
+  if (status === "ag_cliente")    return { bg: "#e0f2fe", text: "#075985" };
+  if (status === "elaboracao")    return { bg: "#f5f3ff", text: "#5b21b6" };
+  if (status === "andamento")     return { bg: "#eff6ff", text: "#1e3a8a" };
+  if (status === "audiencia")     return { bg: "#fef2f2", text: "#991b1b" };
+  if (status === "ag_tribunal")   return { bg: "#faf5ff", text: "#4c1d95" };
+  if (status === "concluida")     return { bg: "#dcfce7", text: "#14532d" };
+  if (status === "cancelada")     return { bg: "#f3f4f6", text: "#6b7280" };
+  return { bg: "#f3f4f6", text: "#374151" };
+}
+
 // ── KanbanCard ─────────────────────────────────────────────────────────────
 function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus }: {
   tarefa: any; isVencida: boolean; localidade: string; processoNumero: string;
@@ -811,6 +838,16 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
               {tarefa.prioridade}
             </span>
           )}
+        </div>
+
+        {/* Badge de status */}
+        <div className="mb-1.5">
+          <span
+            className="text-[0.58rem] px-1.5 py-0.5 rounded-full font-bold uppercase leading-tight"
+            style={{ backgroundColor: statusKanbanStyle(tarefa.status).bg, color: statusKanbanStyle(tarefa.status).text }}
+          >
+            {statusKanbanLabel(tarefa.status)}
+          </span>
         </div>
 
         {/* Localidade */}
