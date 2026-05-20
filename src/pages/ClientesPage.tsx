@@ -690,7 +690,7 @@ export function ClientesPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minWidth: "900px" }}>
+    <div className="w-full min-w-0">
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
@@ -707,7 +707,7 @@ export function ClientesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto shrink-0">
           <Button
             variant="outline"
             size="sm"
@@ -755,7 +755,7 @@ export function ClientesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: "repeat(3, minmax(200px, 1fr))" }}>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-5">
           <div className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">
             TOTAL CLIENTES
@@ -1383,7 +1383,7 @@ export function ClientesPage() {
 
       {/* Rodapé */}
       {filtered.length > 0 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-sm text-muted-foreground">
           <div>
             Exibindo {filtered.length} de {clientes.length} cliente(s)
           </div>
