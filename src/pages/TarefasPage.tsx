@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List } from "lucide-react";
 
-type FilterType = "todas" | "pendente" | "andamento" | "ag_cliente" | "ag_tribunal" | "concluidas" | "canceladas";
+type FilterType = "todas" | "triagem" | "ag_documentos" | "ag_cliente" | "elaboracao" | "andamento" | "audiencia" | "ag_tribunal" | "concluidas" | "canceladas" | "pendente";
 type ViewMode = "kanban" | "lista" | "agenda";
 
 /** Formata data YYYY-MM-DD para DD/MM/YYYY sem offset de fuso horário */
@@ -52,13 +52,32 @@ function getAvatarColor(name: string): string {
 }
 
 // ── Colunas do Kanban ──────────────────────────────────────────────────────
+// Cada coluna lista os status do banco que ela exibe (compatibilidade com dados antigos)
 const KANBAN_COLUMNS = [
-  { key: "pendente",    label: "AGUARDANDO",    color: "#6b7280" },
-  { key: "andamento",   label: "EM ANDAMENTO",  color: "#1565c0" },
-  { key: "ag_cliente",  label: "AG. CLIENTE",   color: "#b45309" },
-  { key: "ag_tribunal", label: "AG. TRIBUNAL",  color: "#6d28d9" },
-  { key: "concluida",   label: "CONCLUÍDOS",    color: "#166534" },
-];
+  { key: "triagem",       statusKeys: ["triagem", "pendente"], label: "TRIAGEM",               color: "#6b7280" },
+  { key: "ag_documentos", statusKeys: ["ag_documentos"],       label: "AG. DOCUMENTOS",        color: "#b45309" },
+  { key: "ag_cliente",    statusKeys: ["ag_cliente"],          label: "AG. CLIENTE",           color: "#0369a1" },
+  { key: "elaboracao",    statusKeys: ["elaboracao"],          label: "EM ELABORAÇÃO",         color: "#7c3aed" },
+  { key: "andamento",     statusKeys: ["andamento"],           label: "EM ANDAMENTO",          color: "#1565c0" },
+  { key: "audiencia",     statusKeys: ["audiencia"],           label: "AUDIÊNCIA/DILIGÊNCIA",  color: "#b91c1c" },
+  { key: "ag_tribunal",   statusKeys: ["ag_tribunal"],         label: "AG. TRIBUNAL",          color: "#6d28d9" },
+  { key: "concluida",     statusKeys: ["concluida"],           label: "CONCLUÍDOS",            color: "#166534" },
+] as const;
+
+// Status aceitos pelo banco (novos + legados para compatibilidade)
+const ALL_STATUS_OPTIONS = [
+  { value: "triagem",       label: "Triagem" },
+  { value: "ag_documentos", label: "Aguardando Documentos" },
+  { value: "ag_cliente",    label: "Aguardando Cliente" },
+  { value: "elaboracao",    label: "Em Elaboração" },
+  { value: "andamento",     label: "Em Andamento" },
+  { value: "audiencia",     label: "Audiência/Diligência" },
+  { value: "ag_tribunal",   label: "Aguardando Tribunal" },
+  { value: "concluida",     label: "Concluída" },
+  { value: "cancelada",     label: "Cancelada" },
+  // legados — mantidos para dados já existentes
+  { value: "pendente",      label: "Aguardando (legado)" },
+] as const;
 
 export function TarefasPage() {
   const { data: tarefas = [], isLoading } = useTarefas();
@@ -218,13 +237,17 @@ export function TarefasPage() {
   };
 
   const filtered = tarefas.filter((t) => {
-    if (filter === "pendente") return t.status === "pendente";
-    if (filter === "andamento") return t.status === "andamento";
-    if (filter === "ag_cliente") return t.status === "ag_cliente";
-    if (filter === "ag_tribunal") return t.status === "ag_tribunal";
-    if (filter === "concluidas") return t.status === "concluida";
-    if (filter === "canceladas") return t.status === "cancelada";
-    // filtro "todas" respeita o toggle de concluídas
+    if (filter === "triagem")       return t.status === "triagem" || t.status === "pendente";
+    if (filter === "ag_documentos") return t.status === "ag_documentos";
+    if (filter === "ag_cliente")    return t.status === "ag_cliente";
+    if (filter === "elaboracao")    return t.status === "elaboracao";
+    if (filter === "andamento")     return t.status === "andamento";
+    if (filter === "audiencia")     return t.status === "audiencia";
+    if (filter === "ag_tribunal")   return t.status === "ag_tribunal";
+    if (filter === "concluidas")    return t.status === "concluida";
+    if (filter === "canceladas")    return t.status === "cancelada";
+    if (filter === "pendente")      return t.status === "pendente";
+    // "todas" — respeita toggle de concluídas
     if (!showConcluidas && t.status === "concluida") return false;
     return true;
   });
@@ -344,12 +367,9 @@ export function TarefasPage() {
             <div>
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Status</label>
               <select className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="pendente">Aguardando</option>
-                <option value="andamento">Em Andamento</option>
-                <option value="ag_cliente">Aguardando Cliente</option>
-                <option value="ag_tribunal">Aguardando Tribunal</option>
-                <option value="concluida">Concluída</option>
-                <option value="cancelada">Cancelada</option>
+                {ALL_STATUS_OPTIONS.filter(o => o.value !== "pendente").map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
             </div>
             <div className="md:col-span-2 bg-accent/5 rounded-xl border border-accent/20 p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -445,13 +465,16 @@ export function TarefasPage() {
       {viewMode !== "kanban" && (
         <div className="flex gap-2 mb-5 flex-wrap">
           {([
-            ["todas", "Todas"],
-            ["pendente", "Aguardando"],
-            ["andamento", "Andamento"],
-            ["ag_cliente", "Ag. Cliente"],
-            ["ag_tribunal", "Ag. Tribunal"],
-            ["concluidas", "Concluídas"],
-            ["canceladas", "Canceladas"],
+            ["todas",        "Todas"],
+            ["triagem",      "Triagem"],
+            ["ag_documentos","Ag. Docs"],
+            ["ag_cliente",   "Ag. Cliente"],
+            ["elaboracao",   "Elaboração"],
+            ["andamento",    "Andamento"],
+            ["audiencia",    "Audiência"],
+            ["ag_tribunal",  "Ag. Tribunal"],
+            ["concluidas",   "Concluídas"],
+            ["canceladas",   "Canceladas"],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -493,20 +516,30 @@ export function TarefasPage() {
             const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
             const processo = t.processo;
             const statusTarefaColor = (status: string) => {
-              if (status === "concluida") return "text-green-ok bg-green-ok/10";
-              if (status === "cancelada") return "text-muted-foreground bg-muted";
-              if (status === "andamento") return "text-blue-500 bg-blue-500/10";
-              if (status === "ag_cliente") return "text-amber-500 bg-amber-500/10";
-              if (status === "ag_tribunal") return "text-purple-500 bg-purple-500/10";
+              if (status === "concluida")     return "text-green-ok bg-green-ok/10";
+              if (status === "cancelada")     return "text-muted-foreground bg-muted";
+              if (status === "triagem")       return "text-gray-600 bg-gray-100";
+              if (status === "pendente")      return "text-gray-600 bg-gray-100";
+              if (status === "ag_documentos") return "text-amber-600 bg-amber-100";
+              if (status === "ag_cliente")    return "text-sky-600 bg-sky-100";
+              if (status === "elaboracao")    return "text-violet-600 bg-violet-100";
+              if (status === "andamento")     return "text-blue-600 bg-blue-100";
+              if (status === "audiencia")     return "text-red-600 bg-red-100";
+              if (status === "ag_tribunal")   return "text-purple-600 bg-purple-100";
               return "text-muted-foreground bg-muted/50";
             };
             const statusTarefaLabel = (status: string) => {
-              if (status === "concluida") return "Concluída";
-              if (status === "cancelada") return "Cancelada";
-              if (status === "andamento") return "Em Andamento";
-              if (status === "ag_cliente") return "Ag. Cliente";
-              if (status === "ag_tribunal") return "Ag. Tribunal";
-              return "Aguardando";
+              if (status === "concluida")     return "Concluída";
+              if (status === "cancelada")     return "Cancelada";
+              if (status === "triagem")       return "Triagem";
+              if (status === "pendente")      return "Triagem";
+              if (status === "ag_documentos") return "Ag. Documentos";
+              if (status === "ag_cliente")    return "Ag. Cliente";
+              if (status === "elaboracao")    return "Em Elaboração";
+              if (status === "andamento")     return "Em Andamento";
+              if (status === "audiencia")     return "Audiência/Diligência";
+              if (status === "ag_tribunal")   return "Ag. Tribunal";
+              return status;
             };
             return (
               <div
@@ -668,24 +701,24 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
 }) {
   const now = new Date();
 
-  const tarefasPorColuna = (colKey: string) =>
-    tarefas.filter((t) => {
-      if (colKey === "pendente")    return t.status === "pendente";
-      if (colKey === "andamento")   return t.status === "andamento";
-      if (colKey === "ag_cliente")  return t.status === "ag_cliente";
-      if (colKey === "ag_tribunal") return t.status === "ag_tribunal";
-      if (colKey === "concluida")   return t.status === "concluida";
-      return false;
-    });
+  const tarefasPorColuna = (col: typeof KANBAN_COLUMNS[number]) =>
+    tarefas.filter(t => (col.statusKeys as readonly string[]).includes(t.status));
 
   const colunas = showConcluidas
     ? KANBAN_COLUMNS
     : KANBAN_COLUMNS.filter(c => c.key !== "concluida");
 
+  // Com 7 colunas visíveis: 2 cols mobile → 4 tablet → 7 desktop
+  // Com 8 colunas visíveis: 2 cols mobile → 4 tablet → 8 desktop
+  const totalCols = colunas.length;
+  const gridClass = totalCols <= 7
+    ? "grid-cols-2 md:grid-cols-4 lg:grid-cols-7"
+    : "grid-cols-2 md:grid-cols-4 lg:grid-cols-8";
+
   return (
-    <div className={`grid gap-3 ${showConcluidas ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-5" : "grid-cols-2 md:grid-cols-2 lg:grid-cols-4"}`}>
+    <div className={`grid gap-2 ${gridClass}`}>
       {colunas.map((col) => {
-        const cards = tarefasPorColuna(col.key);
+        const cards = tarefasPorColuna(col);
         return (
           <div key={col.key} className="flex flex-col min-w-0">
             {/* Cabeçalho da coluna */}
@@ -743,7 +776,10 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
   const [showMover, setShowMover] = useState(false);
 
   const prazoFormatado = tarefa.data_vencimento ? fmtPrazoKanban(tarefa.data_vencimento) : null;
-  const opcoesMovimento = KANBAN_COLUMNS.filter((c) => c.key !== currentColKey);
+  // Exclui a coluna atual (verifica se o status da tarefa está nos statusKeys da coluna)
+  const opcoesMovimento = KANBAN_COLUMNS.filter(
+    (c) => !(c.statusKeys as readonly string[]).includes(tarefa.status) && c.key !== currentColKey
+  );
 
   const prioridadeStyle = (p: string) => {
     if (p === "alta")  return { bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" };
@@ -886,11 +922,11 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
   }, {});
 
   const corTarefa = (t: any) => {
-    if (t.status === "concluida") return "bg-[#d6cfc4] text-[#6b6358]";
+    if (t.status === "concluida") return "bg-[#1e40af] text-white";           // azul — concluída
     const d = t.data_vencimento?.slice(0, 10) || "";
-    if (d < hojeStr) return "bg-[#8b2020] text-white";
-    if (d === hojeStr) return "bg-[#c9a84c] text-white";
-    return "bg-[#a08a50] text-white";
+    if (d < hojeStr) return "bg-[#dc2626] text-white";                        // vermelho — vencida
+    if (d === hojeStr) return "bg-[#d97706] text-white";                      // amarelo — hoje
+    return "bg-[#16a34a] text-white";                                         // verde — próximos dias
   };
 
   const cells = Array.from({ length: totalCelulas }, (_, i) => {
@@ -910,10 +946,10 @@ function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTar
           <button onClick={irParaHoje} className="px-3 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors">Hoje</button>
         </div>
         <div className="hidden sm:flex items-center gap-4 text-[0.65rem] font-semibold">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#8b2020]" /> Vencida</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#c9a84c]" /> Hoje</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#a08a50]" /> Próximos dias</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d6cfc4]" /> Concluída</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#dc2626]" /> Vencida</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#d97706]" /> Hoje</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#16a34a]" /> Próximos dias</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#1e40af]" /> Concluída</span>
         </div>
       </div>
       <div className="grid grid-cols-7 border-b border-border">
