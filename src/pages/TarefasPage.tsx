@@ -840,15 +840,34 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
           )}
         </div>
 
-        {/* Badge de status */}
-        <div className="mb-1.5">
-          <span
-            className="text-[0.58rem] px-1.5 py-0.5 rounded-full font-bold uppercase leading-tight"
-            style={{ backgroundColor: statusKanbanStyle(tarefa.status).bg, color: statusKanbanStyle(tarefa.status).text }}
-          >
-            {statusKanbanLabel(tarefa.status)}
-          </span>
-        </div>
+        {/* Badge de prazo */}
+        {(() => {
+          const hoje = new Date().toISOString().slice(0, 10);
+          const prazo = tarefa.data_vencimento?.slice(0, 10) || "";
+          let label = "";
+          let bg = "";
+          let text = "";
+          if (tarefa.status === "concluida") {
+            label = "Concluída"; bg = "#1e40af"; text = "#fff";
+          } else if (prazo && prazo < hoje) {
+            label = "Vencida"; bg = "#dc2626"; text = "#fff";
+          } else if (prazo && prazo === hoje) {
+            label = "Hoje"; bg = "#d97706"; text = "#fff";
+          } else if (prazo && prazo > hoje) {
+            label = "Próximos dias"; bg = "#16a34a"; text = "#fff";
+          }
+          if (!label) return null;
+          return (
+            <div className="mb-1.5">
+              <span
+                className="text-[0.58rem] px-1.5 py-0.5 rounded-full font-bold leading-tight"
+                style={{ backgroundColor: bg, color: text }}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Localidade */}
         {localidade && <p className="text-[0.68rem] text-muted-foreground mb-1 truncate">{localidade}</p>}
