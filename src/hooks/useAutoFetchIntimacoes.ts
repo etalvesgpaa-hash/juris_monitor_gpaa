@@ -515,7 +515,7 @@ export function useAutoFetchIntimacoes() {
               novas.push({
                 ...it,
                 _id:             id,
-                _data:           dataReal,
+                _data:           dataReal.slice(0, 10), // garante YYYY-MM-DD sem horário
                 _lida:           existente?._lida || false,
                 _status:         existente?._status || "ativa",
                 _resumoIA:       existente?._resumoIA || null,
@@ -541,12 +541,16 @@ export function useAutoFetchIntimacoes() {
 
         // 5. Filtra apenas as intimações de HOJE (dias[0])
         const hoje = dias[0];
-        const novasDeHoje = novas.filter(n => n._data === hoje);
-        console.log("[AutoFetch] hoje:", hoje, "novas total:", novas.length, "novasDeHoje:", novasDeHoje.length);
+        // CORRIGIDO: normaliza _data para YYYY-MM-DD antes de comparar
+        // (a AASP às vezes retorna "2026-05-21T00:00:00" com horário)
+        const novasDeHoje = novas.filter(n => {
+          const d = (n._data || "").slice(0, 10);
+          return d === hoje;
+        });
+        console.log("[AutoFetch] hoje:", hoje, "novas total:", novas.length, "novasDeHoje:", novasDeHoje.length, "datas encontradas:", [...new Set(novas.map(n => (n._data || "").slice(0, 10)))]);
 
-        // CORRIGIDO Bug 2: "recentementeNovas" = IDs que não existiam no Supabase
-        // ANTES desta execução (i.e., foram inseridos agora pelo syncParaSupabase).
-        // Usamos os IDs que já estavam no banco antes do sync como referência.
+        // 5b. Consulta IDs já no Supabase ANTES de sincronizar
+        // (deve vir antes do syncParaSupabase para saber o que é realmente novo)
         let idsJaNoSupabaseAntes = new Set<string>();
         if (novasDeHoje.length > 0) {
           const { data: jaNoSupabase } = await supabase
@@ -555,9 +559,10 @@ export function useAutoFetchIntimacoes() {
             .eq("user_id", user.id)
             .in("id", novasDeHoje.map(n => n._id).filter(Boolean));
           idsJaNoSupabaseAntes = new Set((jaNoSupabase || []).map((r: any) => r.id));
+          console.log("[AutoFetch] idsJaNoSupabaseAntes:", idsJaNoSupabaseAntes.size, "de", novasDeHoje.length, "de hoje");
         }
 
-        // Também verifica notificacoes_enviadas para não reenviar e-mail
+        // Verifica notificacoes_enviadas para não reenviar e-mail
         let idsJaNotificados = new Set<string>();
         if (novasDeHoje.length > 0) {
           const { data: jaNotificados } = await supabase
@@ -567,18 +572,19 @@ export function useAutoFetchIntimacoes() {
             .eq("status", "enviado")
             .in("intimacao_id", novasDeHoje.map(n => n._id).filter(Boolean));
           idsJaNotificados = new Set((jaNotificados || []).map((r: any) => r.intimacao_id));
+          console.log("[AutoFetch] idsJaNotificados:", idsJaNotificados.size);
         }
 
-        // recentementeNovas = novas de hoje que ainda não foram notificadas por e-mail
+        // recentementeNovas = de hoje sem e-mail enviado ainda
         const recentementeNovas = novasDeHoje.filter(n => !idsJaNotificados.has(n._id));
-        // paraExibirNoToast = novas de hoje que não estavam no Supabase antes (realmente novas)
+        // paraExibirNoToast = de hoje que não existiam no banco antes desta execução
         const paraExibirNoToast = novasDeHoje.filter(n => !idsJaNoSupabaseAntes.has(n._id));
-        console.log("[AutoFetch] idsJaNoSupabaseAntes:", idsJaNoSupabaseAntes.size, "recentementeNovas:", recentementeNovas.length, "paraExibirNoToast:", paraExibirNoToast.length);
+        console.log("[AutoFetch] recentementeNovas:", recentementeNovas.length, "paraExibirNoToast:", paraExibirNoToast.length);
 
-        // 5b. Sincroniza para Supabase
+        // 5c. Sincroniza para Supabase (depois das consultas acima)
         await syncParaSupabase(uniq, user.id).catch(() => {});
 
-        // 5c. Relê resumo_ia do Supabase — fonte de verdade
+        // 5d. Relê resumo_ia do Supabase — fonte de verdade
         const resumosNoSupabase = new Map<string, string | null>();
         if (novasDeHoje.length > 0) {
           try {
