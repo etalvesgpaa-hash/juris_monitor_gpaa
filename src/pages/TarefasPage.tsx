@@ -6,7 +6,7 @@ import { useProcessos } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List } from "lucide-react";
+import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List, Eye, Clock, User, FileText, Tag } from "lucide-react";
 
 type FilterType = "todas" | "triagem" | "ag_documentos" | "ag_cliente" | "elaboracao" | "andamento" | "audiencia" | "ag_tribunal" | "concluidas" | "canceladas" | "pendente";
 type ViewMode = "kanban" | "lista" | "agenda";
@@ -99,6 +99,7 @@ export function TarefasPage() {
   const [filter, setFilter] = useState<FilterType>("todas");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [showConcluidas, setShowConcluidas] = useState(false);
+  const [tarefaDetalhe, setTarefaDetalhe] = useState<typeof tarefas[0] | null>(null);
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
@@ -503,6 +504,7 @@ export function TarefasPage() {
           onEdit={handleEdit}
           onDelete={handleDelete}
           onMoveStatus={handleMoveStatus}
+          onVerDetalhes={(t) => setTarefaDetalhe(t)}
         />
       ) : viewMode === "agenda" ? (
         <AgendaCalendario tarefas={tarefas} onEditTarefa={handleEdit} />
@@ -673,11 +675,212 @@ export function TarefasPage() {
           </div>
         )}
       </div>
+
+      {/* ── Modal de Detalhe ── */}
+      {tarefaDetalhe && (
+        <TarefaDetalheModal
+          tarefa={tarefaDetalhe}
+          userName={userName}
+          userInitials={userInitials}
+          userAvatarColor={userAvatarColor}
+          getLocalidade={getLocalidade}
+          onClose={() => setTarefaDetalhe(null)}
+          onEdit={() => { setTarefaDetalhe(null); handleEdit(tarefaDetalhe); }}
+          onDelete={() => { setTarefaDetalhe(null); handleDelete(tarefaDetalhe.id); }}
+          onMoveStatus={(status) => { handleMoveStatus(tarefaDetalhe, status); setTarefaDetalhe(null); }}
+        />
+      )}
     </div>
   );
 }
 
-// ── InputField ─────────────────────────────────────────────────────────────
+// ── TarefaDetalheModal ──────────────────────────────────────────────────────
+function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, getLocalidade, onClose, onEdit, onDelete, onMoveStatus }: {
+  tarefa: any; userName: string; userInitials: string; userAvatarColor: string;
+  getLocalidade: (t: any) => string;
+  onClose: () => void; onEdit: () => void; onDelete: () => void;
+  onMoveStatus: (status: string) => void;
+}) {
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const prazo = tarefa.data_vencimento?.slice(0, 10) || "";
+  const processo = tarefa.processo as any;
+  const cliente = processo?.cliente as any;
+  const localidade = getLocalidade(tarefa);
+
+  // Badge de prazo
+  const prazoBadge = () => {
+    if (tarefa.status === "concluida") return { label: "Concluída", bg: "#1e40af", text: "#fff" };
+    if (!prazo) return null;
+    if (prazo < hojeStr) return { label: "Vencida", bg: "#dc2626", text: "#fff" };
+    if (prazo === hojeStr) return { label: "Hoje", bg: "#d97706", text: "#fff" };
+    return { label: "Próximos dias", bg: "#16a34a", text: "#fff" };
+  };
+  const badge = prazoBadge();
+
+  const colAtual = KANBAN_COLUMNS.find(c =>
+    (c.statusKeys as readonly string[]).includes(tarefa.status)
+  );
+
+  const prioridadeLabel: Record<string, string> = {
+    alta: "Alta", media: "Média", baixa: "Baixa",
+  };
+  const prioridadeCor: Record<string, string> = {
+    alta: "text-red-600 bg-red-50 border border-red-200",
+    media: "text-yellow-700 bg-yellow-50 border border-yellow-200",
+    baixa: "text-gray-600 bg-gray-100 border border-gray-200",
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header do modal */}
+        <div className="flex items-start justify-between p-5 border-b border-border">
+          <div className="flex-1 min-w-0 pr-3">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              {colAtual && (
+                <span
+                  className="text-[0.6rem] px-2 py-0.5 rounded-full font-bold text-white"
+                  style={{ backgroundColor: colAtual.color }}
+                >
+                  {colAtual.label}
+                </span>
+              )}
+              {badge && (
+                <span
+                  className="text-[0.6rem] px-2 py-0.5 rounded-full font-bold"
+                  style={{ backgroundColor: badge.bg, color: badge.text }}
+                >
+                  {badge.label}
+                </span>
+              )}
+              {tarefa.prioridade && (
+                <span className={`text-[0.6rem] px-2 py-0.5 rounded-full font-bold ${prioridadeCor[tarefa.prioridade] || ""}`}>
+                  {prioridadeLabel[tarefa.prioridade] || tarefa.prioridade}
+                </span>
+              )}
+            </div>
+            <h2 className={`text-lg font-bold text-foreground leading-snug ${tarefa.status === "concluida" ? "line-through text-muted-foreground" : ""}`}>
+              {tarefa.titulo}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Corpo */}
+        <div className="p-5 space-y-4">
+
+          {/* Prazo */}
+          {tarefa.data_vencimento && (
+            <div className="flex items-start gap-3">
+              <Clock className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Prazo</p>
+                <p className={`text-sm font-semibold ${prazo < hojeStr && tarefa.status !== "concluida" ? "text-red-600" : "text-foreground"}`}>
+                  {fmtDataLocal(prazo)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Descrição */}
+          {tarefa.descricao && (
+            <div className="flex items-start gap-3">
+              <FileText className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Descrição</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{tarefa.descricao}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Cliente */}
+          {cliente?.nome && (
+            <div className="flex items-start gap-3">
+              <User className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Cliente</p>
+                <p className="text-sm font-semibold text-foreground">{cliente.nome}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Processo */}
+          {processo?.numero_cnj && (
+            <div className="flex items-start gap-3">
+              <Tag className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Processo</p>
+                <p className="text-sm font-mono text-foreground">{processo.numero_cnj}</p>
+                {localidade && <p className="text-xs text-muted-foreground mt-0.5">{localidade}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Responsável */}
+          <div className="flex items-start gap-3">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[0.65rem] font-bold shrink-0"
+              style={{ backgroundColor: userAvatarColor }}
+            >
+              {userInitials}
+            </div>
+            <div>
+              <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Responsável</p>
+              <p className="text-sm font-semibold text-foreground">{userName}</p>
+            </div>
+          </div>
+
+          {/* Mover para */}
+          <div>
+            <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-2">Mover para</p>
+            <div className="flex flex-wrap gap-1.5">
+              {KANBAN_COLUMNS
+                .filter(c => !(c.statusKeys as readonly string[]).includes(tarefa.status))
+                .map(col => (
+                  <button
+                    key={col.key}
+                    onClick={() => onMoveStatus(col.key)}
+                    className="text-[0.65rem] px-2.5 py-1 rounded-full font-bold text-white transition-opacity hover:opacity-80"
+                    style={{ backgroundColor: col.color }}
+                  >
+                    {col.label}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer com ações */}
+        <div className="flex gap-2 p-5 pt-0">
+          <Button variant="gold" size="sm" className="flex-1" onClick={onEdit}>
+            <Edit2 className="w-4 h-4 mr-1" /> Editar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
+            onClick={onDelete}
+          >
+            <Trash2 className="w-4 h-4 mr-1" /> Excluir
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InputField({ label, value, onChange, placeholder, type = "text" }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
 }) {
@@ -694,10 +897,11 @@ function InputField({ label, value, onChange, placeholder, type = "text" }: {
 }
 
 // ── KanbanBoard ────────────────────────────────────────────────────────────
-function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, onEdit, onDelete, onMoveStatus }: {
+function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
   tarefas: any[]; userName: string; userInitials: string; userAvatarColor: string;
   getLocalidade: (t: any) => string; showConcluidas: boolean;
   onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
+  onVerDetalhes: (t: any) => void;
 }) {
   const now = new Date();
 
@@ -755,6 +959,7 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onMoveStatus={onMoveStatus}
+                      onVerDetalhes={onVerDetalhes}
                     />
                   );
                 })
@@ -795,10 +1000,11 @@ function statusKanbanStyle(status: string): { bg: string; text: string } {
 }
 
 // ── KanbanCard ─────────────────────────────────────────────────────────────
-function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus }: {
+function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
   tarefa: any; isVencida: boolean; localidade: string; processoNumero: string;
   userName: string; userInitials: string; userAvatarColor: string; currentColKey: string;
   onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
+  onVerDetalhes: (t: any) => void;
 }) {
   const [showMover, setShowMover] = useState(false);
 
@@ -819,15 +1025,13 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
     <div className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md w-full min-w-0 ${
       isVencida ? "border-red-300" : "border-border hover:border-accent/40"
     } ${tarefa.status === "concluida" ? "opacity-75" : ""}`}>
-      <div className="p-2">
+      {/* Área clicável — abre o modal de detalhe */}
+      <div className="p-2 cursor-pointer" onClick={() => onVerDetalhes(tarefa)}>
         {/* Título + prioridade */}
         <div className="flex items-start justify-between gap-1 mb-1.5">
-          <h3
-            className={`text-xs font-bold leading-snug cursor-pointer hover:text-accent transition-colors flex-1 min-w-0 break-words ${
-              tarefa.status === "concluida" ? "line-through text-muted-foreground" : "text-foreground"
-            }`}
-            onClick={() => onEdit(tarefa)}
-          >
+          <h3 className={`text-xs font-bold leading-snug flex-1 min-w-0 break-words ${
+            tarefa.status === "concluida" ? "line-through text-muted-foreground" : "text-foreground"
+          }`}>
             {tarefa.titulo}
           </h3>
           {tarefa.prioridade && (
@@ -905,7 +1109,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
           <div className="min-w-0 flex-1">
             <p className="text-[0.65rem] font-semibold truncate text-foreground">{userName}</p>
           </div>
-          <div className="flex items-center gap-0.5 ml-auto shrink-0">
+          <div className="flex items-center gap-0.5 ml-auto shrink-0" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => onEdit(tarefa)}
               className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
@@ -922,7 +1126,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
             </button>
           </div>
         </div>
-      </div>
+      </div>{/* fim área clicável */}
 
       {/* Mover para outra coluna */}
       <div className="border-t border-border px-2 py-1.5">
