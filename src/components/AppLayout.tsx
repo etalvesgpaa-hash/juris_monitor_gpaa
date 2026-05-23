@@ -11,14 +11,15 @@ import { ConfigPage }      from "@/pages/ConfigPage";
 import { IntimacoesPage }  from "@/pages/IntimacoesPage";
 import { HonorariosPage }  from "@/pages/HonorariosPage";
 import { NotificacoesPage } from "@/pages/NotificacoesPage";
+import { AdminPage }       from "@/pages/AdminPage";
 
 export type PageId =
   | "dashboard" | "processos" | "intimacoes" | "notificacoes"
-  | "honorarios" | "tarefas" | "clientes" | "config";
+  | "honorarios" | "tarefas" | "clientes" | "config" | "admin";
 
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
 
@@ -32,6 +33,7 @@ export function AppLayout() {
       case "tarefas":      return <TarefasPage />;
       case "clientes":     return <ClientesPage />;
       case "config":       return <ConfigPage />;
+      case "admin":        return <AdminPage />;
       default:
         return (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
@@ -43,22 +45,22 @@ export function AppLayout() {
   };
 
   return (
-    /*
-     * overflow-x-hidden no wrapper externo impede que conteúdo interno
-     * extra-largo quebre o layout e crie barra de scroll horizontal,
-     * especialmente ao aumentar o zoom do browser.
-     */
     <div className="relative z-[1] flex flex-col min-h-screen overflow-x-auto">
-      <TopNav activePage={activePage} onPageChange={setActivePage} user={user} onSignOut={signOut} />
+      <TopNav
+        activePage={activePage}
+        onPageChange={setActivePage}
+        user={user}
+        onSignOut={signOut}
+        isAdmin={isAdmin}
+      />
 
-      {/* w-full garante que o main nunca ultrapasse a viewport no zoom */}
       <main className="flex-1 w-full max-w-screen-2xl mx-auto px-2 sm:px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-10 overflow-x-hidden">
         <div className="animate-fade-in w-full">
           {renderPage()}
         </div>
       </main>
 
-      <BottomNav activePage={activePage} onPageChange={setActivePage} />
+      <BottomNav activePage={activePage} onPageChange={setActivePage} isAdmin={isAdmin} />
     </div>
   );
 }

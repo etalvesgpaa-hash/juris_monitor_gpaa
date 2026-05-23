@@ -1,12 +1,12 @@
 import type { User } from "@supabase/supabase-js";
 import type { PageId } from "./AppLayout";
-import { RefreshCw, Bell, LogOut, ChevronDown } from "lucide-react";
+import { RefreshCw, Bell, LogOut, ChevronDown, Shield } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
 const STORE_KEY = "jm_aasp_intimacoes";
 
-const tabs: { id: PageId; label: string }[] = [
+const baseTabs: { id: PageId; label: string }[] = [
   { id: "dashboard",    label: "Dashboard"      },
   { id: "clientes",     label: "Clientes"       },
   { id: "intimacoes",   label: "Intimações"     },
@@ -17,17 +17,22 @@ const tabs: { id: PageId; label: string }[] = [
   { id: "config",       label: "Configurações"  },
 ];
 
+const adminTab: { id: PageId; label: string } = { id: "admin", label: "⚙ Admin" };
+
 interface TopNavProps {
   activePage: PageId;
   onPageChange: (id: PageId) => void;
   user: User | null;
   onSignOut: () => void;
+  isAdmin?: boolean;
 }
 
-export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProps) {
+export function TopNav({ activePage, onPageChange, user, onSignOut, isAdmin = false }: TopNavProps) {
   const [syncing, setSyncing]   = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef                  = useRef<HTMLDivElement>(null);
+
+  const tabs = isAdmin ? [...baseTabs, adminTab] : baseTabs;
 
   const [intimacoesCount, setIntimacoesCount] = useState<number>(() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length; } catch { return 0; }
@@ -74,7 +79,7 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
       {/* ── Linha 1: Logo · Badges · Ações ── */}
       <div className="flex items-center gap-2 px-3 md:px-6 h-14 min-w-0 w-full">
 
-        {/* Logo — texto sempre visível */}
+        {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-xs font-extrabold text-primary font-display select-none">
             JM
@@ -89,14 +94,12 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
           </div>
         </div>
 
-        {/* Badges de status — logo após o logo, à esquerda */}
+        {/* Badges de status */}
         <div className="hidden md:flex items-center gap-1.5 shrink-0 ml-3">
-          {/* Datajud — sempre verde pois é API pública */}
           <div className="flex items-center gap-1.5 text-[0.62rem] bg-emerald-400/15 border border-emerald-400/40 px-2.5 py-1 rounded-full text-emerald-300 font-semibold whitespace-nowrap">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Datajud CNJ
           </div>
-          {/* AASP — verde se conectada, acinzentado se não */}
           <div className={`flex items-center gap-1.5 text-[0.62rem] border px-2.5 py-1 rounded-full font-semibold whitespace-nowrap ${
             aaspConectada
               ? "bg-emerald-400/15 border-emerald-400/40 text-emerald-300"
@@ -105,9 +108,16 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             <div className={`w-1.5 h-1.5 rounded-full ${aaspConectada ? "bg-emerald-400 animate-pulse" : "bg-white/25"}`} />
             {aaspConectada ? `AASP · ${intimacoesCount}` : "AASP · aguard."}
           </div>
+
+          {/* Badge admin */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 text-[0.62rem] bg-violet-400/15 border border-violet-400/40 px-2.5 py-1 rounded-full text-violet-300 font-semibold whitespace-nowrap">
+              <Shield className="w-3 h-3" />
+              Admin
+            </div>
+          )}
         </div>
 
-        {/* Espaçador */}
         <div className="flex-1 min-w-0" />
 
         {/* Ações direita */}
@@ -130,6 +140,18 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
             <Bell className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">Intimações</span>
           </button>
+
+          {/* Botão admin rápido */}
+          {isAdmin && (
+            <button
+              onClick={() => onPageChange("admin")}
+              title="Painel Admin"
+              className="flex items-center gap-1 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 px-2 py-1.5 rounded-md text-xs font-semibold transition-all border border-violet-400/30 whitespace-nowrap"
+            >
+              <Shield className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Admin</span>
+            </button>
+          )}
 
           <div className="w-7 h-7 bg-accent/85 rounded-full flex items-center justify-center text-xs font-bold text-primary shrink-0 select-none">
             {initials}
@@ -154,9 +176,13 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
               key={tab.id}
               onClick={() => onPageChange(tab.id)}
               className={`shrink-0 px-3.5 py-2 text-[0.82rem] font-medium tracking-wide transition-all border-b-2 whitespace-nowrap ${
-                activePage === tab.id
-                  ? "border-accent text-accent font-bold"
-                  : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
+                tab.id === "admin"
+                  ? activePage === "admin"
+                    ? "border-violet-400 text-violet-300 font-bold"
+                    : "border-transparent text-violet-300/50 hover:text-violet-300/85 hover:border-violet-300/20"
+                  : activePage === tab.id
+                    ? "border-accent text-accent font-bold"
+                    : "border-transparent text-primary-foreground/50 hover:text-primary-foreground/85 hover:border-primary-foreground/20"
               }`}
             >
               {tab.label}
@@ -181,9 +207,13 @@ export function TopNav({ activePage, onPageChange, user, onSignOut }: TopNavProp
                 key={tab.id}
                 onClick={() => { onPageChange(tab.id); setMenuOpen(false); }}
                 className={`text-left px-3 py-2 rounded text-xs font-medium transition-all ${
-                  activePage === tab.id
-                    ? "bg-accent text-primary font-bold"
-                    : "text-primary-foreground/60 hover:bg-primary-foreground/10"
+                  tab.id === "admin"
+                    ? activePage === "admin"
+                      ? "bg-violet-500 text-white font-bold"
+                      : "text-violet-300/70 hover:bg-violet-500/20"
+                    : activePage === tab.id
+                      ? "bg-accent text-primary font-bold"
+                      : "text-primary-foreground/60 hover:bg-primary-foreground/10"
                 }`}
               >
                 {tab.label}
