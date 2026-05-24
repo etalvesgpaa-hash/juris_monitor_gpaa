@@ -3,15 +3,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { TopNav } from "./TopNav";
 import { BottomNav } from "./BottomNav";
-import { DashboardPage }   from "@/pages/DashboardPage";
-import { ProcessosPage }   from "@/pages/ProcessosPage";
-import { ClientesPage }    from "@/pages/ClientesPage";
-import { TarefasPage }     from "@/pages/TarefasPage";
-import { ConfigPage }      from "@/pages/ConfigPage";
-import { IntimacoesPage }  from "@/pages/IntimacoesPage";
-import { HonorariosPage }  from "@/pages/HonorariosPage";
+import { TarefasVencendoModal } from "./TarefasVencendoModal";
+import { DashboardPage }    from "@/pages/DashboardPage";
+import { ProcessosPage }    from "@/pages/ProcessosPage";
+import { ClientesPage }     from "@/pages/ClientesPage";
+import { TarefasPage }      from "@/pages/TarefasPage";
+import { ConfigPage }       from "@/pages/ConfigPage";
+import { IntimacoesPage }   from "@/pages/IntimacoesPage";
+import { HonorariosPage }   from "@/pages/HonorariosPage";
 import { NotificacoesPage } from "@/pages/NotificacoesPage";
-import { AdminPage }       from "@/pages/AdminPage";
+import { AdminPage }        from "@/pages/AdminPage";
 
 export type PageId =
   | "dashboard" | "processos" | "intimacoes" | "notificacoes"
@@ -61,6 +62,9 @@ export function AppLayout() {
       </main>
 
       <BottomNav activePage={activePage} onPageChange={setActivePage} isAdmin={isAdmin} />
+
+      {/* Modal de tarefas vencendo — aparece automaticamente ao carregar */}
+      <TarefasVencendoModal onNavigate={setActivePage} />
     </div>
   );
 }
