@@ -56,14 +56,11 @@ export function useUpdateTarefa() {
 
   return useMutation({
     mutationFn: async ({ id, ...input }: TablesUpdate<"tarefas"> & { id: string }) => {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("tarefas")
         .update(input)
-        .eq("id", id)
-        .select()
-        .single();
+        .eq("id", id);
       if (error) throw error;
-      return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tarefas"] }),
   });
