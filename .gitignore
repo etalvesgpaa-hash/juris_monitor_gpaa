@@ -23,4 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-
+# Variáveis de ambiente — NUNCA subir para o GitHub
+.env
+.env.local
+.env.production
+.env.development
