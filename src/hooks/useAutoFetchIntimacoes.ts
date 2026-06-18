@@ -718,6 +718,13 @@ export function useAutoFetchIntimacoes() {
           detail: { count: paraExibirNoToast.length },
         }));
 
+        // Abre o modal de novas intimações se houver novidades no dia
+        if (paraExibirNoToast.length > 0) {
+          window.dispatchEvent(new CustomEvent("intimacoes-novas-encontradas", {
+            detail: { count: paraExibirNoToast.length, hoje: dias[0] },
+          }));
+        }
+
         // 7. Notificações automáticas por e-mail — agora com resumo_ia preenchido
         console.log("[AutoFetch] novasComResumo:", novasComResumo.length, "disparando email:", novasComResumo.length > 0);
         if (novasComResumo.length > 0) {

@@ -15,22 +15,14 @@ export interface TarefaVencendo {
   } | null;
 }
 
-/** Converte data do Supabase para string YYYY-MM-DD no fuso local,
- *  evitando o problema de UTC deslocar a data um dia. */
+/** Extrai YYYY-MM-DD de qualquer string de data do Supabase,
+ *  sem usar new Date() para evitar deslocamento de fuso (UTC → local).
+ *  Ex: "2026-06-11T00:00:00+00:00" → "2026-06-11" */
 function toLocalDateStr(iso: string): string {
-  // Se já é só data (YYYY-MM-DD), usa direto
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  // Se tem horário, converte para fuso local
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return iso.slice(0, 10);
 }
 
 function todayStr(): string {
-  return toLocalDateStr(new Date().toISOString()).slice(0, 10);
-  // Mais simples: usa a data local direto
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 }

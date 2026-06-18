@@ -869,7 +869,7 @@ export function IntimacoesPage() {
         descricao: data.descricao || null,
         data_vencimento: data.data_vencimento || null,
         prioridade: data.prioridade,
-        status: data.status || "pendente",
+        status: data.status || "triagem",
         processo_id: data.processo_id || null,
       });
       toast.success("Tarefa criada com sucesso!");
@@ -1505,6 +1505,7 @@ export function IntimacoesPage() {
         onSubmit={handleSubmitTarefa}
         initialData={taskModalInitialData}
         processos={processos}
+        clientes={clientes}
         feriados={feriados}
       />
     </div>

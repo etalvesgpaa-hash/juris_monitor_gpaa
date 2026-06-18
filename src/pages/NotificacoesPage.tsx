@@ -8,6 +8,13 @@ import { ptBR } from "date-fns/locale";
 ;
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+/** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
+function parseDateLocal(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+
 interface Notificacao {
   id: string;
   tipo: "prazo" | "intimacao" | "tarefa" | "honorario" | "movimentacao";
@@ -80,7 +87,7 @@ export function NotificacoesPage() {
   // Notificações de Tarefas
   tarefas.forEach((tarefa) => {
     if (!tarefa.data_vencimento) return;
-    const dias = differenceInDays(new Date(tarefa.data_vencimento), new Date());
+    const dias = differenceInDays(parseDateLocal(tarefa.data_vencimento), new Date());
     
     let prioridade: Notificacao["prioridade"] = "baixa";
     if (dias < 0) prioridade = "urgente";
@@ -105,7 +112,7 @@ export function NotificacoesPage() {
   // Notificações de Intimações
   intimacoes.forEach((intimacao) => {
     if (!intimacao.prazo) return;
-    const dias = differenceInDays(new Date(intimacao.prazo), new Date());
+    const dias = differenceInDays(parseDateLocal(intimacao.prazo), new Date());
     
     let prioridade: Notificacao["prioridade"] = "baixa";
     if (dias < 0) prioridade = "urgente";
@@ -130,7 +137,7 @@ export function NotificacoesPage() {
   // Notificações de Honorários
   honorarios.forEach((honorario) => {
     if (!honorario.data_vencimento) return;
-    const dias = differenceInDays(new Date(honorario.data_vencimento), new Date());
+    const dias = differenceInDays(parseDateLocal(honorario.data_vencimento), new Date());
     
     let prioridade: Notificacao["prioridade"] = "baixa";
     if (dias < 0) prioridade = "alta";
@@ -160,14 +167,14 @@ export function NotificacoesPage() {
   notificacoes.sort((a, b) => {
     const prioDiff = prioridadeOrdem[a.prioridade] - prioridadeOrdem[b.prioridade];
     if (prioDiff !== 0) return prioDiff;
-    return new Date(a.data).getTime() - new Date(b.data).getTime();
+    return parseDateLocal(a.data).getTime() - parseDateLocal(b.data).getTime();
   });
 
   // Filtrar por tipo
   const urgentes = notificacoes.filter((n) => n.prioridade === "urgente");
-  const hoje = notificacoes.filter((n) => isToday(new Date(n.data)));
+  const hoje = notificacoes.filter((n) => isToday(parseDateLocal(n.data)));
   const proximos7Dias = notificacoes.filter((n) => {
-    const dias = differenceInDays(new Date(n.data), new Date());
+    const dias = differenceInDays(parseDateLocal(n.data), new Date());
     return dias >= 0 && dias <= 7;
   });
 
@@ -205,7 +212,7 @@ export function NotificacoesPage() {
 
   // Componente de data amigável
   const getDataAmigavel = (data: string, dias?: number) => {
-    const dataObj = new Date(data);
+    const dataObj = parseDateLocal(data);
     
     if (dias !== undefined) {
       if (dias < 0) {

@@ -6,9 +6,16 @@ import { useFeriados } from "@/hooks/useFeriados";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import type { PageId } from "@/components/AppLayout";
+import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
+
+/** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
+function parseDateLocal(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
@@ -144,11 +151,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const tarefasPendentes  = tarefas.filter(t => t.status !== "concluida");
   const tarefasVencidas   = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    return new Date(t.data_vencimento) < now;
+    return parseDateLocal(t.data_vencimento) < now;
   });
   const tarefasAVencer = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    const diff = new Date(t.data_vencimento).getTime() - now.getTime();
+    const diff = parseDateLocal(t.data_vencimento).getTime() - now.getTime();
     return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
   });
 

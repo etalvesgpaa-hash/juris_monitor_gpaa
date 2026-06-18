@@ -7,6 +7,28 @@ import { useClientes } from "@/hooks/useClientes";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List, Eye, Clock, User, FileText, Tag } from "lucide-react";
+import { CreateTaskModal } from "@/components/CreateTaskModal";
+
+import { useIntimacoes } from "@/hooks/useIntimacoes";
+import { DelegarTarefaModal } from "@/components/DelegarTarefaModal";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+
+/** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
+function parseDateLocal(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Retorna a data de hoje no formato YYYY-MM-DD usando fuso horário LOCAL (não UTC) */
+function hojeLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 
 type FilterType = "todas" | "triagem" | "ag_documentos" | "ag_cliente" | "elaboracao" | "andamento" | "audiencia" | "ag_tribunal" | "concluidas" | "canceladas" | "pendente";
 type ViewMode = "kanban" | "lista" | "agenda";
@@ -14,18 +36,18 @@ type ViewMode = "kanban" | "lista" | "agenda";
 /** Formata data YYYY-MM-DD para DD/MM/YYYY sem offset de fuso horário */
 function fmtDataLocal(iso: string): string {
   if (!iso) return "";
-  const p = iso.slice(0, 10).split("-");
-  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+  const parts = iso.slice(0, 10).split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : iso;
 }
 
 /** Formata data+hora para exibição no card kanban */
 function fmtPrazoKanban(iso: string): string {
   if (!iso) return "";
   const slice = iso.slice(0, 16);
-  const p = slice.split("T");
-  if (p.length < 2) return fmtDataLocal(iso);
-  const dateParts = p[0].split("-");
-  const timeParts = p[1].split(":");
+  const segments = slice.split("T");
+  if (segments.length < 2) return fmtDataLocal(iso);
+  const dateParts = segments[0].split("-");
+  const timeParts = segments[1].split(":");
   if (dateParts.length === 3 && timeParts.length >= 2) {
     return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`;
   }
@@ -80,19 +102,36 @@ const ALL_STATUS_OPTIONS = [
 ] as const;
 
 export function TarefasPage() {
+  const { user, isAdmin } = useAuth();
   const { data: tarefas = [], isLoading } = useTarefas();
   const { data: processos = [] } = useProcessos();
   const { data: clientes = [] } = useClientes();
   const { data: feriados = [] } = useFeriados();
+  const { data: appUsers = [] } = useQuery({
+    queryKey: ["profiles-para-delegacao"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, user_id, full_name, is_admin")
+        .order("full_name");
+      return data || [];
+    },
+    enabled: isAdmin,
+  });
+
+  const { data: intimacoesResumo = [] } = useIntimacoes();
+
   const createTarefa = useCreateTarefa();
   const updateTarefa = useUpdateTarefa();
   const deleteTarefa = useDeleteTarefa();
   const createFeriado = useCreateFeriado();
   const deleteFeriado = useDeleteFeriado();
-  const { user } = useAuth();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [delegarOpen, setDelegarOpen] = useState(false);
+  const [taskInitialData, setTaskInitialData] = useState<any>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFeriados, setShowFeriados] = useState(false);
   const [showFormFeriado, setShowFormFeriado] = useState(false);
@@ -103,12 +142,11 @@ export function TarefasPage() {
   const [form, setForm] = useState({
     titulo: "",
     descricao: "",
+    numero_processo: "",
     data_vencimento: "",
     diasUteis: "",
     prioridade: "media",
     status: "pendente",
-    processo_id: "",
-    cliente_id: "",
   });
 
   const [formFeriado, setFormFeriado] = useState({
@@ -119,8 +157,10 @@ export function TarefasPage() {
   });
 
   const resetForm = () => {
-    setForm({ titulo: "", descricao: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente", processo_id: "", cliente_id: "" });
+    setForm({ titulo: "", descricao: "", numero_processo: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente" });
     setShowForm(false);
+    setShowTaskModal(false);
+    setTaskInitialData(null);
     setEditingId(null);
   };
 
@@ -130,18 +170,53 @@ export function TarefasPage() {
   };
 
   const handleEdit = (t: typeof tarefas[0]) => {
-    setForm({
-      titulo: t.titulo,
-      descricao: t.descricao || "",
+    const initialData = {
+      titulo:          t.titulo,
+      descricao:       t.descricao || "",
+      numero_processo: (t as any).numero_processo || "",
       data_vencimento: t.data_vencimento ? t.data_vencimento.slice(0, 10) : "",
-      diasUteis: "",
-      prioridade: t.prioridade,
-      status: t.status || "pendente",
-      processo_id: t.processo_id || "",
-      cliente_id: (t.processo as any)?.cliente_id || "",
-    });
+      prioridade:      t.prioridade,
+      status:          t.status || "triagem",
+    };
+    setTaskInitialData(initialData);
     setEditingId(t.id);
-    setShowForm(true);
+    setTimeout(() => setShowTaskModal(true), 10);
+  };
+
+
+  /** Chamado pelo CreateTaskModal */
+  const handleSubmitViModal = async (data: any) => {
+    if (!data.titulo.trim()) {
+      toast({ title: "Informe o título", variant: "destructive" });
+      return;
+    }
+    try {
+      if (editingId) {
+        await updateTarefa.mutateAsync({
+          id: editingId,
+          titulo: data.titulo,
+          descricao: data.descricao || null,
+          numero_processo: data.numero_processo || null,
+          data_vencimento: data.data_vencimento || null,
+          prioridade: data.prioridade,
+          status: data.status,
+        });
+        toast({ title: "Tarefa atualizada!" });
+      } else {
+        await createTarefa.mutateAsync({
+          titulo: data.titulo,
+          descricao: data.descricao || null,
+          numero_processo: data.numero_processo || null,
+          data_vencimento: data.data_vencimento || null,
+          prioridade: data.prioridade,
+          status: data.status,
+        });
+        toast({ title: "Tarefa criada!" });
+      }
+      resetForm();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleCreateOrUpdate = async () => {
@@ -155,20 +230,20 @@ export function TarefasPage() {
           id: editingId,
           titulo: form.titulo,
           descricao: form.descricao || null,
+          numero_processo: (form as any).numero_processo || null,
           data_vencimento: form.data_vencimento || null,
           prioridade: form.prioridade,
           status: form.status,
-          processo_id: form.processo_id || null,
         });
         toast({ title: "Tarefa atualizada!" });
       } else {
         await createTarefa.mutateAsync({
           titulo: form.titulo,
           descricao: form.descricao || null,
+          numero_processo: (form as any).numero_processo || null,
           data_vencimento: form.data_vencimento || null,
           prioridade: form.prioridade,
           status: form.status,
-          processo_id: form.processo_id || null,
         });
         toast({ title: "Tarefa criada!" });
       }
@@ -255,13 +330,14 @@ export function TarefasPage() {
 
   const now = new Date();
 
-  const prioridadeColor = (p: string) => {
-    if (p === "alta") return "text-red-alert bg-red-alert/10";
-    if (p === "media") return "text-accent bg-accent/10";
+  const prioridadeColor = (prio: string) => {
+    if (prio === "urgente") return "text-red-700 bg-red-700/10";
+    if (prio === "alta") return "text-red-alert bg-red-alert/10";
+    if (prio === "media") return "text-accent bg-accent/10";
     return "text-muted-foreground bg-muted";
   };
 
-  const hoje = new Date().toISOString().split("T")[0];
+  const hoje = hojeLocal();
   const feriadosFuturos = feriados
     .filter(f => f.data >= hoje)
     .sort((a, b) => a.data.localeCompare(b.data))
@@ -310,7 +386,16 @@ export function TarefasPage() {
           >
             {showConcluidas ? "✓ Ocultar Concluídas" : "Mostrar Concluídas"}
           </Button>
-          <Button variant="gold" onClick={() => setShowForm(true)}>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setDelegarOpen(true)}
+              className="border-violet-500/50 text-violet-400 hover:bg-violet-500/10"
+            >
+              👤 Delegar Tarefa
+            </Button>
+          )}
+          <Button variant="gold" onClick={() => { setEditingId(null); setTaskInitialData(null); setShowTaskModal(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Criar Demanda
           </Button>
         </div>
@@ -363,6 +448,7 @@ export function TarefasPage() {
                 <option value="baixa">Baixa</option>
                 <option value="media">Média</option>
                 <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
               </select>
             </div>
             <div>
@@ -407,41 +493,16 @@ export function TarefasPage() {
                 )}
               </div>
             </div>
-            {/* ── Vínculo: Cliente e Processo ── */}
-            <div>
-              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Cliente vinculado</label>
-              <select
-                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
-                value={form.cliente_id}
-                onChange={(e) => {
-                  const novoClienteId = e.target.value;
-                  const processoAtual = processos.find(p => p.id === form.processo_id) as any;
-                  const processoValido = processoAtual?.cliente_id === novoClienteId;
-                  setForm({ ...form, cliente_id: novoClienteId, processo_id: processoValido ? form.processo_id : "" });
-                }}
-              >
-                <option value="">Nenhum</option>
-                {clientes.map((c) => (<option key={c.id} value={c.id}>{c.nome}</option>))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Processo vinculado</label>
-              <select
-                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none"
-                value={form.processo_id}
-                onChange={(e) => {
-                  const proc = processos.find(p => p.id === e.target.value) as any;
-                  setForm({ ...form, processo_id: e.target.value, cliente_id: proc?.cliente_id || form.cliente_id });
-                }}
-              >
-                <option value="">Nenhum</option>
-                {processos
-                  .filter((p: any) => !form.cliente_id || p.cliente_id === form.cliente_id)
-                  .map((p) => (<option key={p.id} value={p.id}>{p.numero_cnj}</option>))}
-              </select>
-              {form.cliente_id && processos.filter((p: any) => p.cliente_id === form.cliente_id).length === 0 && (
-                <p className="text-[0.68rem] text-muted-foreground mt-1 italic">Nenhum processo cadastrado para este cliente.</p>
-              )}
+            {/* ── Número do Processo ── */}
+            <div className="md:col-span-2">
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Número do Processo</label>
+              <input
+                type="text"
+                value={(form as any).numero_processo || ""}
+                onChange={(e) => setForm({ ...form, numero_processo: e.target.value } as any)}
+                placeholder="Ex: 0001234-56.2023.8.26.0000"
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent outline-none font-mono"
+              />
             </div>
             <div className="md:col-span-2">
               <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground">Descrição</label>
@@ -461,6 +522,10 @@ export function TarefasPage() {
           </div>
         </div>
       )}
+
+
+
+
 
       {/* ── Filtros (apenas lista e agenda) ── */}
       {viewMode !== "kanban" && (
@@ -501,6 +566,8 @@ export function TarefasPage() {
           userAvatarColor={userAvatarColor}
           getLocalidade={getLocalidade}
           showConcluidas={showConcluidas}
+          isAdmin={isAdmin}
+          profiles={appUsers}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onMoveStatus={handleMoveStatus}
@@ -515,7 +582,7 @@ export function TarefasPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map((t) => {
-            const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
+            const isVencida = t.data_vencimento && t.status !== "concluida" && t.data_vencimento.slice(0, 10) < hojeLocal();
             const processo = t.processo;
             const statusTarefaColor = (status: string) => {
               if (status === "concluida")     return "text-green-ok bg-green-ok/10";
@@ -573,12 +640,14 @@ export function TarefasPage() {
                         </span>
                       </div>
                       {t.descricao && <div className="text-xs text-muted-foreground truncate">{t.descricao}</div>}
-                      {processo && (
+                      {((t as any).numero_processo || processo) && (
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           {(processo as any)?.cliente?.nome && (
                             <span className="text-xs font-semibold text-accent/80">👤 {(processo as any).cliente.nome}</span>
                           )}
-                          <span className="text-xs text-muted-foreground font-mono">📋 {processo.numero_cnj}</span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            📋 {(t as any).numero_processo || processo?.numero_cnj}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -690,6 +759,32 @@ export function TarefasPage() {
           onMoveStatus={(status) => { handleMoveStatus(tarefaDetalhe, status); setTarefaDetalhe(null); }}
         />
       )}
+
+      <CreateTaskModal
+        open={showTaskModal}
+        onClose={resetForm}
+        onSubmit={handleSubmitViModal}
+        initialData={taskInitialData}
+        intimacoes={intimacoesResumo}
+        feriados={feriados}
+        submitLabel={editingId ? "Salvar Alterações" : "Criar Demanda"}
+      />
+
+      {isAdmin && (
+        <DelegarTarefaModal
+          open={delegarOpen}
+          onClose={() => setDelegarOpen(false)}
+          profiles={appUsers
+            .filter((u: any) => u.user_id && u.user_id !== user?.id)
+            .map((u: any) => ({
+              id: u.user_id,
+              full_name: u.full_name || "Usuário",
+              email: "",
+            }))}
+            intimacoes={intimacoesResumo}
+          feriados={feriados}
+        />
+      )}
     </div>
   );
 }
@@ -701,7 +796,7 @@ function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, g
   onClose: () => void; onEdit: () => void; onDelete: () => void;
   onMoveStatus: (status: string) => void;
 }) {
-  const hojeStr = new Date().toISOString().slice(0, 10);
+  const hojeStr = hojeLocal();
   const prazo = tarefa.data_vencimento?.slice(0, 10) || "";
   const processo = tarefa.processo as any;
   const cliente = processo?.cliente as any;
@@ -722,9 +817,10 @@ function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, g
   );
 
   const prioridadeLabel: Record<string, string> = {
-    alta: "Alta", media: "Média", baixa: "Baixa",
+    urgente: "Urgente", alta: "Alta", media: "Média", baixa: "Baixa",
   };
   const prioridadeCor: Record<string, string> = {
+    urgente: "text-red-700 bg-red-50 border border-red-400 font-bold",
     alta: "text-red-600 bg-red-50 border border-red-200",
     media: "text-yellow-700 bg-yellow-50 border border-yellow-200",
     baixa: "text-gray-600 bg-gray-100 border border-gray-200",
@@ -817,12 +913,12 @@ function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, g
           )}
 
           {/* Processo */}
-          {processo?.numero_cnj && (
+          {(tarefa.numero_processo || processo?.numero_cnj) && (
             <div className="flex items-start gap-3">
               <Tag className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
               <div>
-                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Processo</p>
-                <p className="text-sm font-mono text-foreground">{processo.numero_cnj}</p>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Número do Processo</p>
+                <p className="text-sm font-mono text-foreground">{tarefa.numero_processo || processo?.numero_cnj}</p>
                 {localidade && <p className="text-xs text-muted-foreground mt-0.5">{localidade}</p>}
               </div>
             </div>
@@ -897,9 +993,10 @@ function InputField({ label, value, onChange, placeholder, type = "text" }: {
 }
 
 // ── KanbanBoard ────────────────────────────────────────────────────────────
-function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
+function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, isAdmin, profiles, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
   tarefas: any[]; userName: string; userInitials: string; userAvatarColor: string;
   getLocalidade: (t: any) => string; showConcluidas: boolean;
+  isAdmin?: boolean; profiles?: any[];
   onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
   onVerDetalhes: (t: any) => void;
 }) {
@@ -907,6 +1004,21 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
 
   const tarefasPorColuna = (col: typeof KANBAN_COLUMNS[number]) =>
     tarefas.filter(t => (col.statusKeys as readonly string[]).includes(t.status));
+
+  /** Para admin: resolve nome/iniciais/cor do dono real da tarefa; senão usa o do usuário logado */
+  const getOwnerInfo = (t: any) => {
+    if (isAdmin && profiles && profiles.length > 0) {
+      const profile = profiles.find((p: any) => p.user_id === t.user_id);
+      if (profile?.full_name) {
+        return {
+          name: profile.full_name,
+          initials: getInitials(profile.full_name),
+          color: getAvatarColor(profile.full_name),
+        };
+      }
+    }
+    return { name: userName, initials: userInitials, color: userAvatarColor };
+  };
 
   const colunas = showConcluidas
     ? KANBAN_COLUMNS
@@ -944,7 +1056,7 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
                 </div>
               ) : (
                 cards.map((t) => {
-                  const isVencida = t.data_vencimento && t.status !== "concluida" && new Date(t.data_vencimento) < now;
+                  const isVencida = t.data_vencimento && t.status !== "concluida" && t.data_vencimento.slice(0, 10) < hojeLocal();
                   return (
                     <KanbanCard
                       key={t.id}
@@ -952,9 +1064,9 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
                       isVencida={!!isVencida}
                       localidade={getLocalidade(t)}
                       processoNumero={(t.processo as any)?.numero_cnj || ""}
-                      userName={userName}
-                      userInitials={userInitials}
-                      userAvatarColor={userAvatarColor}
+                      userName={getOwnerInfo(t).name}
+                      userInitials={getOwnerInfo(t).initials}
+                      userAvatarColor={getOwnerInfo(t).color}
                       currentColKey={col.key}
                       onEdit={onEdit}
                       onDelete={onDelete}
@@ -1014,9 +1126,10 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
     (c) => !(c.statusKeys as readonly string[]).includes(tarefa.status) && c.key !== currentColKey
   );
 
-  const prioridadeStyle = (p: string) => {
-    if (p === "alta")  return { bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" };
-    if (p === "media") return { bg: "#fef9c3", text: "#a16207", border: "#fde047" };
+  const prioridadeStyle = (prio: string) => {
+    if (prio === "urgente") return { bg: "#fef2f2", text: "#7f1d1d", border: "#f87171" };
+    if (prio === "alta")  return { bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" };
+    if (prio === "media") return { bg: "#fef9c3", text: "#a16207", border: "#fde047" };
     return { bg: "#f3f4f6", text: "#6b7280", border: "#d1d5db" };
   };
   const ps = prioridadeStyle(tarefa.prioridade);
@@ -1046,7 +1159,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
 
         {/* Badge de prazo */}
         {(() => {
-          const hoje = new Date().toISOString().slice(0, 10);
+          const hoje = hojeLocal();
           const prazo = tarefa.data_vencimento?.slice(0, 10) || "";
           let label = "";
           let bg = "";
@@ -1151,6 +1264,7 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
           </div>
         )}
       </div>
+
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { PageId } from "./AppLayout";
+import type { PageId } from "@/types/navigation";
 import { RefreshCw, Bell, LogOut, ChevronDown, Shield } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";

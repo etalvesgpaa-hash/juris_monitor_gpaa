@@ -1,4 +1,4 @@
-import type { PageId } from "./AppLayout";
+import type { PageId } from "@/types/navigation";
 
 const baseItems: { id: PageId; icon: string; label: string }[] = [
   { id: "dashboard",    icon: "📊", label: "Dashboard"  },

@@ -273,6 +273,7 @@ export type Database = {
           data_vencimento: string | null
           descricao: string | null
           id: string
+          numero_processo: string | null
           prioridade: string
           processo_id: string | null
           status: string
@@ -286,6 +287,7 @@ export type Database = {
           data_vencimento?: string | null
           descricao?: string | null
           id?: string
+          numero_processo?: string | null
           prioridade?: string
           processo_id?: string | null
           status?: string
@@ -299,6 +301,7 @@ export type Database = {
           data_vencimento?: string | null
           descricao?: string | null
           id?: string
+          numero_processo?: string | null
           prioridade?: string
           processo_id?: string | null
           status?: string

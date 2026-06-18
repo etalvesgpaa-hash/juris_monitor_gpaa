@@ -4,6 +4,8 @@ import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { TopNav } from "./TopNav";
 import { BottomNav } from "./BottomNav";
 import { TarefasVencendoModal } from "./TarefasVencendoModal";
+import { NovasIntimacoesModal } from "./NovasIntimacoesModal";
+import { TarefasDelegadasToast } from "@/components/TarefasDelegadasBadge";
 import { DashboardPage }    from "@/pages/DashboardPage";
 import { ProcessosPage }    from "@/pages/ProcessosPage";
 import { ClientesPage }     from "@/pages/ClientesPage";
@@ -65,6 +67,12 @@ export function AppLayout() {
 
       {/* Modal de tarefas vencendo — aparece automaticamente ao carregar */}
       <TarefasVencendoModal onNavigate={setActivePage} />
+
+      {/* Modal de novas intimações AASP — aparece quando detecta novidades */}
+      <NovasIntimacoesModal onVerTodas={() => setActivePage("intimacoes")} />
+
+      {/* Toast de tarefas delegadas pelo admin */}
+      <TarefasDelegadasToast onVerTarefas={() => setActivePage("tarefas")} />
     </div>
   );
 }

@@ -6,15 +6,27 @@ import {
   useAdminClientes,
 } from "@/hooks/useAdmin";
 import {
+  useAdminTarefasDelegadas,
+  useDeleteTarefaDelegada,
+  useUpdateTarefaDelegada,
+} from "@/hooks/useDelegacao";
+import { DelegarTarefaModal } from "@/components/DelegarTarefaModal";
+import {
   Users, FileText, Briefcase, Download,
   Search, ChevronDown, ChevronRight, Shield, Printer,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
+function parseDateLocal(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return parseDateLocal(iso).toLocaleDateString("pt-BR");
 }
 
 function csvEscape(v: unknown) {
@@ -59,10 +71,15 @@ export function AdminPage() {
   const { data: profiles  = [], isLoading: loadProfiles  } = useAdminProfiles();
   const { data: processos = [], isLoading: loadProcessos } = useAdminProcessos();
   const { data: clientes  = [], isLoading: loadClientes  } = useAdminClientes();
+  const { data: delegadas = [], isLoading: loadDelegadas } = useAdminTarefasDelegadas();
+  const { mutate: deletarDelegada } = useDeleteTarefaDelegada();
+  const { mutate: updateDelegada  } = useUpdateTarefaDelegada();
+  const [delegarOpen, setDelegarOpen] = useState(false);
+  const [delegarPreUser, setDelegarPreUser] = useState<string | undefined>();
 
   const [search, setSearch]             = useState("");
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
-  const [tab, setTab]                   = useState<"overview" | "processos" | "clientes" | "relatorio">("overview");
+  const [tab, setTab]                   = useState<"overview" | "processos" | "clientes" | "relatorio" | "delegacao">("overview");
 
   if (!isAdmin) {
     return (
@@ -274,12 +291,17 @@ export function AdminPage() {
 
       {/* Abas */}
       <div className="flex gap-1 border-b border-border">
-        {(["overview","processos","clientes","relatorio"] as const).map(t => (
+        {(["overview","processos","clientes","relatorio","delegacao"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium transition-all border-b-2 -mb-px ${
               tab === t ? "border-accent text-accent font-bold" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}>
-            {{ overview:"Por Usuário", processos:"Processos", clientes:"Clientes", relatorio:"Relatório" }[t]}
+            } ${t === "delegacao" ? "text-violet-400" : ""}`}>
+            {{ overview:"Por Usuário", processos:"Processos", clientes:"Clientes", relatorio:"Relatório", delegacao:"🎯 Delegação" }[t]}
+            {t === "delegacao" && delegadas.length > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-bold">
+                {delegadas.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -609,6 +631,124 @@ export function AdminPage() {
           })}
         </div>
       )}
+      {/* ── ABA: DELEGAÇÃO ── */}
+      {tab === "delegacao" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-display font-extrabold text-lg">Tarefas Delegadas</h2>
+              <p className="text-xs text-muted-foreground">
+                {delegadas.length} tarefa(s) delegadas no total
+              </p>
+            </div>
+            <button
+              onClick={() => { setDelegarPreUser(undefined); setDelegarOpen(true); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700
+                         text-white text-sm font-semibold transition-colors"
+            >
+              + Delegar Nova Tarefa
+            </button>
+          </div>
+
+          {loadDelegadas ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Carregando…</div>
+          ) : delegadas.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <div className="text-4xl mb-3">🎯</div>
+              <p className="font-semibold">Nenhuma tarefa delegada ainda</p>
+              <p className="text-sm mt-1">Use o botão acima para delegar uma tarefa a um usuário</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b border-border">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Tarefa</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Delegada para</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Prioridade</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Vencimento</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Lida</th>
+                    <th className="px-4 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {delegadas.map(t => (
+                    <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-sm">{t.titulo}</div>
+                        {t.descricao && (
+                          <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{t.descricao}</div>
+                        )}
+                        {t.processo && (
+                          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{t.processo.numero_cnj}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {t.destinatario?.full_name
+                          ? <div className="text-sm font-semibold">{t.destinatario.full_name}</div>
+                          : <span className="text-xs text-muted-foreground italic">—</span>
+                        }
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={t.status}
+                          onChange={e => updateDelegada({ id: t.id, status: e.target.value })}
+                          className="text-xs px-2 py-1 border border-border rounded bg-background
+                                     focus:outline-none focus:ring-1 focus:ring-accent/40"
+                        >
+                          {["triagem","ag_documentos","ag_cliente","elaboracao","andamento",
+                            "audiencia","ag_tribunal","concluida","cancelada"].map(s => (
+                            <option key={s} value={s}>{s.replace("_"," ")}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold text-white ${
+                          t.prioridade === "urgente" ? "bg-red-500" :
+                          t.prioridade === "alta"    ? "bg-orange-500" :
+                          t.prioridade === "media"   ? "bg-yellow-500" : "bg-gray-500"
+                        }`}>
+                          {t.prioridade}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {fmtDate(t.data_vencimento)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {t.lida_pelo_destinatario ? (
+                          <span className="text-[10px] text-emerald-600 font-semibold">✓ Lida</span>
+                        ) : (
+                          <span className="text-[10px] text-amber-500 font-semibold">Não lida</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => { if (confirm("Excluir esta tarefa?")) deletarDelegada(t.id); }}
+                          className="text-xs text-destructive hover:underline"
+                        >
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal de delegação */}
+      <DelegarTarefaModal
+        open={delegarOpen}
+        onClose={() => setDelegarOpen(false)}
+        profiles={(profiles ?? [])
+          .filter((p: any) => p.user_id)
+          .map((p: any) => ({ id: p.user_id, full_name: p.full_name || "Usuário" }))}
+        preselectedUserId={delegarPreUser}
+      />
+
     </div>
   );
 }

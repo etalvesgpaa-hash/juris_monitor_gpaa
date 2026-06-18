@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Clock, X, ArrowRight, CheckSquare } from "lucide-react";
 import { useTarefasVencendo } from "@/hooks/useTarefasVencendo";
-import type { PageId } from "./AppLayout";
+import type { PageId } from "@/types/navigation";
 
 const STORAGE_KEY = "jm_alerta_tarefas_data";
 
@@ -15,7 +15,8 @@ export function TarefasVencendoModal({ onNavigate }: Props) {
 
   useEffect(() => {
     if (isLoading || tarefasVencendo.length === 0) return;
-    const hoje     = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const hoje = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     const ultimaVez = localStorage.getItem(STORAGE_KEY);
     if (ultimaVez === hoje) return;
     const timer = setTimeout(() => setAberto(true), 800);
@@ -23,7 +24,8 @@ export function TarefasVencendoModal({ onNavigate }: Props) {
   }, [isLoading, tarefasVencendo.length]);
 
   const fechar = () => {
-    const hoje = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const hoje = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     localStorage.setItem(STORAGE_KEY, hoje);
     setAberto(false);
   };
@@ -70,8 +72,10 @@ export function TarefasVencendoModal({ onNavigate }: Props) {
   };
 
   function fmtDate(iso: string) {
-    const d = new Date(iso);
-    return d.toLocaleDateString("pt-BR");
+    // new Date("YYYY-MM-DD") interpreta como UTC e no Brasil (UTC-3)
+    // vira o dia anterior. Parseamos manualmente para evitar o deslocamento.
+    const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("pt-BR");
   }
 
   function Secao({ label, cor, icone, itens }: {
