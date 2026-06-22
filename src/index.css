@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 93%;
+    --foreground: 155 53% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 155 53% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 155 53% 11%;
+
+    --primary: 155 53% 11%;
+    --primary-foreground: 40 33% 93%;
+
+    --secondary: 37 42% 80%;
+    --secondary-foreground: 155 53% 11%;
+
+    --muted: 37 20% 88%;
+    --muted-foreground: 33 7% 47%;
+
+    --accent: 43 50% 54%;
+    --accent-foreground: 155 53% 11%;
+
+    --destructive: 0 66% 37%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 155 53% 11% / 0.15;
+    --input: 155 53% 11% / 0.15;
+    --ring: 43 50% 54%;
+
+    --radius: 0.75rem;
+
+    --gold: 43 50% 54%;
+    --gold-light: 43 50% 69%;
+    --sage: 155 43% 16%;
+    --rust: 43 69% 31%;
+    --mist-color: 33 7% 47%;
+    --red-alert: 0 66% 37%;
+    --green-ok: 155 43% 16%;
+
+    --sidebar-background: 155 53% 11%;
+    --sidebar-foreground: 40 33% 93%;
+    --sidebar-primary: 43 50% 54%;
+    --sidebar-primary-foreground: 155 53% 11%;
+    --sidebar-accent: 155 43% 16%;
+    --sidebar-accent-foreground: 40 33% 93%;
+    --sidebar-border: 43 50% 54% / 0.2;
+    --sidebar-ring: 43 50% 54%;
+  
+  /* Helpers usados na ProcessosPage */
+  .field {
+    @apply mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all;
+  }
+  .btn-outline-sm {
+    @apply text-xs border border-border rounded-lg px-3 py-1.5 font-semibold hover:bg-muted transition-colors;
+  }
+}
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    overflow-x: hidden; /* impede scroll horizontal ao aumentar zoom */
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    min-height: 100vh;
+    overflow-x: hidden; /* reforço: sem scroll horizontal */
+    width: 100%;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 15% 20%, hsl(155 53% 11% / 0.04) 0%, transparent 50%),
+      radial-gradient(circle at 85% 80%, hsl(43 50% 54% / 0.04) 0%, transparent 50%),
+      url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0v60M0 30h60' stroke='%230d2a1e' stroke-width='0.3' stroke-opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Playfair Display', serif;
+  }
+  .font-body {
+    font-family: 'DM Sans', sans-serif;
+  }
+  .font-mono {
+    font-family: 'DM Mono', monospace;
+  }
+}
