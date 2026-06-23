@@ -29,7 +29,6 @@ import {
   Eye,
   X,
   Globe,
-  UserPlus,
   FileText,
 } from "lucide-react";
 import type { Cliente } from "../hooks/useClientes";
@@ -142,11 +141,6 @@ export function ClientesPage() {
     processo: string;
   } | null>(null);
 
-  // Modal liberar acesso ao portal
-  const [modalPortal, setModalPortal] = useState<Cliente | null>(null);
-  const [portalEmail, setPortalEmail] = useState("");
-  const [portalSenha, setPortalSenha] = useState("");
-  const [portalLoading, setPortalLoading] = useState(false);
   const editingId = editing?.id ?? null;
 
   // Stats
@@ -706,45 +700,6 @@ export function ClientesPage() {
       (c.numeros_processo || []).some((p) => p.includes(search))
   );
 
-  // ── Liberar Acesso ao Portal ─────────────────────────────────────────────────
-  const liberarAcessoPortal = async () => {
-    if (!modalPortal || !portalEmail || !portalSenha) return;
-    setPortalLoading(true);
-    try {
-      const processo = (modalPortal.numeros_processo || [])[0] || null;
-
-      const response = await fetch("/api/create-portal-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nome: modalPortal.nome,
-          email: portalEmail,
-          senha: portalSenha,
-          processo_cnj: processo,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Erro ao criar acesso");
-      }
-
-      toast({
-        title: "✅ Acesso ao portal liberado!",
-        description: `${modalPortal.nome} já pode acessar o portal com o e-mail informado.`,
-      });
-      setModalPortal(null);
-      setPortalEmail("");
-      setPortalSenha("");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erro desconhecido";
-      toast({ title: "Erro ao liberar acesso", description: msg, variant: "destructive" });
-    } finally {
-      setPortalLoading(false);
-    }
-  };
-
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
@@ -868,19 +823,7 @@ export function ClientesPage() {
               >
                 {createCliente.isPending || updateCliente.isPending ? "Salvando..." : "Salvar"}
               </Button>
-              {editingId && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const c = clientes.find((x) => x.id === editingId);
-                    if (c) { setModalPortal(c); setPortalEmail(c.email || ""); }
-                  }}
-                  className="gap-1.5 border-blue-400 text-blue-600 hover:bg-blue-50"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  Liberar Portal
-                </Button>
-              )}
+
               <Button variant="outline" onClick={resetForm}>
                 Cancelar
               </Button>
@@ -1528,18 +1471,7 @@ export function ClientesPage() {
               <Globe className="w-4 h-4" />
               Abrir no TJSP
             </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2 justify-start border-blue-400 text-blue-600 hover:bg-blue-50"
-              onClick={() => {
-                setModalPortal(modalProcesso.cliente);
-                setPortalEmail(modalProcesso.cliente.email || "");
-                setModalProcesso(null);
-              }}
-            >
-              <UserPlus className="w-4 h-4" />
-              Liberar acesso ao portal
-            </Button>
+
             <Button
               variant="outline"
               className="w-full gap-2 justify-start"
@@ -1557,67 +1489,7 @@ export function ClientesPage() {
       </div>
     )}
 
-    {/* ── Modal: Liberar Acesso ao Portal ───────────────────────────── */}
-    {modalPortal && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display font-semibold text-base flex items-center gap-2">
-              <Globe className="w-4 h-4 text-blue-500" />
-              Liberar Acesso ao Portal
-            </h3>
-            <button onClick={() => { setModalPortal(null); setPortalEmail(""); setPortalSenha(""); }} className="text-muted-foreground hover:text-foreground">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Criar conta de acesso ao portal para <strong>{modalPortal.nome}</strong>.
-          </p>
-          {(modalPortal.numeros_processo || []).length > 0 && (
-            <div className="text-xs bg-accent/10 px-3 py-2 rounded">
-              Processo vinculado: <span className="font-mono font-medium">{(modalPortal.numeros_processo || [])[0]}</span>
-            </div>
-          )}
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">E-mail de acesso</label>
-              <input
-                type="email"
-                value={portalEmail}
-                onChange={(e) => setPortalEmail(e.target.value)}
-                placeholder="email@exemplo.com"
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Senha provisória</label>
-              <input
-                type="text"
-                value={portalSenha}
-                onChange={(e) => setPortalSenha(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Envie esta senha ao cliente após criar o acesso.</p>
-            </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <Button
-              variant="gold"
-              className="flex-1 gap-2"
-              onClick={liberarAcessoPortal}
-              disabled={portalLoading || !portalEmail || !portalSenha}
-            >
-              <UserPlus className="w-4 h-4" />
-              {portalLoading ? "Criando..." : "Criar acesso"}
-            </Button>
-            <Button variant="outline" onClick={() => { setModalPortal(null); setPortalEmail(""); setPortalSenha(""); }}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      </div>
-    )}
+
     </>
   );
 }
