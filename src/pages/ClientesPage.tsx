@@ -391,9 +391,11 @@ export function ClientesPage() {
     }
     const numero = formatPhone(c.telefone);
     const processos = (c.numeros_processo || []).join(", ") || "não informado";
+    const assinaturaWpp = `\n\n— O Dr. ${nomeAdvogado} estará avaliando a publicação que foi enviada e, caso haja necessidade, entrará em contato.`;
+
     const texto = resumo
-      ? `*JurisMonitor — Nova Intimação*\n\nOlá ${c.nome},\n\nFoi detectada uma publicação relacionada ao seu processo: ${processos}\n\n*Resumo:*\n${resumo}\n\nEm caso de dúvidas, entre em contato com o escritório.`
-      : `*JurisMonitor — Aviso de Intimação*\n\nOlá ${c.nome},\n\nHá uma intimação relacionada ao seu processo: ${processos}.\nEntre em contato com o escritório para mais detalhes.`;
+      ? `*JurisMonitor — Nova Intimação*\n\nOlá ${c.nome},\n\nFoi detectada uma publicação relacionada ao seu processo: ${processos}\n\n*Resumo:*\n${resumo}${assinaturaWpp}`
+      : `*JurisMonitor — Aviso de Intimação*\n\nOlá ${c.nome},\n\nHá uma intimação relacionada ao seu processo: ${processos}.${assinaturaWpp}`;
 
     const url = `https://wa.me/55${numero}?text=${encodeURIComponent(texto)}`;
     window.open(url, "_blank");
