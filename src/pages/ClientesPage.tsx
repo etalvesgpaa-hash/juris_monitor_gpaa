@@ -513,12 +513,10 @@ export function ClientesPage() {
         if (resumo) resumos.push(`📂 Processo ${numProc}:\n${resumo}`);
       }
 
-      const assinatura = `\n\n---\nO Dr. ${nomeAdvogado} estará avaliando a publicação que foi enviada e, caso haja necessidade, entrará em contato.`;
-
       const resumoFinal =
         resumos.length > 0
-          ? resumos.join("\n\n---\n\n") + assinatura
-          : "Nenhum resumo de IA disponível no momento. Acesse o portal para ver os detalhes das intimações." + assinatura;
+          ? resumos.join("\n\n---\n\n")
+          : "Nenhum resumo de IA disponível no momento. Acesse o portal para ver os detalhes das intimações.";
 
       const emailData = {
         destinatario: c.email,
@@ -528,6 +526,7 @@ export function ClientesPage() {
         assunto: "Atualização de Intimações",
         resumoIA: resumoFinal,
         textoCompleto: "",
+        nomeAdvogado,
       };
 
       const response = await fetch("/api/send-email", {
@@ -625,8 +624,9 @@ export function ClientesPage() {
             numeroProcesso: intim._numProc,
             dataPublicacao: fmtData(intim._data),
             assunto: intim._titulo || "Nova Publicação AASP",
-            resumoIA: (resumo || "Resumo não disponível.") + `\n\n---\nO Dr. ${nomeAdvogado} estará avaliando a publicação que foi enviada e, caso haja necessidade, entrará em contato.`,
+            resumoIA: resumo || "Resumo não disponível.",
             textoCompleto: "",
+            nomeAdvogado,
           };
           const res = await fetch("/api/send-email", {
             method: "POST",

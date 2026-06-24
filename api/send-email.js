@@ -40,6 +40,7 @@ export default async function handler(req, res) {
     to_email, titulo, resumo, portal_url,
     destinatario, nomeCliente, numeroProcesso,
     dataPublicacao, assunto, resumoIA, textoCompleto,
+    nomeAdvogado,
   } = req.body;
 
   const isIntimacao  = !!(destinatario && numeroProcesso);
@@ -80,9 +81,9 @@ export default async function handler(req, res) {
             <strong>Texto da publicação:</strong><br>${textoCompleto}
           </div>` : ''}
       </div>
-      <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:14px;margin-bottom:16px">
-        <div style="color:#856404;font-size:0.85rem;line-height:1.6">
-          <strong>⚠️ Atenção:</strong> Entre em contato com o escritório para verificar prazos e orientações específicas sobre esta publicação.
+      <div style="background:#eaf4ff;border:1px solid #b8d9f5;border-radius:8px;padding:14px;margin-bottom:16px">
+        <div style="color:#1a4a7a;font-size:0.85rem;line-height:1.6">
+          📋 O Dr. ${nomeAdvogado || 'seu advogado'} estará avaliando a publicação que foi enviada e, caso haja necessidade, entrará em contato.
         </div>
       </div>
       <div style="text-align:center;font-size:0.72rem;color:#8c8070;margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0">
