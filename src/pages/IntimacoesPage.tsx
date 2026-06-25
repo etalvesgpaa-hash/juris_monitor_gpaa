@@ -1778,6 +1778,13 @@ function NovoClienteModal({
   const partesRaw = intim._partes || (intim.Partes || intim.partes || "") as string;
   const primeiroNome = partesRaw.split(/[·×,]/)[0]?.trim() || "";
 
+  const STATUS_PROCESSO_OPTIONS = [
+    "Novo Caso", "Documentação Pendente", "Petição Inicial", "Protocolado",
+    "Distribuído", "Citado", "Contestação", "Audiência Designada",
+    "Audiência Realizada", "Produção de Provas", "Sentença", "Recurso",
+    "Trânsito em Julgado", "Cumprimento de Sentença", "Arquivado",
+  ];
+
   const [form, setForm] = React.useState({
     nome: primeiroNome,
     cpf_cnpj: "",
@@ -1788,6 +1795,7 @@ function NovoClienteModal({
     numeros_processo: intim._numProc ? [intim._numProc] : [] as string[],
     notificacoes_email: true,
     status_monitoramento: "ativo" as "ativo" | "pausado" | "inativo",
+    status_processo: "Novo Caso" as string,
   });
   const [processoInput, setProcessoInput] = React.useState("");
 
@@ -1814,6 +1822,7 @@ function NovoClienteModal({
       numeros_processo: form.numeros_processo.length > 0 ? form.numeros_processo : null,
       notificacoes_email: form.notificacoes_email,
       status_monitoramento: form.status_monitoramento,
+      status_processo: form.status_processo || "Novo Caso",
     });
   };
 
@@ -1967,6 +1976,20 @@ function NovoClienteModal({
                 <option value="ativo">Ativo</option>
                 <option value="pausado">Pausado</option>
                 <option value="inativo">Inativo</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground block mb-2">
+                Fase do Processo
+              </label>
+              <select
+                value={form.status_processo}
+                onChange={e => setForm(f => ({ ...f, status_processo: e.target.value }))}
+                className="w-full border border-border rounded-lg px-2 py-1.5 text-sm bg-card outline-none focus:border-accent"
+              >
+                {STATUS_PROCESSO_OPTIONS.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
               </select>
             </div>
           </div>

@@ -1079,8 +1079,8 @@ export function ClientesPage() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-sm" style={{ minWidth: "700px", maxWidth: "100%" }}>
+          <div className="overflow-x-auto w-full" style={{ WebkitOverflowScrolling: "touch" }}>
+            <table className="w-full text-sm" style={{ minWidth: "650px" }}>
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   {[
@@ -1088,7 +1088,7 @@ export function ClientesPage() {
                     "E-MAIL",
                     "PROCESSO CNJ",
                     "STATUS",
-                    "FASE DO PROCESSO",
+                    "FASE",
                     "NOTIFICAÇÕES",
                     "CADASTRADO",
                     "AÇÕES",
@@ -1114,7 +1114,7 @@ export function ClientesPage() {
                       className="border-b border-border/50 hover:bg-muted/20 transition-colors"
                     >
                       {/* NOME */}
-                      <td className="px-4 py-3 max-w-[180px]">
+                      <td className="px-3 py-3 max-w-[160px]">
                         <div className="font-semibold text-sm truncate" title={c.nome}>{c.nome}</div>
                         {c.cpf_cnpj && (
                           <div className="text-xs text-muted-foreground font-mono truncate">{c.cpf_cnpj}</div>
@@ -1125,7 +1125,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* E-MAIL */}
-                      <td className="px-4 py-3 max-w-[180px]">
+                      <td className="px-3 py-3 max-w-[160px]">
                         {c.email ? (
                           <div className="text-xs truncate" title={c.email}>{c.email}</div>
                         ) : (
@@ -1176,9 +1176,9 @@ export function ClientesPage() {
                       </td>
 
                       {/* FASE DO PROCESSO */}
-                      <td className="px-4 py-3 max-w-[160px]">
+                      <td className="px-3 py-3 max-w-[130px]">
                         {(c as any).status_processo ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-accent/10 text-accent border border-accent/20 whitespace-nowrap">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[0.65rem] font-medium bg-accent/10 text-accent border border-accent/20 max-w-[120px] truncate" title={(c as any).status_processo}>
                             {(c as any).status_processo}
                           </span>
                         ) : (
