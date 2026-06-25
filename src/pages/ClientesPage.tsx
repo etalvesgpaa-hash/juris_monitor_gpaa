@@ -725,7 +725,7 @@ export function ClientesPage() {
 
   return (
     <>
-    <div className="w-full min-w-0 max-w-[1400px] mx-auto px-2 sm:px-4">
+    <div className="w-full min-w-0 max-w-[1400px] mx-auto px-2 sm:px-4 overflow-x-hidden">
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
@@ -1078,28 +1078,19 @@ export function ClientesPage() {
           )}
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="overflow-x-auto w-full" style={{ WebkitOverflowScrolling: "touch" }}>
+        <div className="bg-card border border-border rounded-xl overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+          <div>
             <table className="w-full text-sm" style={{ minWidth: "650px" }}>
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  {[
-                    "NOME",
-                    "E-MAIL",
-                    "PROCESSO CNJ",
-                    "STATUS",
-                    "FASE",
-                    "NOTIFICAÇÕES",
-                    "CADASTRADO",
-                    "AÇÕES",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">NOME</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap hidden lg:table-cell">E-MAIL</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">PROCESSO</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap hidden md:table-cell">STATUS</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap hidden md:table-cell">FASE</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap hidden xl:table-cell">NOTIFICAÇÕES</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap hidden xl:table-cell">CADASTRADO</th>
+                  <th className="px-3 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">AÇÕES</th>
                 </tr>
               </thead>
               <tbody>
@@ -1125,7 +1116,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* E-MAIL */}
-                      <td className="px-3 py-3 max-w-[160px]">
+                      <td className="px-3 py-3 max-w-[160px] hidden lg:table-cell">
                         {c.email ? (
                           <div className="text-xs truncate" title={c.email}>{c.email}</div>
                         ) : (
@@ -1161,7 +1152,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* STATUS */}
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 hidden md:table-cell">
                         {c.status_monitoramento === "ativo" ? (
                           <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
                             • Ativo
@@ -1176,7 +1167,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* FASE DO PROCESSO */}
-                      <td className="px-3 py-3 max-w-[130px]">
+                      <td className="px-3 py-3 max-w-[130px] hidden md:table-cell">
                         {(c as any).status_processo ? (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[0.65rem] font-medium bg-accent/10 text-accent border border-accent/20 max-w-[120px] truncate" title={(c as any).status_processo}>
                             {(c as any).status_processo}
@@ -1187,7 +1178,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* NOTIFICAÇÕES */}
-                      <td className="px-4 py-3 min-w-[140px] max-w-[220px]">
+                      <td className="px-3 py-3 min-w-[140px] max-w-[220px] hidden xl:table-cell">
                         <div className="space-y-1.5">
                           {/* Resumo IA — vem de notificação enviada ou direto da tabela intimacoes */}
                           {ultimaNotif?.resumo_ia ? (
@@ -1274,7 +1265,7 @@ export function ClientesPage() {
                       </td>
 
                       {/* CADASTRADO */}
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      <td className="px-3 py-3 text-xs text hidden xl:table-cell-muted-foreground whitespace-nowrap">
                         {new Date(c.created_at).toLocaleDateString("pt-BR")}
                       </td>
 
