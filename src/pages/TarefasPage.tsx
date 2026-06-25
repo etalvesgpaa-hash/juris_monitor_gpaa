@@ -1142,7 +1142,10 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
 }) {
   const [showMover, setShowMover] = useState(false);
 
-  const prazoFormatado = tarefa.data_vencimento ? fmtPrazoKanban(tarefa.data_vencimento) : null;
+  const prazoFormatado = tarefa.data_vencimento
+    ? fmtDataLocal(tarefa.data_vencimento.slice(0, 10)) +
+      ((tarefa as any).hora_vencimento ? ` · ${(tarefa as any).hora_vencimento}` : "")
+    : null;
   // Exclui a coluna atual (verifica se o status da tarefa está nos statusKeys da coluna)
   const opcoesMovimento = KANBAN_COLUMNS.filter(
     (c) => !(c.statusKeys as readonly string[]).includes(tarefa.status) && c.key !== currentColKey
