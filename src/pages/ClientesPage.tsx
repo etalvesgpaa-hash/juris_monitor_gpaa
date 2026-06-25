@@ -94,6 +94,24 @@ function formatPhone(tel: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const STATUS_PROCESSO_OPTIONS = [
+  "Novo Caso",
+  "Documentação Pendente",
+  "Petição Inicial",
+  "Protocolado",
+  "Distribuído",
+  "Citado",
+  "Contestação",
+  "Audiência Designada",
+  "Audiência Realizada",
+  "Produção de Provas",
+  "Sentença",
+  "Recurso",
+  "Trânsito em Julgado",
+  "Cumprimento de Sentença",
+  "Arquivado",
+] as const;
+
 export function ClientesPage() {
   const { user } = useAuth();
   const nomeAdvogado = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Dr.(a)";
