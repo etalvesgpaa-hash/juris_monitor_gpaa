@@ -110,11 +110,24 @@ export function TarefasPage() {
   const { data: appUsers = [] } = useQuery({
     queryKey: ["profiles-para-delegacao"],
     queryFn: async () => {
-      const { data } = await supabase
+      // 1. Busca todos os profiles
+      const { data: allProfiles } = await supabase
         .from("profiles")
         .select("id, user_id, full_name, is_admin")
         .order("full_name");
-      return data || [];
+
+      if (!allProfiles || allProfiles.length === 0) return [];
+
+      // 2. Busca user_ids dos clientes do portal para excluir da lista
+      const { data: portalUsers } = await supabase
+        .from("clientes_portal")
+        .select("user_id")
+        .not("user_id", "is", null);
+
+      const portalUserIds = new Set((portalUsers || []).map((c: any) => c.user_id));
+
+      // 3. Retorna apenas advogados (profiles que não são clientes do portal)
+      return allProfiles.filter((p: any) => !portalUserIds.has(p.user_id));
     },
     enabled: isAdmin,
   });
@@ -171,12 +184,13 @@ export function TarefasPage() {
 
   const handleEdit = (t: typeof tarefas[0]) => {
     const initialData = {
-      titulo:          t.titulo,
-      descricao:       t.descricao || "",
-      numero_processo: (t as any).numero_processo || "",
-      data_vencimento: t.data_vencimento ? t.data_vencimento.slice(0, 10) : "",
-      prioridade:      t.prioridade,
-      status:          t.status || "triagem",
+      titulo:           t.titulo,
+      descricao:        t.descricao || "",
+      numero_processo:  (t as any).numero_processo || "",
+      data_vencimento:  t.data_vencimento ? t.data_vencimento.slice(0, 10) : "",
+      hora_vencimento:  (t as any).hora_vencimento || "",
+      prioridade:       t.prioridade,
+      status:           t.status || "triagem",
     };
     setTaskInitialData(initialData);
     setEditingId(t.id);
@@ -198,6 +212,7 @@ export function TarefasPage() {
           descricao: data.descricao || null,
           numero_processo: data.numero_processo || null,
           data_vencimento: data.data_vencimento || null,
+          hora_vencimento: data.hora_vencimento || null,
           prioridade: data.prioridade,
           status: data.status,
         });
@@ -208,6 +223,7 @@ export function TarefasPage() {
           descricao: data.descricao || null,
           numero_processo: data.numero_processo || null,
           data_vencimento: data.data_vencimento || null,
+          hora_vencimento: data.hora_vencimento || null,
           prioridade: data.prioridade,
           status: data.status,
         });
@@ -232,6 +248,7 @@ export function TarefasPage() {
           descricao: form.descricao || null,
           numero_processo: (form as any).numero_processo || null,
           data_vencimento: form.data_vencimento || null,
+          hora_vencimento: (form as any).hora_vencimento || null,
           prioridade: form.prioridade,
           status: form.status,
         });
@@ -242,6 +259,7 @@ export function TarefasPage() {
           descricao: form.descricao || null,
           numero_processo: (form as any).numero_processo || null,
           data_vencimento: form.data_vencimento || null,
+          hora_vencimento: (form as any).hora_vencimento || null,
           prioridade: form.prioridade,
           status: form.status,
         });
@@ -657,6 +675,7 @@ export function TarefasPage() {
                     {t.data_vencimento && (
                       <span className={`text-xs font-mono ${isVencida ? "text-red-alert font-bold" : "text-muted-foreground"}`}>
                         {fmtDataLocal(t.data_vencimento)}
+                        {(t as any).hora_vencimento && ` · ${(t as any).hora_vencimento}`}
                       </span>
                     )}
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-accent" onClick={() => handleEdit(t)}>
@@ -885,6 +904,9 @@ function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, g
                 <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Prazo</p>
                 <p className={`text-sm font-semibold ${prazo < hojeStr && tarefa.status !== "concluida" ? "text-red-600" : "text-foreground"}`}>
                   {fmtDataLocal(prazo)}
+                  {(tarefa as any).hora_vencimento && (
+                    <span className="text-muted-foreground font-normal ml-2">🕐 {(tarefa as any).hora_vencimento}</span>
+                  )}
                 </p>
               </div>
             </div>

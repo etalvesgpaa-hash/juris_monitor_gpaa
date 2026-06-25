@@ -15,6 +15,7 @@ interface TarefaFormData {
   status: string;
   diasUteis: string;
   data_vencimento: string;
+  hora_vencimento: string;
   prioridade: string;
 }
 
@@ -50,6 +51,7 @@ const EMPTY_FORM: TarefaFormData = {
   status: "triagem",
   diasUteis: "",
   data_vencimento: "",
+  hora_vencimento: "",
   prioridade: "media",
 };
 
@@ -206,6 +208,22 @@ export function CreateTaskModal({
                   {form.data_vencimento && (
                     <p className="text-[0.7rem] font-semibold text-accent mt-1">
                       📅 {formatDataVencimento()}{form.diasUteis ? ` · ${form.diasUteis} dias úteis` : ""}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[0.72rem] font-bold uppercase tracking-wide text-muted-foreground block mb-1">
+                    Horário
+                  </label>
+                  <input
+                    type="time"
+                    value={form.hora_vencimento}
+                    onChange={e => setForm(f => ({ ...f, hora_vencimento: e.target.value }))}
+                    className="w-full px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  />
+                  {form.hora_vencimento && (
+                    <p className="text-[0.7rem] font-semibold text-accent mt-1">
+                      🕐 {form.hora_vencimento}
                     </p>
                   )}
                 </div>
