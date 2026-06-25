@@ -328,6 +328,7 @@ export function ClientesPage() {
       notificacoes_email: form.notificacoes_email,
       notificacoes_whatsapp: (form as any).notificacoes_whatsapp,
       status_monitoramento: form.status_monitoramento,
+      status_processo: form.status_processo || "Novo Caso",
     };
 
     try {
@@ -993,6 +994,24 @@ export function ClientesPage() {
                     <option value="inativo">Inativo</option>
                   </select>
                 </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-border">
+                  <div>
+                    <p className="text-sm font-medium">Status do Processo</p>
+                    <p className="text-xs text-muted-foreground">
+                      Fase atual do processo judicial
+                    </p>
+                  </div>
+                  <select
+                    value={form.status_processo}
+                    onChange={(e) => setForm({ ...form, status_processo: e.target.value })}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none max-w-[200px]"
+                  >
+                    {STATUS_PROCESSO_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1051,6 +1070,7 @@ export function ClientesPage() {
                     "E-MAIL",
                     "PROCESSO CNJ",
                     "STATUS",
+                    "FASE DO PROCESSO",
                     "NOTIFICAÇÕES",
                     "CADASTRADO",
                     "AÇÕES",
@@ -1134,6 +1154,17 @@ export function ClientesPage() {
                           <Badge variant="outline" className="text-muted-foreground">
                             Inativo
                           </Badge>
+                        )}
+                      </td>
+
+                      {/* FASE DO PROCESSO */}
+                      <td className="px-4 py-3 max-w-[160px]">
+                        {(c as any).status_processo ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-accent/10 text-accent border border-accent/20 whitespace-nowrap">
+                            {(c as any).status_processo}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Novo Caso</span>
                         )}
                       </td>
 
