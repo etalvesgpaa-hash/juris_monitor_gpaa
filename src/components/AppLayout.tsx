@@ -15,10 +15,11 @@ import { IntimacoesPage }   from "@/pages/IntimacoesPage";
 import { HonorariosPage }   from "@/pages/HonorariosPage";
 import { NotificacoesPage } from "@/pages/NotificacoesPage";
 import { AdminPage }        from "@/pages/AdminPage";
+import { FinanceiroPage }   from "@/pages/FinanceiroPage";
 
 export type PageId =
   | "dashboard" | "processos" | "intimacoes" | "notificacoes"
-  | "honorarios" | "tarefas" | "clientes" | "config" | "admin";
+  | "honorarios" | "financeiro" | "tarefas" | "clientes" | "config" | "admin";
 
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
@@ -33,10 +34,16 @@ export function AppLayout() {
       case "intimacoes":   return <IntimacoesPage />;
       case "notificacoes": return <NotificacoesPage />;
       case "honorarios":   return <HonorariosPage />;
+      case "financeiro":   return <FinanceiroPage />;
       case "tarefas":      return <TarefasPage />;
       case "clientes":     return <ClientesPage />;
       case "config":       return <ConfigPage />;
-      case "admin":        return <AdminPage />;
+      case "admin":        return isAdmin ? <AdminPage /> : (
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+          <p className="text-lg font-display font-semibold">Acesso negado</p>
+          <p className="text-sm mt-1">Área restrita a administradores.</p>
+        </div>
+      );
       default:
         return (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">

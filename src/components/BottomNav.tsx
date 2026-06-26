@@ -8,6 +8,7 @@ const baseItems: { id: PageId; icon: string; label: string }[] = [
   { id: "tarefas",      icon: "📋", label: "Tarefas"    },
   { id: "notificacoes", icon: "🔔", label: "Notif."     },
   { id: "honorarios",   icon: "💰", label: "Honorários" },
+  { id: "financeiro",   icon: "💳", label: "Financeiro" },
   { id: "config",       icon: "⚙️", label: "Config"     },
 ];
 

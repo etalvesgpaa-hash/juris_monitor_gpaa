@@ -14,6 +14,7 @@ const baseTabs: { id: PageId; label: string }[] = [
   { id: "tarefas",      label: "Tarefas"        },
   { id: "notificacoes", label: "Notificações"   },
   { id: "honorarios",   label: "Honorários"     },
+  { id: "financeiro",   label: "Financeiro"     },
   { id: "config",       label: "Configurações"  },
 ];
 
