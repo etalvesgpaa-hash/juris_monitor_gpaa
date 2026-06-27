@@ -29,6 +29,11 @@ interface Lancamento {
 const TIPOS = ["Honorários", "Êxito", "Custas", "Acordo", "Outros"];
 const STATUS_OPTIONS = ["pendente", "recebido", "atrasado"];
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const CORES_MESES = [
+  "#4f86c6","#6a9fd8","#5ba85a","#7bc67a",
+  "#c9a84c","#e8b84b","#e07b39","#d4573a",
+  "#9b59b6","#7d3c98","#2e86ab","#1a5276",
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
