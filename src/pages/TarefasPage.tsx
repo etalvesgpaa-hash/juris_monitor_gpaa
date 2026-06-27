@@ -54,6 +54,14 @@ function fmtPrazoKanban(iso: string): string {
   return fmtDataLocal(iso);
 }
 
+/** Calcula quantos dias uma tarefa está em aberto desde a criação */
+function diasEmAberto(created_at: string): number {
+  const criacao = new Date(created_at);
+  const hoje = new Date();
+  const diff = hoje.getTime() - criacao.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
 /** Gera iniciais do nome para o avatar */
 function getInitials(name: string): string {
   if (!name) return "?";
@@ -912,6 +920,25 @@ function TarefaDetalheModal({ tarefa, userName, userInitials, userAvatarColor, g
             </div>
           )}
 
+          {/* Data de criação + dias em aberto */}
+          {tarefa.created_at && (
+            <div className="flex items-start gap-3">
+              <Calendar className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Criada em</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {fmtDataLocal(tarefa.created_at.slice(0, 10))}
+                  {tarefa.status !== "concluida" && (() => {
+                    const d = diasEmAberto(tarefa.created_at);
+                    const label = d === 0 ? "hoje" : d === 1 ? "1 dia em aberto" : `${d} dias em aberto`;
+                    const cor = d > 30 ? "text-red-500" : d > 14 ? "text-yellow-600" : "text-muted-foreground";
+                    return <span className={`ml-2 text-xs font-normal ${cor}`}>⏱ {label}</span>;
+                  })()}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Descrição */}
           {tarefa.descricao && (
             <div className="flex items-start gap-3">
@@ -1146,6 +1173,9 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
     ? fmtDataLocal(tarefa.data_vencimento.slice(0, 10)) +
       ((tarefa as any).hora_vencimento ? ` · ${(tarefa as any).hora_vencimento}` : "")
     : null;
+
+  const dias = tarefa.created_at ? diasEmAberto(tarefa.created_at) : null;
+  const diasLabel = dias === null ? null : dias === 0 ? "Criada hoje" : dias === 1 ? "1 dia em aberto" : `${dias} dias em aberto`;
   // Exclui a coluna atual (verifica se o status da tarefa está nos statusKeys da coluna)
   const opcoesMovimento = KANBAN_COLUMNS.filter(
     (c) => !(c.statusKeys as readonly string[]).includes(tarefa.status) && c.key !== currentColKey
@@ -1228,6 +1258,13 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
         {prazoFormatado && (
           <p className={`text-[0.68rem] font-semibold mb-1.5 break-words ${isVencida ? "text-red-600" : "text-muted-foreground"}`}>
             {isVencida ? "⚠️ " : "🗓 "}{prazoFormatado}
+          </p>
+        )}
+
+        {/* Dias em aberto */}
+        {diasLabel && tarefa.status !== "concluida" && (
+          <p className={`text-[0.62rem] font-semibold mb-1 ${dias && dias > 30 ? "text-red-500" : dias && dias > 14 ? "text-yellow-600" : "text-muted-foreground"}`}>
+            ⏱ {diasLabel}
           </p>
         )}
 
