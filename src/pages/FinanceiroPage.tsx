@@ -300,39 +300,46 @@ export function FinanceiroPage() {
           {dadosMensais.map((d, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
               <div className="w-full flex flex-col justify-end h-24 gap-0.5 relative">
-                {d.total > 0 && (
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-green-500/30 rounded-t"
-                    style={{ height: `${(d.recebido / maxMensal) * 100}%` }}
-                  />
-                )}
-                {d.total > 0 && (
-                  <div
-                    className="absolute bottom-0 left-0 right-0 rounded-t border border-accent/30"
-                    style={{
-                      height: `${(d.total / maxMensal) * 100}%`,
-                      background: "transparent",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                )}
-                {d.total === 0 && (
+                {d.total > 0 ? (
+                  <>
+                    {/* Barra total com cor do mês */}
+                    <div
+                      className="absolute bottom-0 left-0 right-0 rounded-t transition-all"
+                      style={{
+                        height: `${(d.total / maxMensal) * 100}%`,
+                        backgroundColor: CORES_MESES[i] + "44",
+                        border: `2px solid ${CORES_MESES[i]}`,
+                      }}
+                    />
+                    {/* Barra recebido mais opaca */}
+                    {d.recebido > 0 && (
+                      <div
+                        className="absolute bottom-0 left-0 right-0 rounded-t transition-all"
+                        style={{
+                          height: `${(d.recebido / maxMensal) * 100}%`,
+                          backgroundColor: CORES_MESES[i] + "bb",
+                        }}
+                      />
+                    )}
+                    {/* Tooltip */}
+                    <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-popover border border-border rounded px-2 py-1.5 text-[0.6rem] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow space-y-0.5">
+                      <div className="font-bold">{fmtMoeda(d.total)}</div>
+                      {d.recebido > 0 && <div style={{ color: CORES_MESES[i] }}>Rec: {fmtMoeda(d.recebido)}</div>}
+                      {d.pendente > 0 && <div className="text-yellow-600">Pend: {fmtMoeda(d.pendente)}</div>}
+                    </div>
+                  </>
+                ) : (
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-border rounded" />
                 )}
-                {/* Tooltip */}
-                {d.total > 0 && (
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-popover border border-border rounded px-2 py-1 text-[0.6rem] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow">
-                    {fmtMoeda(d.total)}
-                  </div>
-                )}
               </div>
-              <span className="text-[0.6rem] text-muted-foreground">{d.mes}</span>
+              <span className="text-[0.6rem] text-muted-foreground font-medium">{d.mes}</span>
             </div>
           ))}
         </div>
         <div className="flex gap-4 mt-3 text-[0.65rem] text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-500/30 inline-block" /> Recebido</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm border border-accent/30 inline-block" /> Total lançado</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block opacity-80" style={{ backgroundColor: "#4f86c6bb" }} /> Recebido</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block border-2" style={{ borderColor: "#4f86c6", backgroundColor: "#4f86c644" }} /> Total lançado</span>
+          <span className="text-[0.6rem] italic">Passe o mouse para ver detalhes</span>
         </div>
       </div>
 
