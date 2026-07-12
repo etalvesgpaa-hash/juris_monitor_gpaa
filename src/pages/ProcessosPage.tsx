@@ -259,8 +259,8 @@ export function ProcessosPage() {
       return {
         ...rp,
         tribunalNome:    djd.tribunalNome    || rp.tribunal || undefined,
-        autor:           djd.autor           || undefined,
-        reu:             djd.reu             || undefined,
+        autor:           (djd.autor && djd.autor !== "—") ? djd.autor : undefined,
+        reu:             (djd.reu   && djd.reu   !== "—") ? djd.reu   : undefined,
         orgaoJulgador:   djd.orgaoJulgador   || rp.vara     || undefined,
         dataAjuizamento: djd.dataAjuizamento || undefined,
         ultimaMov:       djd.ultimaMov       || undefined,
@@ -284,8 +284,8 @@ export function ProcessosPage() {
     return {
       ...rp,
       tribunalNome:    rp.tribunalNome    || djd.tribunalNome    || rp.tribunal || undefined,
-      autor:           rp.autor           || djd.autor           || undefined,
-      reu:             rp.reu             || djd.reu             || undefined,
+      autor:           (rp.autor && rp.autor !== "—") ? rp.autor : ((djd.autor && djd.autor !== "—") ? djd.autor : undefined),
+      reu:             (rp.reu   && rp.reu   !== "—") ? rp.reu   : ((djd.reu   && djd.reu   !== "—") ? djd.reu   : undefined),
       orgaoJulgador:   rp.orgaoJulgador   || djd.orgaoJulgador   || rp.vara     || undefined,
       dataAjuizamento: rp.dataAjuizamento || djd.dataAjuizamento || undefined,
       ultimaMov:       rp.ultimaMov       || djd.ultimaMov       || undefined,
@@ -331,6 +331,7 @@ export function ProcessosPage() {
   const [form, setForm] = useState({
     numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "",
     area: "Cível", status: "Ativo", obs: "", cliente_id: "",
+    autorManual: "", reuManual: "",
   });
 
   const getToken = useCallback(async () => {
@@ -348,7 +349,7 @@ export function ProcessosPage() {
   }, [user]);
 
   const resetForm = () => {
-    setForm({ numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: "Ativo", obs: "", cliente_id: "" });
+    setForm({ numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: "Ativo", obs: "", cliente_id: "", autorManual: "", reuManual: "" });
     setEditId(null);
     setTribunalDetect("");
     setShowForm(false);
@@ -374,7 +375,9 @@ export function ProcessosPage() {
         return;
       }
 
-      // Monta partes formatadas
+      // Monta partes formatadas — a API pública do DataJud costuma OMITIR nome das partes
+      // (protegido por sigilo/LGPD). Quando isso acontece, NÃO sobrescrevemos o que
+      // já foi preenchido manualmente (undefined = campo não entra no update).
       const partesFormatadas = [norm.autor, norm.reu].filter(x => x && x !== "—").join(" × ") || null;
 
       // Atualiza processo no Supabase com todos os campos DataJud
@@ -385,7 +388,7 @@ export function ProcessosPage() {
         tribunal:            norm.tribunalNome,
         vara:                norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
         comarca:             norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
-        partes:              partesFormatadas,
+        partes:              partesFormatadas ?? undefined,
         ultima_movimentacao: norm._movimentacoes[0]?.dataISO || null,
         dados_datajud:       norm as any,
       });
@@ -414,17 +417,19 @@ export function ProcessosPage() {
       }
 
       // Atualiza estado local imediatamente (sem esperar refetch)
+      // Observação: só incluímos partes/autor/reu quando a DataJud realmente os retornou —
+      // caso contrário preservamos o que já foi preenchido manualmente no cadastro.
       const processoAtualizado: Partial<ProcessoRico> = {
         classe:      norm.classe !== "—" ? norm.classe : undefined,
         assunto:     norm.assunto !== "—" ? norm.assunto : undefined,
         tribunal:    norm.tribunalNome,
         vara:        norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
-        partes:      partesFormatadas,
+        ...(partesFormatadas ? { partes: partesFormatadas } : {}),
         ultima_movimentacao: norm._movimentacoes[0]?.dataISO || null,
         dados_datajud: norm as any,
         tribunalNome: norm.tribunalNome,
-        autor:        norm.autor,
-        reu:          norm.reu,
+        ...(norm.autor !== "—" ? { autor: norm.autor } : {}),
+        ...(norm.reu   !== "—" ? { reu: norm.reu }     : {}),
         orgaoJulgador: norm.orgaoJulgador,
         dataAjuizamento: norm.dataAjuizamento,
         ultimaMov:    norm.ultimaMov,
@@ -495,13 +500,25 @@ export function ProcessosPage() {
     const tribunal = detectarTribunalCNJ(form.numero_cnj);
     if (!tribunal) { toast({ title: "Número CNJ inválido ou tribunal não mapeado", variant: "destructive" }); return; }
 
+    // Monta string "Autor × Réu" a partir dos campos manuais (só entra o que foi preenchido)
+    const autorManual = form.autorManual.trim();
+    const reuManual    = form.reuManual.trim();
+    const partesManuais = (autorManual || reuManual)
+      ? `${autorManual || "—"} × ${reuManual || "—"}`
+      : null;
+
     try {
       if (editId) {
         await updateProcesso.mutateAsync({
           id: editId,
           advogados: form.advogado || null,
           status: form.status.toLowerCase(),
+          partes: partesManuais,
         });
+        // Reflete imediatamente na lista/painel local, sem esperar refetch
+        setProcessos(prev => prev.map(p => p.id === editId
+          ? { ...p, partes: partesManuais, autor: autorManual || p.autor, reu: reuManual || p.reu }
+          : p));
         toast({ title: "✅ Processo atualizado!" });
       } else {
         const created = await createProcesso.mutateAsync({
@@ -510,7 +527,7 @@ export function ProcessosPage() {
           status: "ativo",
           advogados: form.advogado || null,
           classe: null, assunto: null, vara: null, comarca: null,
-          partes: null, valor_causa: null, cliente_id: null,
+          partes: partesManuais, valor_causa: null, cliente_id: null,
         });
         toast({ title: "✅ Processo cadastrado! Buscando na DataJud…", description: tribunal.nome });
         if (created?.id) setTimeout(() => sincronizar(created.id, form.numero_cnj), 500);
@@ -530,7 +547,20 @@ export function ProcessosPage() {
   };
 
   const abrirEdicao = (p: ProcessoRico) => {
-    setForm({ numero_cnj: p.numero_cnj, advogado: p.advogados || "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: p.status || "Ativo", obs: "", cliente_id: p.cliente_id || "" });
+    // Tenta obter autor/réu já conhecidos (DataJud) ou o texto salvo em "partes" (ex: "Fulano × Beltrano")
+    const djd = p.dados_datajud as any;
+    const partesStr = p.partes || "";
+    const sepIdx = partesStr.indexOf("×");
+    const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
+    const reuFallback   = sepIdx > -1 ? partesStr.slice(sepIdx + 1).trim() : "";
+    const autorAtual = (p.autor || djd?.autor || autorFallback || "").replace(/^—$/, "");
+    const reuAtual    = (p.reu   || djd?.reu   || reuFallback   || "").replace(/^—$/, "");
+
+    setForm({
+      numero_cnj: p.numero_cnj, advogado: p.advogados || "", oab: "", clienteNome: "", whatsapp: "",
+      area: "Cível", status: p.status || "Ativo", obs: "", cliente_id: p.cliente_id || "",
+      autorManual: autorAtual, reuManual: reuAtual,
+    });
     setEditId(p.id);
     setTribunalDetect(p.tribunal ? `✓ ${p.tribunal}` : "");
     setShowForm(true);
@@ -661,8 +691,8 @@ export function ProcessosPage() {
                       <td className="px-4 py-3 text-xs max-w-[180px]">
                         {(() => {
                           const djd = p.dados_datajud as any;
-                          const autorFinal = rico.autor || djd?.autor || null;
-                          const reuFinal   = rico.reu   || djd?.reu   || null;
+                          const autorFinal = (rico.autor && rico.autor !== "—") ? rico.autor : ((djd?.autor && djd.autor !== "—") ? djd.autor : null);
+                          const reuFinal   = (rico.reu   && rico.reu   !== "—") ? rico.reu   : ((djd?.reu   && djd.reu   !== "—") ? djd.reu   : null);
                           const partesStr  = p.partes || "";
                           const sepIdx     = partesStr.indexOf("×");
                           const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
@@ -765,6 +795,13 @@ export function ProcessosPage() {
                 <FG label="OAB"><input value={form.oab} onChange={e => setForm(f => ({ ...f, oab: e.target.value }))} placeholder="SP 123456" className="field" /></FG>
               </div>
               <div className="grid grid-cols-2 gap-3">
+                <FG label="Parte Ativa (Autor)"><input value={form.autorManual} onChange={e => setForm(f => ({ ...f, autorManual: e.target.value }))} placeholder="Nome do autor/requerente" className="field" /></FG>
+                <FG label="Parte Passiva (Réu)"><input value={form.reuManual} onChange={e => setForm(f => ({ ...f, reuManual: e.target.value }))} placeholder="Nome do réu/requerido" className="field" /></FG>
+              </div>
+              <div className="text-[0.68rem] text-muted-foreground -mt-1.5">
+                💡 A API pública do DataJud/CNJ geralmente não retorna o nome das partes (dado protegido por sigilo/LGPD). Preencha aqui manualmente — isso será usado sempre que a sincronização não trouxer essa informação.
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <FG label="Área do Direito">
                   <select value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} className="field">
                     {AREAS.map(a => <option key={a}>{a}</option>)}
@@ -838,8 +875,13 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
   const autorFallback = sepIdx > -1 ? partesStr.slice(0, sepIdx).trim() : partesStr.trim();
   const reuFallback   = sepIdx > -1 ? partesStr.slice(sepIdx + 1).trim() : null;
 
-  const autor = processo.autor || djData?.autor || autorFallback || "—";
-  const reu   = processo.reu   || djData?.reu   || reuFallback   || "—";
+  const autorLimpo = (processo.autor && processo.autor !== "—") ? processo.autor : null;
+  const reuLimpo   = (processo.reu   && processo.reu   !== "—") ? processo.reu   : null;
+  const djAutorLimpo = (djData?.autor && djData.autor !== "—") ? djData.autor : null;
+  const djReuLimpo   = (djData?.reu   && djData.reu   !== "—") ? djData.reu   : null;
+
+  const autor = autorLimpo || djAutorLimpo || autorFallback || "—";
+  const reu   = reuLimpo   || djReuLimpo   || reuFallback   || "—";
 
   return (
     <>
