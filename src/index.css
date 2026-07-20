@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,65 +6,81 @@
 
 @layer base {
   :root {
-    --background: 40 20% 97%;
-    --foreground: 155 53% 11%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 155 53% 11%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 155 53% 11%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 155 53% 11%;
-    --primary-foreground: 40 20% 97%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
 
-    --secondary: 40 24% 91%;
-    --secondary-foreground: 155 53% 11%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 40 16% 93%;
-    --muted-foreground: 155 8% 42%;
+    --muted: 214 32% 95%;
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 43 50% 54%;
-    --accent-foreground: 155 53% 11%;
+    --accent: 41 58% 44%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 66% 37%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 155 24% 20% / 0.12;
-    --input: 155 24% 20% / 0.16;
-    --ring: 43 50% 54%;
+    --border: 214 32% 91%;
+    --input: 214 25% 84%;
+    --ring: 41 58% 44%;
 
     --radius: 0.75rem;
 
-    --surface-subtle: 40 18% 95%;
+    --surface-subtle: 210 40% 97%;
     --surface-elevated: 0 0% 100%;
-    --shadow-color: 155 53% 11%;
+    --shadow-color: 222 47% 11%;
 
-    --gold: 43 50% 54%;
-    --gold-light: 43 50% 69%;
-    --sage: 155 43% 16%;
-    --rust: 43 69% 31%;
-    --mist-color: 33 7% 47%;
+    --gold: 41 58% 44%;
+    --gold-light: 41 52% 57%;
+    --sage: 222 47% 15%;
+    --rust: 24 70% 42%;
+    --mist-color: 215 16% 47%;
     --red-alert: 0 66% 37%;
     --green-ok: 155 43% 16%;
 
-    --sidebar-background: 155 53% 11%;
-    --sidebar-foreground: 40 20% 97%;
-    --sidebar-primary: 43 50% 54%;
-    --sidebar-primary-foreground: 155 53% 11%;
-    --sidebar-accent: 155 43% 16%;
-    --sidebar-accent-foreground: 40 20% 97%;
-    --sidebar-border: 43 50% 54% / 0.2;
-    --sidebar-ring: 43 50% 54%;
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 41 58% 44%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 215 28% 24%;
+    --sidebar-ring: 41 58% 44%;
   
-  /* Helpers usados na ProcessosPage */
-  .field {
-    @apply mt-1 w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all;
-  }
-  .btn-outline-sm {
-    @apply text-xs border border-border rounded-lg px-3 py-1.5 font-semibold hover:bg-muted transition-colors;
-  }
 }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+    --card: 222 38% 10%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 38% 10%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 210 40% 96%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 28% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 28% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 41 58% 50%;
+    --accent-foreground: 222 47% 9%;
+    --border: 215 28% 20%;
+    --input: 215 25% 24%;
+    --ring: 41 58% 50%;
+    --surface-subtle: 217 28% 12%;
+    --surface-elevated: 222 38% 10%;
+    --shadow-color: 222 70% 3%;
+  }
 }
 
 @layer base {
@@ -99,14 +115,22 @@
     position: fixed;
     inset: 0;
     background-image:
-      radial-gradient(circle at 10% 0%, hsl(43 50% 54% / 0.035) 0%, transparent 34%),
-      radial-gradient(circle at 100% 100%, hsl(155 53% 11% / 0.025) 0%, transparent 38%);
+      radial-gradient(circle at 10% 0%, hsl(41 58% 44% / 0.035) 0%, transparent 32%),
+      radial-gradient(circle at 100% 100%, hsl(222 47% 11% / 0.025) 0%, transparent 38%);
     pointer-events: none;
     z-index: 0;
   }
 }
 
 @layer components {
+  .field {
+    @apply mt-1 w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm shadow-sm outline-none transition-all focus:border-ring focus:ring-2 focus:ring-ring/15;
+  }
+
+  .btn-outline-sm {
+    @apply rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors hover:bg-muted;
+  }
+
   .page-stack {
     @apply w-full min-w-0 space-y-6 overflow-x-hidden;
   }

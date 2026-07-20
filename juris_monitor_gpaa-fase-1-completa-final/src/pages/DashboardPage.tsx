@@ -248,7 +248,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   }).format(new Date());
 
   return (
-    <div>
+    <div className="page-stack">
       <header className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground first-letter:uppercase">

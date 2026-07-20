@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type { PageId } from "@/types/navigation";
-import { Bell, LogOut, Menu, RefreshCw, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, Menu, Moon, RefreshCw, ShieldCheck, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ interface TopNavProps {
 
 export function TopNav({ activePage, onPageChange, user, onSignOut, onMenuToggle, isAdmin = false }: TopNavProps) {
   const [syncing, setSyncing] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("jm_theme") === "dark");
   const [intimacoesCount, setIntimacoesCount] = useState<number>(() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]").length; } catch { return 0; }
   });
@@ -45,6 +46,11 @@ export function TopNav({ activePage, onPageChange, user, onSignOut, onMenuToggle
       window.removeEventListener("storage", update);
     };
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("jm_theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
 
   const handleSync = () => {
     setSyncing(true);
@@ -88,6 +94,10 @@ export function TopNav({ activePage, onPageChange, user, onSignOut, onMenuToggle
         <button type="button" onClick={() => onPageChange("notificacoes")} className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm hover:text-foreground" aria-label="Abrir notificações">
           <Bell className="h-4 w-4" />
           {intimacoesCount > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-destructive ring-2 ring-card" />}
+        </button>
+
+        <button type="button" onClick={() => setDarkMode((current) => !current)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground" aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}>
+          {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
 
         <div className="ml-1 hidden h-8 w-px bg-border sm:block" />

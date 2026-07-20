@@ -540,7 +540,7 @@ export function ConfigPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[900px]">
+        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1 lg:w-fit">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>

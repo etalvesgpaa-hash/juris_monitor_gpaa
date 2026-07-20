@@ -64,7 +64,7 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-50 bg-black/55 backdrop-blur-sm transition-opacity duration-250 ${visivel ? "opacity-100" : "opacity-0"}`}
+        className={`fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm transition-opacity duration-250 ${visivel ? "opacity-100" : "opacity-0"}`}
         onClick={fechar}
         aria-hidden
       />
@@ -75,7 +75,7 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
         aria-modal
         aria-label="Novas intimações encontradas"
         className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50
-                   w-full max-w-lg bg-background border border-border rounded-2xl
+          w-full max-w-lg bg-card border border-border rounded-2xl
                    shadow-2xl flex flex-col overflow-hidden
                    transition-all duration-250
                    ${visivel ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}

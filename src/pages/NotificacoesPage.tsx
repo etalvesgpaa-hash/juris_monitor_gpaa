@@ -322,7 +322,7 @@ export function NotificacoesPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="todas" className="space-y-5">
-        <TabsList className="w-full grid grid-cols-4">
+        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1">
           <TabsTrigger value="todas">
             Todas
             {notificacoes.length > 0 && (
