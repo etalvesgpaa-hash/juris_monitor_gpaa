@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
+import { BriefcaseBusiness, CheckSquare2, Clock3, FileText, Plus, TriangleAlert, Users } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -263,9 +264,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <button
           type="button"
           onClick={() => setShowCreateTaskModal(true)}
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md"
         >
-          Nova tarefa
+          <Plus className="h-4 w-4" /> Nova tarefa
         </button>
       </header>
 
@@ -278,19 +279,20 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </div>
       )}
       {/* ── Cards de estatísticas — linha 1 ── */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {/* Intimações de HOJE */}
         <div
           onClick={() => onNavigate?.("intimacoes")}
-          className="group cursor-pointer rounded-xl border border-border border-t-2 border-t-accent bg-card p-4 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover"
+          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-3"
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-amber-600 mb-1">Intimações Hoje</div>
-          <div className="font-display text-3xl font-black text-amber-600 group-hover:scale-105 transition-transform">
+          <div className="absolute right-4 top-4 rounded-xl bg-accent/10 p-2.5 text-accent"><FileText className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Intimações hoje</div>
+          <div className="font-display text-4xl font-semibold text-foreground transition-transform">
             {intimacoesHoje.length}
           </div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">publicações do dia</div>
           {intimacoesNaoLidas.length > 0 && (
-            <div className="mt-1.5 text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
+            <div className="mt-3 inline-flex rounded-full bg-accent/10 px-2.5 py-1 text-[0.68rem] font-bold text-accent">
               {intimacoesNaoLidas.length} não lida(s)
             </div>
           )}
@@ -299,10 +301,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Processos */}
         <div
           onClick={() => onNavigate?.("processos")}
-          className="cursor-pointer rounded-xl border border-border border-t-2 border-t-primary/60 bg-card p-4 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover"
+          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
         >
-          <div className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Processos</div>
-          <div className="font-display text-3xl font-bold text-foreground">{processos.length}</div>
+          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><BriefcaseBusiness className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Processos</div>
+          <div className="font-display text-4xl font-semibold text-foreground">{processos.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
           <div className="mt-1.5 text-[0.6rem] bg-blue-500/20 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
             {processos.filter(p => p.status === "ativo").length} ativos
@@ -312,10 +315,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Clientes */}
         <div
           onClick={() => onNavigate?.("clientes")}
-          className="cursor-pointer rounded-xl border border-border border-t-2 border-t-primary/60 bg-card p-4 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover"
+          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
         >
-          <div className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Clientes</div>
-          <div className="font-display text-3xl font-bold text-foreground">{clientes.length}</div>
+          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><Users className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Clientes</div>
+          <div className="font-display text-4xl font-semibold text-foreground">{clientes.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {clientesComPublicacoes > 0 && (
@@ -334,10 +338,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Tarefas pendentes */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className="cursor-pointer rounded-xl border border-border border-t-2 border-t-primary/60 bg-card p-4 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover"
+          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
         >
-          <div className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Tarefas</div>
-          <div className="font-display text-3xl font-bold text-foreground">{tarefasPendentes.length}</div>
+          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><CheckSquare2 className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Tarefas</div>
+          <div className="font-display text-4xl font-semibold text-foreground">{tarefasPendentes.length}</div>
           <div className="text-[0.65rem] text-muted-foreground mt-0.5">pendentes</div>
           <div className="mt-1.5 text-[0.6rem] bg-cyan-500/20 text-cyan-700 px-1.5 py-0.5 rounded font-bold inline-block">
             {tarefas.filter(t => t.status === "concluida").length} concluídas
@@ -347,12 +352,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* A vencer (3 dias) */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${
             tarefasAVencer.length > 0
-              ? "bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/40 hover:border-orange-500 hover:shadow-lg hover:shadow-orange-500/20"
-              : "bg-card border-border hover:border-accent/40"
+              ? "border-amber-500/25 bg-amber-500/5 hover:border-amber-500/40"
+              : "border-border bg-card hover:border-accent/40"
           }`}
         >
+          <div className="absolute right-5 top-5 rounded-xl bg-amber-500/10 p-2.5 text-amber-600"><Clock3 className="h-5 w-5" /></div>
           <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>A Vencer</div>
           <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
             {tarefasAVencer.length}
@@ -363,12 +369,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         {/* Vencidas */}
         <div
           onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${
             tarefasVencidas.length > 0
-              ? "bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/40 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20"
-              : "bg-card border-border hover:border-accent/40"
+              ? "border-red-500/30 bg-red-500/5 hover:border-red-500/45"
+              : "border-border bg-card hover:border-accent/40"
           }`}
         >
+          <div className="absolute right-5 top-5 rounded-xl bg-red-500/10 p-2.5 text-red-600"><TriangleAlert className="h-5 w-5" /></div>
           <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasVencidas.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Vencidas</div>
           <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-600" : ""}`}>
             {tarefasVencidas.length}
@@ -392,7 +399,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       )}
 
       {/* ── Gráficos ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <ChartCard title="Processos por Status">
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
@@ -439,7 +446,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
       {/* ── Últimas Intimações + Agenda ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-3.5 mb-5">
-        <div className="bg-card rounded-xl p-5 border border-border">
+        <div className="content-panel p-5">
           <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <div className="w-[18px] h-0.5 bg-accent" />
@@ -497,7 +504,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
       {/* ── Prazos críticos ── */}
       {tarefasAVencer.length > 0 && (
-        <div className="bg-card rounded-xl p-5 border border-accent/30 mb-5">
+        <div className="content-panel mb-5 border-accent/25 p-5">
           <div className="text-[0.72rem] font-bold text-accent uppercase tracking-widest mb-3 flex items-center gap-1.5">
             <div className="w-[18px] h-0.5 bg-accent" />
             ⚠️ Prazos Próximos — Próximos 3 dias
@@ -519,7 +526,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       )}
 
       {tarefasVencidas.length > 0 && (
-        <div className="bg-card rounded-xl p-5 border border-red-alert/30 mb-5">
+        <div className="content-panel mb-5 border-red-alert/25 p-5">
           <div className="text-[0.72rem] font-bold text-red-alert uppercase tracking-widest mb-3 flex items-center gap-1.5">
             <div className="w-[18px] h-0.5 bg-red-alert" />
             🔴 Tarefas Vencidas — Atenção Imediata
@@ -572,9 +579,9 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-xl p-5 border border-border">
-      <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-        <div className="w-[18px] h-0.5 bg-accent" />
+    <div className="content-panel p-5">
+      <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-foreground">
+        <div className="h-4 w-1 rounded-full bg-accent" />
         {title}
       </div>
       {children}

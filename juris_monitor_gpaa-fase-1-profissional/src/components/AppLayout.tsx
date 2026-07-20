@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
 import { TopNav } from "./TopNav";
-import { BottomNav } from "./BottomNav";
+import { AppSidebar } from "./AppSidebar";
 import { TarefasVencendoModal } from "./TarefasVencendoModal";
 import { NovasIntimacoesModal } from "./NovasIntimacoesModal";
 import { TarefasDelegadasToast } from "@/components/TarefasDelegadasBadge";
@@ -20,9 +20,16 @@ import type { PageId } from "@/types/navigation";
 
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jm_sidebar_collapsed") === "true");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
+
+  const handleSidebarCollapsed = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    localStorage.setItem("jm_sidebar_collapsed", String(collapsed));
+  };
 
   const renderPage = () => {
     switch (activePage) {
@@ -52,22 +59,33 @@ export function AppLayout() {
   };
 
   return (
-    <div className="relative z-[1] flex min-h-screen flex-col overflow-x-hidden bg-background">
-      <TopNav
+    <div className="relative z-[1] flex min-h-screen overflow-x-hidden bg-background">
+      <AppSidebar
         activePage={activePage}
         onPageChange={setActivePage}
-        user={user}
-        onSignOut={signOut}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={handleSidebarCollapsed}
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
         isAdmin={isAdmin}
       />
 
-      <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-x-hidden px-3 pb-24 pt-5 sm:px-5 md:px-8 md:pb-10 md:pt-8 xl:px-10">
-        <div key={activePage} className="w-full animate-fade-in">
-          {renderPage()}
-        </div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopNav
+          activePage={activePage}
+          onPageChange={setActivePage}
+          user={user}
+          onSignOut={signOut}
+          onMenuToggle={() => setMobileMenuOpen(true)}
+          isAdmin={isAdmin}
+        />
 
-      <BottomNav activePage={activePage} onPageChange={setActivePage} isAdmin={isAdmin} />
+        <main className="mx-auto w-full max-w-[1560px] flex-1 overflow-x-hidden px-3 pb-10 pt-5 sm:px-5 md:px-7 md:pt-7 xl:px-9">
+          <div key={activePage} className="w-full animate-fade-in">
+            {renderPage()}
+          </div>
+        </main>
+      </div>
 
       {/* Modal de tarefas vencendo — aparece automaticamente ao carregar */}
       <TarefasVencendoModal onNavigate={setActivePage} />
