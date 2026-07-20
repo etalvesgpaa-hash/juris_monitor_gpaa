@@ -194,13 +194,13 @@
   }
 
   .font-display {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Manrope', 'Inter', system-ui, sans-serif;
   }
   .font-body {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
   }
   .font-mono {
-    font-family: 'DM Mono', monospace;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
   }
 }
 

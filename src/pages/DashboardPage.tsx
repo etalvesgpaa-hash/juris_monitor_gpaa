@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
-import { BriefcaseBusiness, CheckSquare2, Clock3, FileText, Plus, TriangleAlert, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, CheckSquare2, Clock3, FileText, GripVertical, LayoutGrid, Plus, RotateCcw, TriangleAlert, Users, X } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -37,6 +37,21 @@ function dataLocalHoje(): string {
 
 interface DashboardPageProps { onNavigate?: (page: PageId) => void; }
 
+type DashboardCardId = "intimacoes" | "processos" | "clientes" | "tarefas" | "a-vencer" | "vencidas";
+const DASHBOARD_ORDER_KEY = "jm_dashboard_card_order";
+const DEFAULT_CARD_ORDER: DashboardCardId[] = ["intimacoes", "processos", "clientes", "tarefas", "a-vencer", "vencidas"];
+
+function loadDashboardCardOrder(): DashboardCardId[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_ORDER_KEY) || "[]") as DashboardCardId[];
+    return saved.length === DEFAULT_CARD_ORDER.length && DEFAULT_CARD_ORDER.every((id) => saved.includes(id))
+      ? saved
+      : DEFAULT_CARD_ORDER;
+  } catch {
+    return DEFAULT_CARD_ORDER;
+  }
+}
+
 export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
@@ -47,6 +62,45 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { toast } = useToast();
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
+  const [organizingCards, setOrganizingCards] = useState(false);
+  const [draggedCard, setDraggedCard] = useState<DashboardCardId | null>(null);
+  const [cardOrder, setCardOrder] = useState<DashboardCardId[]>(loadDashboardCardOrder);
+
+  const saveCardOrder = (nextOrder: DashboardCardId[]) => {
+    setCardOrder(nextOrder);
+    localStorage.setItem(DASHBOARD_ORDER_KEY, JSON.stringify(nextOrder));
+  };
+
+  const moveCard = (id: DashboardCardId, direction: -1 | 1) => {
+    const currentIndex = cardOrder.indexOf(id);
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= cardOrder.length) return;
+    const nextOrder = [...cardOrder];
+    [nextOrder[currentIndex], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[currentIndex]];
+    saveCardOrder(nextOrder);
+  };
+
+  const dropCard = (targetId: DashboardCardId) => {
+    if (!draggedCard || draggedCard === targetId) return setDraggedCard(null);
+    const nextOrder = cardOrder.filter((id) => id !== draggedCard);
+    nextOrder.splice(nextOrder.indexOf(targetId), 0, draggedCard);
+    saveCardOrder(nextOrder);
+    setDraggedCard(null);
+  };
+
+  const cardContainerProps = (id: DashboardCardId) => ({
+    style: { order: cardOrder.indexOf(id) },
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => organizingCards && event.preventDefault(),
+    onDrop: () => dropCard(id),
+  });
+
+  const CardOrganizer = ({ id }: { id: DashboardCardId }) => organizingCards ? (
+    <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between rounded-lg border border-border bg-background/95 p-1 shadow-sm backdrop-blur" onClick={(event) => event.stopPropagation()}>
+      <button type="button" onClick={() => moveCard(id, -1)} disabled={cardOrder.indexOf(id) === 0} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-25" aria-label="Mover card para trás"><ArrowLeft className="h-3.5 w-3.5" /></button>
+      <button type="button" draggable onDragStart={() => setDraggedCard(id)} onDragEnd={() => setDraggedCard(null)} className="flex cursor-grab items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-semibold text-muted-foreground hover:bg-muted active:cursor-grabbing" aria-label="Arrastar card"><GripVertical className="h-3.5 w-3.5" /> Arraste</button>
+      <button type="button" onClick={() => moveCard(id, 1)} disabled={cardOrder.indexOf(id) === cardOrder.length - 1} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-25" aria-label="Mover card para frente"><ArrowRight className="h-3.5 w-3.5" /></button>
+    </div>
+  ) : null;
 
   // ── Intimações: inicia com localStorage (imediato) e sincroniza com Supabase ─
   const [intimacoes, setIntimacoes] = useState<any[]>(() => loadIntimacoesCached());
@@ -261,14 +315,28 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             Acompanhe as prioridades do escritório e os compromissos que precisam da sua atenção.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreateTaskModal(true)}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md"
-        >
-          <Plus className="h-4 w-4" /> Nova tarefa
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setOrganizingCards((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground shadow-sm transition-all hover:border-primary/20 hover:shadow-md">
+            {organizingCards ? <X className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+            {organizingCards ? "Concluir organização" : "Organizar painel"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateTaskModal(true)}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md"
+          >
+            <Plus className="h-4 w-4" /> Nova tarefa
+          </button>
+        </div>
       </header>
+
+      {organizingCards && (
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-sm text-foreground sm:flex-row sm:items-center">
+          <GripVertical className="h-4 w-4 shrink-0 text-accent" />
+          <span className="flex-1">Arraste os cards pelo indicador ou use as setas. A ordem fica salva somente neste navegador.</span>
+          <button type="button" onClick={() => saveCardOrder(DEFAULT_CARD_ORDER)} className="inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-background hover:text-foreground sm:self-auto"><RotateCcw className="h-3.5 w-3.5" /> Restaurar ordem</button>
+        </div>
+      )}
 
       {/* Banner de erro de sincronização — visível no mobile */}
       {erroSync && (
@@ -282,9 +350,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {/* Intimações de HOJE */}
         <div
+          {...cardContainerProps("intimacoes")}
           onClick={() => onNavigate?.("intimacoes")}
-          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-3"
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
+          <CardOrganizer id="intimacoes" />
           <div className="absolute right-4 top-4 rounded-xl bg-accent/10 p-2.5 text-accent"><FileText className="h-5 w-5" /></div>
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Intimações hoje</div>
           <div className="font-display text-4xl font-semibold text-foreground transition-transform">
@@ -300,9 +370,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Processos */}
         <div
+          {...cardContainerProps("processos")}
           onClick={() => onNavigate?.("processos")}
-          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
+          <CardOrganizer id="processos" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><BriefcaseBusiness className="h-5 w-5" /></div>
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Processos</div>
           <div className="font-display text-4xl font-semibold text-foreground">{processos.length}</div>
@@ -314,9 +386,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Clientes */}
         <div
+          {...cardContainerProps("clientes")}
           onClick={() => onNavigate?.("clientes")}
-          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
+          <CardOrganizer id="clientes" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><Users className="h-5 w-5" /></div>
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Clientes</div>
           <div className="font-display text-4xl font-semibold text-foreground">{clientes.length}</div>
@@ -337,9 +411,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Tarefas pendentes */}
         <div
+          {...cardContainerProps("tarefas")}
           onClick={() => onNavigate?.("tarefas")}
-          className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3"
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
+          <CardOrganizer id="tarefas" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><CheckSquare2 className="h-5 w-5" /></div>
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Tarefas</div>
           <div className="font-display text-4xl font-semibold text-foreground">{tarefasPendentes.length}</div>
@@ -351,13 +427,15 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* A vencer (3 dias) */}
         <div
+          {...cardContainerProps("a-vencer")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
             tarefasAVencer.length > 0
               ? "border-amber-500/25 bg-amber-500/5 hover:border-amber-500/40"
               : "border-border bg-card hover:border-accent/40"
           }`}
         >
+          <CardOrganizer id="a-vencer" />
           <div className="absolute right-5 top-5 rounded-xl bg-amber-500/10 p-2.5 text-amber-600"><Clock3 className="h-5 w-5" /></div>
           <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>A Vencer</div>
           <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
@@ -368,13 +446,15 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
         {/* Vencidas */}
         <div
+          {...cardContainerProps("vencidas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
             tarefasVencidas.length > 0
               ? "border-red-500/30 bg-red-500/5 hover:border-red-500/45"
               : "border-border bg-card hover:border-accent/40"
           }`}
         >
+          <CardOrganizer id="vencidas" />
           <div className="absolute right-5 top-5 rounded-xl bg-red-500/10 p-2.5 text-red-600"><TriangleAlert className="h-5 w-5" /></div>
           <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasVencidas.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Vencidas</div>
           <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-600" : ""}`}>
