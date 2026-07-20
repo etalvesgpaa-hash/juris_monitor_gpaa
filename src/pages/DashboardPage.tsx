@@ -19,8 +19,8 @@ function parseDateLocal(iso: string): Date {
 }
 
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
-  ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
+  BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Line,
+  ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 
 const STORE_KEY = "jm_aasp_intimacoes";
@@ -269,6 +269,21 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       return { month: nomes[parseInt(m)-1], Concluídas: v.concluidas, Abertas: v.abertas };
     });
   })();
+
+  const processosStatusData = [
+    { name: "Ativos", value: processos.filter(p => p.status === "ativo").length, color: "#0f766e" },
+    { name: "Arquivados", value: processos.filter(p => p.status === "arquivado").length, color: "#94a3b8" },
+    { name: "Pendentes", value: processos.filter(p => p.status === "pendente").length, color: "#c59a32" },
+  ];
+  const processosAtivosPercentual = processos.length
+    ? Math.round((processosStatusData[0].value / processos.length) * 100)
+    : 0;
+  const mediaIntimacoes = intimacoesUltimos7Dias.length
+    ? intimacoesUltimos7Dias.reduce((total, item) => total + item.total, 0) / intimacoesUltimos7Dias.length
+    : 0;
+  const intimacoesComMedia = intimacoesUltimos7Dias.map((item) => ({ ...item, media: Number(mediaIntimacoes.toFixed(1)) }));
+  const tarefasConcluidasTotal = tarefas.filter(t => t.status === "concluida").length;
+  const taxaConclusao = tarefas.length ? Math.round((tarefasConcluidasTotal / tarefas.length) * 100) : 0;
 
   const handleOpenTaskModal = (intimacao: any) => {
     setTaskModalInitialData({
@@ -527,51 +542,84 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </div>
       )}
 
-      {/* ── Gráficos ── */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="Processos por Status">
-          <ResponsiveContainer width="100%" height={150}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: "Ativo",     value: processos.filter(p => p.status === "ativo").length,     color: "#10b981" },
-                  { name: "Arquivado", value: processos.filter(p => p.status === "arquivado").length, color: "#6b7280" },
-                  { name: "Pendente",  value: processos.filter(p => p.status === "pendente").length,  color: "#f59e0b" },
-                ]}
-                cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2} dataKey="value"
-              >
-                {["#10b981","#6b7280","#f59e0b"].map((color, i) => <Cell key={i} fill={color} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
+      {/* ── Inteligência visual ── */}
+      <section className="mb-6">
+        <div className="mb-3">
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Análise visual</p>
+          <h2 className="mt-0.5 font-display text-lg font-semibold">Desempenho em um olhar</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <InsightChartCard eyebrow="Carteira" title="Distribuição dos processos" metric={`${processosAtivosPercentual}%`} caption="dos processos estão ativos">
+            <div className="grid min-h-[235px] grid-cols-[1fr_0.8fr] items-center gap-2">
+              <div className="relative h-[210px] min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={processosStatusData} cx="50%" cy="50%" innerRadius="66%" outerRadius="88%" paddingAngle={4} cornerRadius={7} dataKey="value" stroke="none">
+                      {processosStatusData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    </Pie>
+                    <Tooltip content={<ModernTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="font-display text-3xl font-semibold text-foreground">{processos.length}</span>
+                  <span className="text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">processos</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {processosStatusData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.68rem] text-muted-foreground">{item.name}</p>
+                      <p className="text-sm font-bold text-foreground">{item.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </InsightChartCard>
 
-        <ChartCard title="Intimações — Últimos 7 Dias Úteis">
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={intimacoesUltimos7Dias.length ? intimacoesUltimos7Dias : [{ day: "—", total: 0 }]}>
-              <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-15} textAnchor="end" height={60} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="total" fill="#d97706" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+          <InsightChartCard eyebrow="Publicações" title="Fluxo de intimações" metric={mediaIntimacoes.toFixed(1)} caption="média por dia útil">
+            <div className="h-[235px] pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={intimacoesComMedia.length ? intimacoesComMedia : [{ day: "—", total: 0, media: 0 }]} margin={{ top: 10, right: 4, left: -22, bottom: 12 }}>
+                  <defs>
+                    <linearGradient id="intimacoesBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#c59a32" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#c59a32" stopOpacity={0.35} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.65} />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip content={<ModernTooltip />} />
+                  <Bar dataKey="total" name="Intimações" fill="url(#intimacoesBar)" radius={[6, 6, 2, 2]} maxBarSize={28} />
+                  <Line type="monotone" dataKey="media" name="Média" stroke="#0f766e" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </InsightChartCard>
 
-        <ChartCard title="Tarefas — Concluídas x Abertas">
-          <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={tarefasPorMes.length ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line type="monotone" dataKey="Concluídas" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 4 }} />
-              <Line type="monotone" dataKey="Abertas"    stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
+          <InsightChartCard eyebrow="Produtividade" title="Evolução das tarefas" metric={`${taxaConclusao}%`} caption="de conclusão geral">
+            <div className="h-[235px] pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={tarefasPorMes.length ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]} margin={{ top: 10, right: 4, left: -22, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.65} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip content={<ModernTooltip />} />
+                  <Bar dataKey="Concluídas" name="Concluídas" stackId="tarefas" fill="#0f766e" radius={[0, 0, 3, 3]} maxBarSize={32} />
+                  <Bar dataKey="Abertas" name="Abertas" stackId="tarefas" fill="#c59a32" radius={[6, 6, 0, 0]} maxBarSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-1 flex items-center gap-4 text-[0.65rem] font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#0f766e]" /> Concluídas</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#c59a32]" /> Abertas</span>
+            </div>
+          </InsightChartCard>
+        </div>
+      </section>
 
       {/* ── Últimas Intimações + Agenda ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-3.5 mb-5">
@@ -742,14 +790,44 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function InsightChartCard({ eyebrow, title, metric, caption, children }: {
+  eyebrow: string;
+  title: string;
+  metric: string;
+  caption: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="content-panel p-5">
-      <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-foreground">
-        <div className="h-4 w-1 rounded-full bg-accent" />
-        {title}
+    <article className="content-panel relative overflow-hidden p-5 transition-all hover:-translate-y-0.5 hover:shadow-panel-hover">
+      <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-accent/5 blur-2xl" />
+      <div className="relative flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-accent">{eyebrow}</p>
+          <h3 className="mt-1 text-sm font-semibold text-foreground">{title}</h3>
+        </div>
+        <div className="text-right">
+          <p className="font-display text-2xl font-semibold leading-none text-foreground">{metric}</p>
+          <p className="mt-1 text-[0.62rem] text-muted-foreground">{caption}</p>
+        </div>
       </div>
-      {children}
+      <div className="relative">{children}</div>
+    </article>
+  );
+}
+
+function ModernTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="min-w-[130px] rounded-xl border border-border bg-popover/95 p-3 text-xs shadow-xl backdrop-blur">
+      {label && <p className="mb-2 font-semibold text-foreground">{label}</p>}
+      <div className="space-y-1.5">
+        {payload.map((item: any) => (
+          <div key={item.dataKey || item.name} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color || item.fill }} />{item.name}</span>
+            <span className="font-bold text-foreground">{item.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
