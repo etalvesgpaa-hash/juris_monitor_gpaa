@@ -9,7 +9,8 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, CheckSquare2, Clock3, FileText, GripVertical, LayoutGrid, Plus, RotateCcw, TriangleAlert, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -303,30 +304,42 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   return (
     <div className="page-stack">
-      <header className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <header className="relative mb-6 overflow-hidden rounded-[1.5rem] bg-primary px-5 py-6 text-primary-foreground shadow-xl shadow-primary/10 sm:px-7 sm:py-7">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-white/5 blur-3xl" />
+        <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground first-letter:uppercase">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-semibold text-primary-foreground/70">
+            <Sparkles className="h-3.5 w-3.5 text-accent" /> Centro de comando do escritório
+          </div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground/50 first-letter:uppercase">
             {todayLabel}
           </p>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
             Olá, {firstName}.
           </h1>
-          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-            Acompanhe as prioridades do escritório e os compromissos que precisam da sua atenção.
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-primary-foreground/60">
+            Veja primeiro o que exige atenção e acompanhe a operação sem perder prazos.
           </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><TriangleAlert className="h-3.5 w-3.5 text-red-300" /> {tarefasVencidas.length} vencida(s)</span>
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><Clock3 className="h-3.5 w-3.5 text-amber-300" /> {tarefasAVencer.length} prazo(s) próximo(s)</span>
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><FileText className="h-3.5 w-3.5 text-accent" /> {intimacoesHoje.length} intimação(ões) hoje</span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setOrganizingCards((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground shadow-sm transition-all hover:border-primary/20 hover:shadow-md">
+          <button type="button" onClick={() => setOrganizingCards((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
             {organizingCards ? <X className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
             {organizingCards ? "Concluir organização" : "Organizar painel"}
           </button>
           <button
             type="button"
             onClick={() => setShowCreateTaskModal(true)}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-md"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-lg shadow-black/10 transition-all hover:-translate-y-0.5 hover:bg-accent/90"
           >
             <Plus className="h-4 w-4" /> Nova tarefa
           </button>
+        </div>
         </div>
       </header>
 
@@ -337,6 +350,42 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           <button type="button" onClick={() => saveCardOrder(DEFAULT_CARD_ORDER)} className="inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-background hover:text-foreground sm:self-auto"><RotateCcw className="h-3.5 w-3.5" /> Restaurar ordem</button>
         </div>
       )}
+
+      <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="content-panel overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Prioridades</p>
+              <h2 className="mt-0.5 font-display text-lg font-semibold">O que precisa da sua atenção</h2>
+            </div>
+            <button type="button" onClick={() => onNavigate?.("tarefas")} className="hidden items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground sm:inline-flex">Ver tarefas <ChevronRight className="h-4 w-4" /></button>
+          </div>
+          <div className="divide-y divide-border">
+            <PriorityRow icon={TriangleAlert} tone="danger" title={`${tarefasVencidas.length} tarefa(s) vencida(s)`} description={tarefasVencidas.length ? "Existem demandas que já ultrapassaram o prazo." : "Nenhuma tarefa está fora do prazo."} action="tarefas" onNavigate={onNavigate} />
+            <PriorityRow icon={Clock3} tone="warning" title={`${tarefasAVencer.length} prazo(s) nos próximos 3 dias`} description={tarefasAVencer.length ? "Revise as entregas próximas e defina responsáveis." : "Nenhum vencimento crítico nos próximos dias."} action="tarefas" onNavigate={onNavigate} />
+            <PriorityRow icon={FileText} tone="accent" title={`${intimacoesNaoLidas.length} intimação(ões) não lida(s)`} description={`${intimacoesHoje.length} publicação(ões) recebida(s) hoje.`} action="intimacoes" onNavigate={onNavigate} />
+          </div>
+        </div>
+
+        <div className="content-panel flex flex-col p-5">
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">Ritmo do escritório</p>
+          <h2 className="mt-1 font-display text-lg font-semibold">Resumo operacional</h2>
+          <div className="mt-5 grid flex-1 grid-cols-2 gap-3">
+            <OperationalMetric icon={BriefcaseBusiness} value={processos.filter(p => p.status === "ativo").length} label="Processos ativos" />
+            <OperationalMetric icon={CheckCircle2} value={tarefas.filter(t => t.status === "concluida").length} label="Tarefas concluídas" />
+            <OperationalMetric icon={Users} value={clientes.length} label="Clientes" />
+            <OperationalMetric icon={CalendarDays} value={tarefasPendentes.length} label="Demandas abertas" />
+          </div>
+        </div>
+      </section>
+
+      <div className="mb-3 flex items-end justify-between">
+        <div>
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Indicadores</p>
+          <h2 className="mt-0.5 font-display text-lg font-semibold">Visão geral do escritório</h2>
+        </div>
+        {!organizingCards && <p className="hidden text-xs text-muted-foreground sm:block">Use “Organizar painel” para personalizar a ordem</p>}
+      </div>
 
       {/* Banner de erro de sincronização — visível no mobile */}
       {erroSync && (
@@ -352,7 +401,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("intimacoes")}
           onClick={() => onNavigate?.("intimacoes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
           <CardOrganizer id="intimacoes" />
           <div className="absolute right-4 top-4 rounded-xl bg-accent/10 p-2.5 text-accent"><FileText className="h-5 w-5" /></div>
@@ -372,7 +421,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("processos")}
           onClick={() => onNavigate?.("processos")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
           <CardOrganizer id="processos" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><BriefcaseBusiness className="h-5 w-5" /></div>
@@ -388,7 +437,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("clientes")}
           onClick={() => onNavigate?.("clientes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
           <CardOrganizer id="clientes" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><Users className="h-5 w-5" /></div>
@@ -413,7 +462,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("tarefas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-3 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
         >
           <CardOrganizer id="tarefas" />
           <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><CheckSquare2 className="h-5 w-5" /></div>
@@ -429,7 +478,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("a-vencer")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
             tarefasAVencer.length > 0
               ? "border-amber-500/25 bg-amber-500/5 hover:border-amber-500/40"
               : "border-border bg-card hover:border-accent/40"
@@ -448,7 +497,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div
           {...cardContainerProps("vencidas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-6 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
             tarefasVencidas.length > 0
               ? "border-red-500/30 bg-red-500/5 hover:border-red-500/45"
               : "border-border bg-card hover:border-accent/40"
@@ -645,6 +694,42 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 }
 
 // ── Helpers de UI ──────────────────────────────────────────────────────────────
+function PriorityRow({ icon: Icon, tone, title, description, action, onNavigate }: {
+  icon: LucideIcon;
+  tone: "danger" | "warning" | "accent";
+  title: string;
+  description: string;
+  action: PageId;
+  onNavigate?: (page: PageId) => void;
+}) {
+  const styles = {
+    danger: "bg-red-500/8 text-red-600",
+    warning: "bg-amber-500/10 text-amber-600",
+    accent: "bg-accent/10 text-accent",
+  };
+
+  return (
+    <button type="button" onClick={() => onNavigate?.(action)} className="group flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/45">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${styles[tone]}`}><Icon className="h-[18px] w-[18px]" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+    </button>
+  );
+}
+
+function OperationalMetric({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/25 p-3.5 transition-colors hover:bg-muted/45">
+      <Icon className="mb-3 h-4 w-4 text-accent" />
+      <p className="font-display text-2xl font-semibold leading-none text-foreground">{value}</p>
+      <p className="mt-1.5 text-[0.68rem] font-medium leading-tight text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${

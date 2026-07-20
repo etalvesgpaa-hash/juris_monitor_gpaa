@@ -10,7 +10,8 @@ Esta versão aplica a modernização visual sem alterar o banco de dados, APIs, 
 - pesquisa no menu, favoritos e páginas recentes, salvos no navegador;
 - indicador visual da página ativa e navegação móvel;
 - cabeçalho contextual, modo escuro e controles reorganizados;
-- dashboard com nova hierarquia, cards, ícones e gráficos padronizados;
+- dashboard reconstruído como centro de comando, com cabeçalho executivo, resumo imediato do dia, central de prioridades clicável e resumo operacional;
+- seis indicadores uniformes, gráficos padronizados, agenda, intimações e listas de prazos preservados;
 - modo "Organizar painel" para arrastar ou mover os seis cards por setas;
 - ordem dos cards salva no navegador, sem tabela ou alteração no Supabase;
 - padronização visual de botões, cards, inputs, selects, textareas, badges, tabelas, abas, diálogos, alertas e estados de carregamento;
