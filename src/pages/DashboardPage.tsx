@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
@@ -36,7 +36,7 @@ function dataLocalHoje(): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-interface DashboardPageProps { onNavigate?: (page: PageId) => void; }
+interface DashboardPageProps { onNavigate?: (page: PageId) => void; onOpenTv?: () => void; }
 
 type DashboardCardId = "intimacoes" | "processos" | "clientes" | "tarefas" | "a-vencer" | "vencidas";
 const DASHBOARD_ORDER_KEY = "jm_dashboard_card_order";
@@ -53,7 +53,7 @@ function loadDashboardCardOrder(): DashboardCardId[] {
   }
 }
 
-export function DashboardPage({ onNavigate }: DashboardPageProps) {
+export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
   const { data: tarefas = [] } = useTarefas();
@@ -343,6 +343,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onOpenTv} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
+            <MonitorUp className="h-4 w-4" /> Painel TV
+          </button>
           <button type="button" onClick={() => setOrganizingCards((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
             {organizingCards ? <X className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
             {organizingCards ? "Concluir organização" : "Organizar painel"}

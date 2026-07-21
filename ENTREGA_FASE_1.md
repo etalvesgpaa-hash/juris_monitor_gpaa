@@ -46,3 +46,14 @@ Como as credenciais do Supabase não acompanham o projeto local, a área autenti
 - tarefas podem ser arrastadas entre os dias da agenda, atualizando `data_vencimento` existente;
 - alternativa “Mover” mantida nos cards para celular e acessibilidade;
 - nenhuma tabela, coluna, política RLS ou migração foi criada ou alterada.
+
+## Painel TV
+
+- módulo separado, aberto pelo botão “Painel TV” no dashboard;
+- três apresentações rotativas: visão geral, tarefas/produtividade e carteira/intimações/clientes;
+- velocímetros de saúde operacional e taxa de conclusão;
+- gráficos radiais, barras, linha de tendência e mapa de carga dos próximos 14 dias;
+- rotação automática a cada 20 segundos, atualização visual a cada 30 segundos, pausa e navegação manual;
+- modo tela cheia e privacidade ativada por padrão;
+- apresenta apenas totais e tendências, sem nomes, números processuais, valores ou conteúdos confidenciais;
+- funciona apenas com leitura dos dados e hooks atuais, sem migração ou alteração no banco.

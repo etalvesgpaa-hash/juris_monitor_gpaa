@@ -16,12 +16,14 @@ import { HonorariosPage }   from "@/pages/HonorariosPage";
 import { NotificacoesPage } from "@/pages/NotificacoesPage";
 import { AdminPage }        from "@/pages/AdminPage";
 import { FinanceiroPage }   from "@/pages/FinanceiroPage";
+import { TvDashboard } from "@/components/TvDashboard";
 import type { PageId } from "@/types/navigation";
 
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jm_sidebar_collapsed") === "true");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [tvOpen, setTvOpen] = useState(false);
   const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
@@ -33,7 +35,7 @@ export function AppLayout() {
 
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard":    return <DashboardPage onNavigate={setActivePage} />;
+      case "dashboard":    return <DashboardPage onNavigate={setActivePage} onOpenTv={() => setTvOpen(true)} />;
       case "processos":    return <ProcessosPage />;
       case "intimacoes":   return <IntimacoesPage />;
       case "notificacoes": return <NotificacoesPage />;
@@ -95,6 +97,7 @@ export function AppLayout() {
 
       {/* Toast de tarefas delegadas pelo admin */}
       <TarefasDelegadasToast onVerTarefas={() => setActivePage("tarefas")} />
+      {tvOpen && <TvDashboard onClose={() => setTvOpen(false)} />}
     </div>
   );
 }
