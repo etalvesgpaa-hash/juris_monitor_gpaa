@@ -37,3 +37,12 @@ Comparados ao projeto original, permanecem sem alteração os diretórios `api`,
 ## Conferência após publicação
 
 Como as credenciais do Supabase não acompanham o projeto local, a área autenticada deve ser conferida no ambiente conectado após o deploy. Teste: menu, modo escuro, organização dos cards, criação/edição de tarefas, contadores de intimações, sincronização e envio de e-mails. Essa conferência não exige migração de banco.
+
+## Evolução de Tarefas, Kanban e Agenda
+
+- resumo operacional de demandas abertas, vencidas, vencendo hoje e concluídas;
+- visualização escolhida salva apenas no navegador;
+- cards do Kanban podem ser arrastados entre colunas, atualizando o campo `status` existente;
+- tarefas podem ser arrastadas entre os dias da agenda, atualizando `data_vencimento` existente;
+- alternativa “Mover” mantida nos cards para celular e acessibilidade;
+- nenhuma tabela, coluna, política RLS ou migração foi criada ou alterada.
