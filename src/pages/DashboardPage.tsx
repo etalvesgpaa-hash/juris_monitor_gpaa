@@ -338,7 +338,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><TriangleAlert className="h-3.5 w-3.5 text-red-300" /> {tarefasVencidas.length} vencida(s)</span>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><Clock3 className="h-3.5 w-3.5 text-amber-300" /> {tarefasAVencer.length} prazo(s) próximo(s)</span>
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><Clock3 className="h-3.5 w-3.5 text-amber-300" /> {tarefasAVencer.length} tarefa(s) vencendo em até 3 dias</span>
             <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><FileText className="h-3.5 w-3.5 text-accent" /> {intimacoesHoje.length} intimação(ões) hoje</span>
           </div>
         </div>
@@ -376,9 +376,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             <button type="button" onClick={() => onNavigate?.("tarefas")} className="hidden items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground sm:inline-flex">Ver tarefas <ChevronRight className="h-4 w-4" /></button>
           </div>
           <div className="divide-y divide-border">
-            <PriorityRow icon={TriangleAlert} tone="danger" title={`${tarefasVencidas.length} tarefa(s) vencida(s)`} description={tarefasVencidas.length ? "Existem demandas que já ultrapassaram o prazo." : "Nenhuma tarefa está fora do prazo."} action="tarefas" onNavigate={onNavigate} />
-            <PriorityRow icon={Clock3} tone="warning" title={`${tarefasAVencer.length} prazo(s) nos próximos 3 dias`} description={tarefasAVencer.length ? "Revise as entregas próximas e defina responsáveis." : "Nenhum vencimento crítico nos próximos dias."} action="tarefas" onNavigate={onNavigate} />
-            <PriorityRow icon={FileText} tone="accent" title={`${intimacoesNaoLidas.length} intimação(ões) não lida(s)`} description={`${intimacoesHoje.length} publicação(ões) recebida(s) hoje.`} action="intimacoes" onNavigate={onNavigate} />
+            <PriorityRow icon={TriangleAlert} tone="danger" active={tarefasVencidas.length > 0} badge="Crítico" title={`${tarefasVencidas.length} tarefa(s) vencida(s)`} description={tarefasVencidas.length ? "Existem demandas que já ultrapassaram o prazo." : "Nenhuma tarefa está fora do prazo."} action="tarefas" onNavigate={onNavigate} />
+            <PriorityRow icon={Clock3} tone="warning" active={tarefasAVencer.length > 0} badge="Atenção" title={`${tarefasAVencer.length} tarefa(s) vencendo em até 3 dias`} description={tarefasAVencer.length ? "Revise as entregas próximas e defina responsáveis." : "Nenhuma tarefa vence nos próximos três dias."} action="tarefas" onNavigate={onNavigate} />
+            <PriorityRow icon={FileText} tone="accent" active={intimacoesNaoLidas.length > 0} badge="Não lidas" title={`${intimacoesNaoLidas.length} intimação(ões) não lida(s)`} description={`${intimacoesHoje.length} publicação(ões) recebida(s) hoje.`} action="intimacoes" onNavigate={onNavigate} />
           </div>
         </div>
 
@@ -386,10 +386,10 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">Ritmo do escritório</p>
           <h2 className="mt-1 font-display text-lg font-semibold">Resumo operacional</h2>
           <div className="mt-5 grid flex-1 grid-cols-2 gap-3">
-            <OperationalMetric icon={BriefcaseBusiness} value={processos.filter(p => p.status === "ativo").length} label="Processos ativos" />
-            <OperationalMetric icon={CheckCircle2} value={tarefas.filter(t => t.status === "concluida").length} label="Tarefas concluídas" />
-            <OperationalMetric icon={Users} value={clientes.length} label="Clientes" />
-            <OperationalMetric icon={CalendarDays} value={tarefasPendentes.length} label="Demandas abertas" />
+            <OperationalMetric icon={BriefcaseBusiness} value={processos.filter(p => p.status === "ativo").length} label="Processos ativos" tone="navy" />
+            <OperationalMetric icon={CheckCircle2} value={tarefas.filter(t => t.status === "concluida").length} label="Tarefas concluídas" tone="success" />
+            <OperationalMetric icon={Users} value={clientes.length} label="Clientes" tone="accent" />
+            <OperationalMetric icon={CalendarDays} value={tarefasPendentes.length} label="Demandas abertas" tone="warning" />
           </div>
         </div>
       </section>
@@ -501,11 +501,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         >
           <CardOrganizer id="a-vencer" />
           <div className="absolute right-5 top-5 rounded-xl bg-amber-500/10 p-2.5 text-amber-600"><Clock3 className="h-5 w-5" /></div>
-          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>A Vencer</div>
+          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>Vencem em até 3 dias</div>
           <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
             {tarefasAVencer.length}
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">próximos 3 dias</div>
+          <div className="text-[0.65rem] text-muted-foreground mt-0.5">tarefas pendentes</div>
         </div>
 
         {/* Vencidas */}
@@ -742,25 +742,29 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 }
 
 // ── Helpers de UI ──────────────────────────────────────────────────────────────
-function PriorityRow({ icon: Icon, tone, title, description, action, onNavigate }: {
+function PriorityRow({ icon: Icon, tone, active, badge, title, description, action, onNavigate }: {
   icon: LucideIcon;
   tone: "danger" | "warning" | "accent";
+  active: boolean;
+  badge: string;
   title: string;
   description: string;
   action: PageId;
   onNavigate?: (page: PageId) => void;
 }) {
   const styles = {
-    danger: "bg-red-500/8 text-red-600",
-    warning: "bg-amber-500/10 text-amber-600",
-    accent: "bg-accent/10 text-accent",
+    danger: { icon: "bg-red-500/12 text-red-600", row: "bg-red-500/[0.055] hover:bg-red-500/[0.085]", badge: "bg-red-500/10 text-red-700" },
+    warning: { icon: "bg-amber-500/12 text-amber-600", row: "bg-amber-500/[0.055] hover:bg-amber-500/[0.085]", badge: "bg-amber-500/12 text-amber-700" },
+    accent: { icon: "bg-accent/12 text-accent", row: "bg-accent/[0.055] hover:bg-accent/[0.085]", badge: "bg-accent/12 text-accent" },
   };
+  const visual = styles[tone];
 
   return (
-    <button type="button" onClick={() => onNavigate?.(action)} className="group flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-muted/45">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${styles[tone]}`}><Icon className="h-[18px] w-[18px]" /></span>
+    <button type="button" onClick={() => onNavigate?.(action)} className={`group relative flex w-full items-center gap-3 px-5 py-4 text-left transition-colors ${active ? visual.row : "hover:bg-muted/45"}`}>
+      {active && <span className={`absolute inset-y-0 left-0 w-1 ${tone === "danger" ? "bg-red-500" : tone === "warning" ? "bg-amber-500" : "bg-accent"}`} />}
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? visual.icon : "bg-muted text-muted-foreground"}`}><Icon className="h-[18px] w-[18px]" /></span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">{title}{active && <span className={`rounded-full px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-wider ${visual.badge}`}>{badge}</span>}</span>
         <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
       </span>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
@@ -768,10 +772,16 @@ function PriorityRow({ icon: Icon, tone, title, description, action, onNavigate 
   );
 }
 
-function OperationalMetric({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+function OperationalMetric({ icon: Icon, value, label, tone }: { icon: LucideIcon; value: number; label: string; tone: "navy" | "success" | "accent" | "warning" }) {
+  const tones = {
+    navy: "border-primary/10 bg-primary/[0.035] text-primary",
+    success: "border-emerald-500/15 bg-emerald-500/[0.055] text-emerald-700",
+    accent: "border-accent/15 bg-accent/[0.055] text-accent",
+    warning: "border-amber-500/15 bg-amber-500/[0.055] text-amber-700",
+  };
   return (
-    <div className="rounded-xl border border-border bg-muted/25 p-3.5 transition-colors hover:bg-muted/45">
-      <Icon className="mb-3 h-4 w-4 text-accent" />
+    <div className={`rounded-xl border p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-sm ${tones[tone]}`}>
+      <Icon className="mb-3 h-4 w-4" />
       <p className="font-display text-2xl font-semibold leading-none text-foreground">{value}</p>
       <p className="mt-1.5 text-[0.68rem] font-medium leading-tight text-muted-foreground">{label}</p>
     </div>
