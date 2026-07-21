@@ -57,3 +57,6 @@ Como as credenciais do Supabase não acompanham o projeto local, a área autenti
 - modo tela cheia e privacidade ativada por padrão;
 - apresenta apenas totais e tendências, sem nomes, números processuais, valores ou conteúdos confidenciais;
 - funciona apenas com leitura dos dados e hooks atuais, sem migração ou alteração no banco.
+- versão operacional com quatro telas: clientes/intimações vinculadas, tarefas por usuário, produtividade das intimações e resumo geral;
+- processos reduzidos a dois elementos: quantidade de ativos e distribuição por status;
+- consolidação por usuário disponível ao administrador, respeitando integralmente as políticas RLS existentes;

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useClientes } from "@/hooks/useClientes";
 import { useProcessos } from "@/hooks/useProcessos";
 import { useTarefas } from "@/hooks/useTarefas";
+import { useAdminProfiles, useAdminTarefas } from "@/hooks/useAdmin";
+import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Activity, BriefcaseBusiness, CheckCircle2, Eye, EyeOff, FileText, Maximize2, Pause, Play, Users, X } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -18,7 +22,10 @@ function loadIntimacoes() {
 
 export function TvDashboard({ onClose }: { onClose: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { user, isAdmin } = useAuth();
   const { data: tarefas = [] } = useTarefas();
+  const { data: adminTarefas = [] } = useAdminTarefas();
+  const { data: profiles = [] } = useAdminProfiles();
   const { data: processos = [] } = useProcessos();
   const { data: clientes = [] } = useClientes();
   const [intimacoes, setIntimacoes] = useState<any[]>(loadIntimacoes);
@@ -26,6 +33,18 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
   const [playing, setPlaying] = useState(true);
   const [privacy, setPrivacy] = useState(true);
   const [clock, setClock] = useState(new Date());
+  const { data: notificacoesHoje = [] } = useQuery({
+    queryKey: ["tv", "notificacoes-hoje", user?.id],
+    queryFn: async () => {
+      const start = `${todayLocal()}T00:00:00`;
+      const end = `${todayLocal()}T23:59:59`;
+      const { data, error } = await supabase.from("notificacoes_enviadas" as any).select("cliente_id").eq("status", "enviado").gte("created_at", start).lte("created_at", end);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+    refetchInterval: 30_000,
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -37,7 +56,7 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!playing) return;
-    const timer = window.setInterval(() => setSlide(current => (current + 1) % 3), 20_000);
+    const timer = window.setInterval(() => setSlide(current => (current + 1) % 4), 20_000);
     return () => window.clearInterval(timer);
   }, [playing]);
 
@@ -50,6 +69,35 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
   const intimacoesAtivas = intimacoes.filter(item => (item._status || "ativa") === "ativa");
   const intimacoesHoje = intimacoesAtivas.filter(item => (item._data || "").slice(0, 10) === today);
   const naoLidas = intimacoesAtivas.filter(item => !item._lida);
+  const teamTasks = isAdmin && adminTarefas.length ? adminTarefas : tarefas;
+  const normalizeProcess = (value: string) => String(value || "").replace(/\D/g, "");
+  const clientProcessMap = clientes.flatMap((client: any) => (client.numeros_processo || []).map((number: string) => ({ clientId: client.id, number: normalizeProcess(number) })).filter((item: any) => item.number));
+  const matchedIntimations = intimacoesAtivas.filter(item => {
+    const number = normalizeProcess(item._numProc || item.numero_processo || "");
+    return number && clientProcessMap.some((entry: any) => number.includes(entry.number) || entry.number.includes(number));
+  });
+  const clientsWithIntimations = new Set(matchedIntimations.flatMap(item => {
+    const number = normalizeProcess(item._numProc || item.numero_processo || "");
+    return clientProcessMap.filter((entry: any) => number.includes(entry.number) || entry.number.includes(number)).map((entry: any) => entry.clientId);
+  })).size;
+  const notifiedClientsToday = new Set((notificacoesHoje as any[]).map(item => item.cliente_id)).size;
+  const linkedPercent = intimacoesAtivas.length ? Math.round((matchedIntimations.length / intimacoesAtivas.length) * 100) : 0;
+  const tasksByUser = useMemo(() => {
+    const grouped = new Map<string, { id: string; name: string; total: number; abertas: number; concluidas: number; vencidas: number }>();
+    teamTasks.forEach((task: any) => {
+      const id = task.delegado_para || task.user_id || "sem-responsavel";
+      const profile: any = profiles.find((item: any) => item.user_id === id);
+      const current = grouped.get(id) || { id, name: profile?.full_name || (id === user?.id ? (user?.user_metadata?.full_name || "Minha carteira") : "Usuário"), total: 0, abertas: 0, concluidas: 0, vencidas: 0 };
+      current.total += 1;
+      if (task.status === "concluida") current.concluidas += 1;
+      else if (task.status !== "cancelada") {
+        current.abertas += 1;
+        if (task.data_vencimento && task.data_vencimento.slice(0, 10) < today) current.vencidas += 1;
+      }
+      grouped.set(id, current);
+    });
+    return Array.from(grouped.values()).sort((a, b) => b.abertas - a.abertas).slice(0, 8);
+  }, [teamTasks, profiles, user?.id, user?.user_metadata?.full_name, today]);
 
   const statusTarefas = [
     { name: "Triagem", value: tarefas.filter(t => t.status === "triagem" || t.status === "pendente").length, color: "#94a3b8" },
@@ -98,19 +146,62 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
         </header>
 
         <main className="min-h-0 flex-1 py-5">
-          {slide === 0 && <OverviewSlide tarefas={tarefas.length} abertas={abertas.length} vencidas={vencidas.length} processos={processos.length} clientes={clientes.length} intimacoes={intimacoesHoje.length} taxa={taxaConclusao} saude={saudeOperacional} taskData={statusTarefas} processData={statusProcessos} />}
-          {slide === 1 && <TasksSlide abertas={abertas.length} vencidas={vencidas.length} concluidas={concluidas.length} taxa={taxaConclusao} statusData={statusTarefas} heatData={cargaSemana} />}
-          {slide === 2 && <PortfolioSlide processos={processos.length} clientes={clientes.length} intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} processData={statusProcessos} intimacoesData={intimacoesSemana} privacy={privacy} />}
+          {slide === 0 && <ClientsIntimationsSlide clientes={clientes.length} clientsWithIntimations={clientsWithIntimations} notifiedToday={notifiedClientsToday} linked={matchedIntimations.length} unlinked={Math.max(0, intimacoesAtivas.length - matchedIntimations.length)} linkedPercent={linkedPercent} intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} intimacoesData={intimacoesSemana} />}
+          {slide === 1 && <TeamTasksSlide data={tasksByUser} privacy={privacy} isAdmin={isAdmin} total={teamTasks.length} />}
+          {slide === 2 && <IntimationsProductivitySlide intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} clientsWithIntimations={clientsWithIntimations} linkedPercent={linkedPercent} notifiedToday={notifiedClientsToday} intimacoesData={intimacoesSemana} taxa={taxaConclusao} />}
+          {slide === 3 && <OperationalSlide abertas={abertas.length} vencidas={vencidas.length} concluidas={concluidas.length} taxa={taxaConclusao} saude={saudeOperacional} processosAtivos={statusProcessos[0].value} processData={statusProcessos} heatData={cargaSemana} />}
         </main>
 
         <footer className="flex items-center justify-between border-t border-white/10 pt-3 text-[0.65rem] text-slate-400">
           <span>{privacy ? "Modo privacidade ativo · dados sensíveis ocultos" : "Modo interno · exibição autorizada"}</span>
-          <div className="flex gap-2">{[0, 1, 2].map(index => <button key={index} onClick={() => setSlide(index)} className={`h-1.5 rounded-full transition-all ${slide === index ? "w-9 bg-[#c59a32]" : "w-4 bg-white/20"}`} aria-label={`Abrir painel ${index + 1}`} />)}</div>
-          <span>Painel {slide + 1} de 3 · troca a cada 20s</span>
+          <div className="flex gap-2">{[0, 1, 2, 3].map(index => <button key={index} onClick={() => setSlide(index)} className={`h-1.5 rounded-full transition-all ${slide === index ? "w-9 bg-[#c59a32]" : "w-4 bg-white/20"}`} aria-label={`Abrir painel ${index + 1}`} />)}</div>
+          <span>Painel {slide + 1} de 4 · troca a cada 20s</span>
         </footer>
       </div>
     </div>
   );
+}
+
+function ClientsIntimationsSlide({ clientes, clientsWithIntimations, notifiedToday, linked, unlinked, linkedPercent, intimacoesHoje, naoLidas, intimacoesData }: any) {
+  const relationData = [{ name: "Vinculadas", value: linked, color: "#34d399" }, { name: "Sem cliente", value: unlinked, color: "#fbbf24" }];
+  return <div className="grid h-full grid-cols-12 grid-rows-[auto_1fr] gap-4">
+    <div className="col-span-12 grid grid-cols-6 gap-3"><TvKpi icon={Users} label="Clientes cadastrados" value={clientes} /><TvKpi icon={Users} label="Clientes com intimações" value={clientsWithIntimations} /><TvKpi icon={CheckCircle2} label="Clientes notificados hoje" value={notifiedToday} /><TvKpi icon={FileText} label="Intimações vinculadas" value={linked} /><TvKpi icon={Activity} label="Intimações hoje" value={intimacoesHoje} /><TvKpi icon={EyeOff} label="Não lidas" value={naoLidas} danger={naoLidas > 0} /></div>
+    <TvPanel className="col-span-3"><Gauge value={linkedPercent} label="Vinculação com clientes" color="#34d399" /><p className="text-center text-xs text-slate-400">Intimações reconhecidas pelos processos cadastrados</p></TvPanel>
+    <TvPanel className="col-span-4" title="Intimações vinculadas x pendentes"><Donut data={relationData} center={`${linkedPercent}%`} large /></TvPanel>
+    <TvPanel className="col-span-5" title="Entrada de intimações · últimos 7 dias"><ResponsiveContainer width="100%" height="88%"><LineChart data={intimacoesData}><CartesianGrid stroke="#ffffff12" vertical={false} /><XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Line type="monotone" dataKey="total" name="Intimações" stroke="#c59a32" strokeWidth={4} dot={{ fill: "#c59a32", r: 5 }} /></LineChart></ResponsiveContainer></TvPanel>
+  </div>;
+}
+
+function TeamTasksSlide({ data, privacy, isAdmin, total }: any) {
+  const displayData = data.map((item: any, index: number) => ({ ...item, displayName: privacy ? `Usuário ${index + 1}` : item.name.split(" ").slice(0, 2).join(" ") }));
+  const overloaded = data.filter((item: any) => item.vencidas > 0).length;
+  return <div className="grid h-full grid-cols-12 gap-4">
+    <TvPanel className="col-span-8" title={isAdmin ? "Carga de tarefas por usuário" : "Carga de tarefas visível para este usuário"}>
+      <ResponsiveContainer width="100%" height="88%"><BarChart data={displayData} layout="vertical" margin={{ left: 36, right: 20 }}><CartesianGrid stroke="#ffffff12" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="displayName" width={100} tick={{ fill: "#cbd5e1", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Bar dataKey="concluidas" name="Concluídas" stackId="tasks" fill="#34d399" /><Bar dataKey="abertas" name="Abertas" stackId="tasks" fill="#38bdf8" /><Bar dataKey="vencidas" name="Vencidas" stackId="tasks" fill="#f87171" radius={[0, 7, 7, 0]} /></BarChart></ResponsiveContainer>
+      <div className="flex gap-5 text-[0.65rem] text-slate-400"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#34d399]" />Concluídas</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#38bdf8]" />Abertas</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#f87171]" />Vencidas</span></div>
+    </TvPanel>
+    <div className="col-span-4 grid grid-rows-3 gap-4"><TvKpi icon={CheckCircle2} label="Tarefas da equipe" value={total} /><TvKpi icon={Users} label="Usuários com tarefas" value={data.length} /><TvKpi icon={Activity} label="Usuários com atrasos" value={overloaded} danger={overloaded > 0} /></div>
+    {!isAdmin && <TvPanel className="col-span-12 flex items-center justify-between px-8"><p className="font-semibold">Visão individual ativa</p><p className="text-sm text-slate-400">A consolidação de toda a equipe é exibida quando o Painel TV é aberto por um administrador.</p></TvPanel>}
+  </div>;
+}
+
+function IntimationsProductivitySlide({ intimacoesHoje, naoLidas, clientsWithIntimations, linkedPercent, notifiedToday, intimacoesData, taxa }: any) {
+  return <div className="grid h-full grid-cols-12 gap-4">
+    <TvPanel className="col-span-3"><Gauge value={linkedPercent} label="Clientes identificados" color="#34d399" /><Mini value={notifiedToday} label="Clientes notificados hoje" /></TvPanel>
+    <TvPanel className="col-span-3"><Gauge value={taxa} label="Conclusão de tarefas" color="#c59a32" /><Mini value={clientsWithIntimations} label="Clientes impactados" /></TvPanel>
+    <TvPanel className="col-span-6" title="Ritmo de entrada das intimações"><ResponsiveContainer width="100%" height="88%"><BarChart data={intimacoesData}><CartesianGrid stroke="#ffffff12" vertical={false} /><XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Bar dataKey="total" name="Intimações" fill="#c59a32" radius={[8, 8, 2, 2]} maxBarSize={44} /></BarChart></ResponsiveContainer></TvPanel>
+    <div className="col-span-12 grid grid-cols-3 gap-4"><TvKpi icon={FileText} label="Intimações recebidas hoje" value={intimacoesHoje} /><TvKpi icon={EyeOff} label="Aguardando leitura" value={naoLidas} danger={naoLidas > 0} /><TvKpi icon={Users} label="Clientes relacionados" value={clientsWithIntimations} /></div>
+  </div>;
+}
+
+function OperationalSlide({ abertas, vencidas, concluidas, taxa, saude, processosAtivos, processData, heatData }: any) {
+  const max = Math.max(...heatData.map((item: any) => item.total), 1);
+  return <div className="grid h-full grid-cols-12 gap-4">
+    <TvPanel className="col-span-3"><Gauge value={saude} label="Saúde operacional" color={saude > 70 ? "#34d399" : saude > 40 ? "#fbbf24" : "#f87171"} /><div className="grid grid-cols-3 gap-2"><Mini value={abertas} label="Abertas" /><Mini value={vencidas} label="Vencidas" danger /><Mini value={concluidas} label="Concluídas" /></div></TvPanel>
+    <TvPanel className="col-span-3"><Gauge value={taxa} label="Produtividade" color="#c59a32" /><TvKpi icon={BriefcaseBusiness} label="Processos ativos" value={processosAtivos} /></TvPanel>
+    <TvPanel className="col-span-2" title="Status dos processos"><Donut data={processData} center={`${processosAtivos}`} /></TvPanel>
+    <TvPanel className="col-span-4" title="Carga de tarefas · próximos 14 dias"><div className="grid h-[88%] grid-cols-7 gap-2 pt-3">{heatData.map((item: any) => <div key={item.key} className="flex flex-col items-center justify-center rounded-xl border border-white/8" style={{ backgroundColor: `rgba(197,154,50,${0.08 + (item.total / max) * 0.72})` }}><strong className="text-xl">{item.total}</strong><span className="text-[0.55rem] text-slate-300">{item.label}</span></div>)}</div></TvPanel>
+  </div>;
 }
 
 function OverviewSlide({ tarefas, abertas, vencidas, processos, clientes, intimacoes, taxa, saude, taskData, processData }: any) {
