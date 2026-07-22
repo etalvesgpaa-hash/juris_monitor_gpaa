@@ -530,12 +530,46 @@ export function useAutoFetchIntimacoes() {
         }
 
         // 4. Merge + dedup
+        // IMPORTANTE: dois registros podem gerar o MESMO _id (hash de conteúdo)
+        // mesmo sendo intimações diferentes, quando numProc+data+titulo+
+        // primeiros 400 chars do texto coincidem (ex.: mesma publicação
+        // associada a partes diferentes). Para não perder intimações reais,
+        // só tratamos como duplicata de fato se o conteúdo bruto também bater;
+        // caso contrário, desambiguamos o _id com um sufixo sequencial.
         const storeComHistorico = loadStore(); // relê após carregarDoSupabase
         const merged = [...novas, ...storeComHistorico];
         const uniq: AaspIntimacao[] = [];
-        const seen = new Set<string>();
+        const seenConteudo = new Map<string, unknown>(); // _id -> conteúdo já visto
+        const contadorColisao = new Map<string, number>(); // _id base -> quantas vezes já visto
         for (const it of merged) {
-          if (!seen.has(it._id)) { seen.add(it._id); uniq.push(it); }
+          const idBase = it._id;
+          const assinaturaConteudo = JSON.stringify({
+            n: it._numProc, d: it._data, t: it._titulo,
+            tx: String((it as any).textoPublicacao || (it as any).Texto || (it as any).texto || "").slice(0, 400),
+          });
+
+          if (!seenConteudo.has(idBase)) {
+            seenConteudo.set(idBase, assinaturaConteudo);
+            uniq.push(it);
+            continue;
+          }
+
+          if (seenConteudo.get(idBase) === assinaturaConteudo) {
+            // Duplicata real (mesmo conteúdo) — descarta como antes.
+            continue;
+          }
+
+          // Mesmo _id, conteúdo diferente => colisão de hash. Desambigua.
+          // Muta o objeto em vez de clonar: 'it' é a MESMA referência usada
+          // no array 'novas', então a correção se propaga automaticamente
+          // para o cálculo de novasDeHoje e para tudo que vem depois
+          // (verificação no Supabase, geração de resumo IA, disparo de e-mail).
+          const n = (contadorColisao.get(idBase) || 1) + 1;
+          contadorColisao.set(idBase, n);
+          const idNovo = `${idBase}_c${n}`;
+          console.warn("[AutoFetch] Colisão de _id detectada, desambiguando:", idBase, "->", idNovo);
+          it._id = idNovo;
+          uniq.push(it);
         }
         saveStore(uniq);
 
