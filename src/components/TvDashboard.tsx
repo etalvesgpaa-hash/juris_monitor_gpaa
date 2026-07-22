@@ -6,8 +6,8 @@ import { useAdminProfiles, useAdminTarefas } from "@/hooks/useAdmin";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Activity, BriefcaseBusiness, CheckCircle2, Eye, EyeOff, FileText, Maximize2, Pause, Play, Users, X } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Activity, BriefcaseBusiness, CalendarClock, CheckCircle2, Eye, EyeOff, FileText, Maximize2, Pause, Play, TriangleAlert, Users, X } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const INTIMACOES_KEY = "jm_aasp_intimacoes";
 
@@ -56,20 +56,23 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!playing) return;
-    const timer = window.setInterval(() => setSlide(current => (current + 1) % 4), 20_000);
+    const timer = window.setInterval(() => setSlide(current => (current + 1) % 5), 20_000);
     return () => window.clearInterval(timer);
   }, [playing]);
 
   const today = todayLocal();
-  const abertas = tarefas.filter(t => t.status !== "concluida" && t.status !== "cancelada");
-  const concluidas = tarefas.filter(t => t.status === "concluida");
+  const teamTasks = isAdmin && adminTarefas.length ? adminTarefas : tarefas;
+  const abertas = teamTasks.filter(t => t.status !== "concluida" && t.status !== "cancelada");
+  const concluidas = teamTasks.filter(t => t.status === "concluida");
   const vencidas = abertas.filter(t => t.data_vencimento && t.data_vencimento.slice(0, 10) < today);
-  const taxaConclusao = tarefas.length ? Math.round((concluidas.length / tarefas.length) * 100) : 0;
+  const inThreeDays = new Date(); inThreeDays.setDate(inThreeDays.getDate() + 3);
+  const threeDaysKey = `${inThreeDays.getFullYear()}-${String(inThreeDays.getMonth() + 1).padStart(2, "0")}-${String(inThreeDays.getDate()).padStart(2, "0")}`;
+  const aVencer = abertas.filter(t => t.data_vencimento && t.data_vencimento.slice(0, 10) >= today && t.data_vencimento.slice(0, 10) <= threeDaysKey);
+  const taxaConclusao = teamTasks.length ? Math.round((concluidas.length / teamTasks.length) * 100) : 0;
   const saudeOperacional = Math.max(0, Math.min(100, Math.round(100 - (vencidas.length / Math.max(abertas.length, 1)) * 100)));
   const intimacoesAtivas = intimacoes.filter(item => (item._status || "ativa") === "ativa");
   const intimacoesHoje = intimacoesAtivas.filter(item => (item._data || "").slice(0, 10) === today);
   const naoLidas = intimacoesAtivas.filter(item => !item._lida);
-  const teamTasks = isAdmin && adminTarefas.length ? adminTarefas : tarefas;
   const normalizeProcess = (value: string) => String(value || "").replace(/\D/g, "");
   const clientProcessMap = clientes.flatMap((client: any) => (client.numeros_processo || []).map((number: string) => ({ clientId: client.id, number: normalizeProcess(number) })).filter((item: any) => item.number));
   const matchedIntimations = intimacoesAtivas.filter(item => {
@@ -146,20 +149,54 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
         </header>
 
         <main className="min-h-0 flex-1 py-5">
-          {slide === 0 && <ClientsIntimationsSlide clientes={clientes.length} clientsWithIntimations={clientsWithIntimations} notifiedToday={notifiedClientsToday} linked={matchedIntimations.length} unlinked={Math.max(0, intimacoesAtivas.length - matchedIntimations.length)} linkedPercent={linkedPercent} intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} intimacoesData={intimacoesSemana} />}
-          {slide === 1 && <TeamTasksSlide data={tasksByUser} privacy={privacy} isAdmin={isAdmin} total={teamTasks.length} />}
-          {slide === 2 && <IntimationsProductivitySlide intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} clientsWithIntimations={clientsWithIntimations} linkedPercent={linkedPercent} notifiedToday={notifiedClientsToday} intimacoesData={intimacoesSemana} taxa={taxaConclusao} />}
-          {slide === 3 && <OperationalSlide abertas={abertas.length} vencidas={vencidas.length} concluidas={concluidas.length} taxa={taxaConclusao} saude={saudeOperacional} processosAtivos={statusProcessos[0].value} processData={statusProcessos} heatData={cargaSemana} />}
+          {slide === 0 && <PrioritySlide vencidas={vencidas.length} aVencer={aVencer.length} abertas={abertas.length} naoLidas={naoLidas.length} intimacoesHoje={intimacoesHoje.length} clientesImpactados={clientsWithIntimations} linkedPercent={linkedPercent} taxa={taxaConclusao} heatData={cargaSemana} />}
+          {slide === 1 && <ClientsIntimationsSlide clientes={clientes.length} clientsWithIntimations={clientsWithIntimations} notifiedToday={notifiedClientsToday} linked={matchedIntimations.length} unlinked={Math.max(0, intimacoesAtivas.length - matchedIntimations.length)} linkedPercent={linkedPercent} intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} intimacoesData={intimacoesSemana} />}
+          {slide === 2 && <TeamTasksSlide data={tasksByUser} privacy={privacy} isAdmin={isAdmin} total={teamTasks.length} />}
+          {slide === 3 && <IntimationsProductivitySlide intimacoesHoje={intimacoesHoje.length} naoLidas={naoLidas.length} clientsWithIntimations={clientsWithIntimations} linkedPercent={linkedPercent} notifiedToday={notifiedClientsToday} intimacoesData={intimacoesSemana} taxa={taxaConclusao} />}
+          {slide === 4 && <OperationalSlide abertas={abertas.length} vencidas={vencidas.length} concluidas={concluidas.length} taxa={taxaConclusao} saude={saudeOperacional} processosAtivos={statusProcessos[0].value} processData={statusProcessos} heatData={cargaSemana} />}
         </main>
 
         <footer className="flex items-center justify-between border-t border-white/10 pt-3 text-[0.65rem] text-slate-400">
           <span>{privacy ? "Modo privacidade ativo · dados sensíveis ocultos" : "Modo interno · exibição autorizada"}</span>
-          <div className="flex gap-2">{[0, 1, 2, 3].map(index => <button key={index} onClick={() => setSlide(index)} className={`h-1.5 rounded-full transition-all ${slide === index ? "w-9 bg-[#c59a32]" : "w-4 bg-white/20"}`} aria-label={`Abrir painel ${index + 1}`} />)}</div>
-          <span>Painel {slide + 1} de 4 · troca a cada 20s</span>
+          <div className="flex gap-2">{[0, 1, 2, 3, 4].map(index => <button key={index} onClick={() => setSlide(index)} className={`h-1.5 rounded-full transition-all ${slide === index ? "w-9 bg-[#c59a32]" : "w-4 bg-white/20"}`} aria-label={`Abrir painel ${index + 1}`} />)}</div>
+          <span>Painel {slide + 1} de 5 · troca a cada 20s</span>
         </footer>
       </div>
     </div>
   );
+}
+
+function PrioritySlide({ vencidas, aVencer, abertas, naoLidas, intimacoesHoje, clientesImpactados, linkedPercent, taxa, heatData }: any) {
+  const maxPriority = Math.max(vencidas, aVencer, naoLidas, 1);
+  const priorityRings = [
+    { name: "Vencidas", score: Math.round((vencidas / maxPriority) * 100), fill: "#fb7185" },
+    { name: "Até 3 dias", score: Math.round((aVencer / maxPriority) * 100), fill: "#fbbf24" },
+    { name: "Não lidas", score: Math.round((naoLidas / maxPriority) * 100), fill: "#38bdf8" },
+  ];
+  return <div className="grid h-full grid-cols-12 grid-rows-[auto_1fr] gap-4">
+    <div className="col-span-12 grid grid-cols-6 gap-3">
+      <TvKpi icon={TriangleAlert} label="Tarefas vencidas" value={vencidas} danger={vencidas > 0} />
+      <TvKpi icon={CalendarClock} label="Vencem em até 3 dias" value={aVencer} warning={aVencer > 0} />
+      <TvKpi icon={Activity} label="Demandas abertas" value={abertas} />
+      <TvKpi icon={EyeOff} label="Intimações não lidas" value={naoLidas} danger={naoLidas > 0} />
+      <TvKpi icon={FileText} label="Intimações hoje" value={intimacoesHoje} />
+      <TvKpi icon={Users} label="Clientes impactados" value={clientesImpactados} />
+    </div>
+    <TvPanel className="col-span-4" title="Radar de atenção imediata">
+      <div className="relative h-[78%]">
+        <ResponsiveContainer width="100%" height="100%"><RadialBarChart innerRadius="22%" outerRadius="96%" data={priorityRings} startAngle={90} endAngle={-270}><RadialBar background={{ fill: "#ffffff0b" }} dataKey="score" cornerRadius={12} /></RadialBarChart></ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><strong className="font-display text-4xl">{vencidas + aVencer + naoLidas}</strong><span className="text-[0.62rem] uppercase tracking-[0.16em] text-slate-400">itens prioritários</span></div>
+      </div>
+      <div className="flex justify-center gap-4 text-[0.62rem] text-slate-400">{priorityRings.map(item => <span key={item.name} className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: item.fill }} />{item.name}</span>)}</div>
+    </TvPanel>
+    <TvPanel className="col-span-5" title="Calendário de pressão · próximos 14 dias">
+      <ResponsiveContainer width="100%" height="90%"><AreaChart data={heatData} margin={{ top: 12, right: 8, left: -18, bottom: 0 }}><defs><linearGradient id="priorityArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c59a32" stopOpacity={0.7} /><stop offset="100%" stopColor="#c59a32" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid stroke="#ffffff10" vertical={false} /><XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} interval={1} /><YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Area type="monotone" dataKey="total" name="Tarefas" stroke="#e6bf5c" strokeWidth={4} fill="url(#priorityArea)" activeDot={{ r: 7, fill: "#fbbf24" }} /></AreaChart></ResponsiveContainer>
+    </TvPanel>
+    <div className="col-span-3 grid grid-rows-2 gap-4">
+      <TvPanel><CompactGauge value={linkedPercent} label="Intimações vinculadas a clientes" color="#34d399" /></TvPanel>
+      <TvPanel><CompactGauge value={taxa} label="Taxa geral de conclusão" color="#c59a32" /></TvPanel>
+    </div>
+  </div>;
 }
 
 function ClientsIntimationsSlide({ clientes, clientsWithIntimations, notifiedToday, linked, unlinked, linkedPercent, intimacoesHoje, naoLidas, intimacoesData }: any) {
@@ -168,7 +205,7 @@ function ClientsIntimationsSlide({ clientes, clientsWithIntimations, notifiedTod
     <div className="col-span-12 grid grid-cols-6 gap-3"><TvKpi icon={Users} label="Clientes cadastrados" value={clientes} /><TvKpi icon={Users} label="Clientes com intimações" value={clientsWithIntimations} /><TvKpi icon={CheckCircle2} label="Clientes notificados hoje" value={notifiedToday} /><TvKpi icon={FileText} label="Intimações vinculadas" value={linked} /><TvKpi icon={Activity} label="Intimações hoje" value={intimacoesHoje} /><TvKpi icon={EyeOff} label="Não lidas" value={naoLidas} danger={naoLidas > 0} /></div>
     <TvPanel className="col-span-3"><Gauge value={linkedPercent} label="Vinculação com clientes" color="#34d399" /><p className="text-center text-xs text-slate-400">Intimações reconhecidas pelos processos cadastrados</p></TvPanel>
     <TvPanel className="col-span-4" title="Intimações vinculadas x pendentes"><Donut data={relationData} center={`${linkedPercent}%`} large /></TvPanel>
-    <TvPanel className="col-span-5" title="Entrada de intimações · últimos 7 dias"><ResponsiveContainer width="100%" height="88%"><LineChart data={intimacoesData}><CartesianGrid stroke="#ffffff12" vertical={false} /><XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Line type="monotone" dataKey="total" name="Intimações" stroke="#c59a32" strokeWidth={4} dot={{ fill: "#c59a32", r: 5 }} /></LineChart></ResponsiveContainer></TvPanel>
+    <TvPanel className="col-span-5" title="Entrada de intimações · últimos 7 dias"><ResponsiveContainer width="100%" height="88%"><AreaChart data={intimacoesData}><defs><linearGradient id="intimationsArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#38bdf8" stopOpacity={0.65} /><stop offset="100%" stopColor="#38bdf8" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid stroke="#ffffff12" vertical={false} /><XAxis dataKey="day" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<DarkTooltip />} /><Area type="monotone" dataKey="total" name="Intimações" stroke="#38bdf8" strokeWidth={4} fill="url(#intimationsArea)" activeDot={{ fill: "#e6bf5c", r: 7 }} /></AreaChart></ResponsiveContainer></TvPanel>
   </div>;
 }
 
@@ -233,9 +270,10 @@ function PortfolioSlide({ processos, clientes, intimacoesHoje, naoLidas, process
 }
 
 function Gauge({ value, label, color }: { value: number; label: string; color: string }) { return <div className="flex h-full flex-col items-center justify-center"><svg viewBox="0 0 240 150" className="w-full max-w-[270px]"><path d="M 28 130 A 94 94 0 1 1 212 130" fill="none" stroke="#ffffff12" strokeWidth="20" strokeLinecap="round" pathLength="100" /><path d="M 28 130 A 94 94 0 1 1 212 130" fill="none" stroke={color} strokeWidth="20" strokeLinecap="round" pathLength="100" strokeDasharray={`${value} 100`} /><text x="120" y="105" textAnchor="middle" fill="white" fontSize="42" fontWeight="700">{value}%</text><text x="120" y="132" textAnchor="middle" fill="#94a3b8" fontSize="12">{label}</text></svg></div>; }
+function CompactGauge({ value, label, color }: { value: number; label: string; color: string }) { return <div className="flex h-full items-center gap-5"><div className="relative h-24 w-24 shrink-0 rounded-full p-2" style={{ background: `conic-gradient(${color} ${value * 3.6}deg, rgba(255,255,255,.08) 0deg)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-[#0c1727] font-display text-2xl font-semibold">{value}%</div></div><div><p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-slate-400">Indicador</p><p className="mt-1 text-sm font-semibold leading-snug text-slate-100">{label}</p></div></div>; }
 function Donut({ data, center, large }: any) { return <div className="relative h-[88%]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" innerRadius={large ? "64%" : "60%"} outerRadius={large ? "86%" : "82%"} paddingAngle={4} cornerRadius={6} stroke="none">{data.map((item: any) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip content={<DarkTooltip />} /></PieChart></ResponsiveContainer><div className="pointer-events-none absolute inset-0 flex items-center justify-center font-display text-2xl font-semibold">{center}</div></div>; }
 function TvPanel({ children, title, className = "" }: any) { return <section className={`min-h-0 rounded-2xl border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/10 ${className}`}>{title && <h2 className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-300">{title}</h2>}{children}</section>; }
-function TvKpi({ icon: Icon, label, value, danger = false }: any) { return <div className={`flex min-h-0 items-center gap-3 rounded-2xl border p-4 ${danger ? "border-red-400/25 bg-red-500/10" : "border-white/10 bg-white/[0.045]"}`}><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${danger ? "bg-red-400/15 text-red-300" : "bg-[#c59a32]/15 text-[#e6bf5c]"}`}><Icon className="h-5 w-5" /></span><div><strong className="font-display text-3xl leading-none">{value}</strong><p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-wider text-slate-400">{label}</p></div></div>; }
+function TvKpi({ icon: Icon, label, value, danger = false, warning = false }: any) { const tone = danger ? "border-red-400/25 bg-red-500/10" : warning ? "border-amber-400/25 bg-amber-500/10" : "border-white/10 bg-white/[0.045]"; const iconTone = danger ? "bg-red-400/15 text-red-300" : warning ? "bg-amber-400/15 text-amber-300" : "bg-[#c59a32]/15 text-[#e6bf5c]"; return <div className={`flex min-h-0 items-center gap-3 rounded-2xl border p-4 ${tone}`}><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconTone}`}><Icon className="h-5 w-5" /></span><div><strong className="font-display text-3xl leading-none">{value}</strong><p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-wider text-slate-400">{label}</p></div></div>; }
 function Mini({ value, label, danger = false }: any) { return <div className={`rounded-xl border p-2 ${danger ? "border-red-400/20 bg-red-500/10" : "border-white/8 bg-white/5"}`}><strong className={danger ? "text-red-300" : "text-white"}>{value}</strong><p className="text-[0.55rem] text-slate-400">{label}</p></div>; }
 function TvControl({ children, onClick, label }: any) { return <button type="button" onClick={onClick} title={label} aria-label={label} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white [&_svg]:h-4 [&_svg]:w-4">{children}</button>; }
 function DarkTooltip({ active, payload, label }: any) { if (!active || !payload?.length) return null; return <div className="rounded-lg border border-white/10 bg-[#0f1b2d] p-2 text-xs shadow-xl"><p className="mb-1 text-slate-400">{label}</p>{payload.map((item: any) => <p key={item.name} className="font-semibold text-white">{item.name}: {item.value}</p>)}</div>; }

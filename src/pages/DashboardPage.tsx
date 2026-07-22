@@ -369,34 +369,6 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         </div>
       )}
 
-      <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <div className="content-panel overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Prioridades</p>
-              <h2 className="mt-0.5 font-display text-lg font-semibold">O que precisa da sua atenção</h2>
-            </div>
-            <button type="button" onClick={() => onNavigate?.("tarefas")} className="hidden items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground sm:inline-flex">Ver tarefas <ChevronRight className="h-4 w-4" /></button>
-          </div>
-          <div className="divide-y divide-border">
-            <PriorityRow icon={TriangleAlert} tone="danger" active={tarefasVencidas.length > 0} badge="Crítico" title={`${tarefasVencidas.length} tarefa(s) vencida(s)`} description={tarefasVencidas.length ? "Existem demandas que já ultrapassaram o prazo." : "Nenhuma tarefa está fora do prazo."} action="tarefas" onNavigate={onNavigate} />
-            <PriorityRow icon={Clock3} tone="warning" active={tarefasAVencer.length > 0} badge="Atenção" title={`${tarefasAVencer.length} tarefa(s) vencendo em até 3 dias`} description={tarefasAVencer.length ? "Revise as entregas próximas e defina responsáveis." : "Nenhuma tarefa vence nos próximos três dias."} action="tarefas" onNavigate={onNavigate} />
-            <PriorityRow icon={FileText} tone="accent" active={intimacoesNaoLidas.length > 0} badge="Não lidas" title={`${intimacoesNaoLidas.length} intimação(ões) não lida(s)`} description={`${intimacoesHoje.length} publicação(ões) recebida(s) hoje.`} action="intimacoes" onNavigate={onNavigate} />
-          </div>
-        </div>
-
-        <div className="content-panel flex flex-col p-5">
-          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">Ritmo do escritório</p>
-          <h2 className="mt-1 font-display text-lg font-semibold">Resumo operacional</h2>
-          <div className="mt-5 grid flex-1 grid-cols-2 gap-3">
-            <OperationalMetric icon={BriefcaseBusiness} value={processos.filter(p => p.status === "ativo").length} label="Processos ativos" tone="navy" />
-            <OperationalMetric icon={CheckCircle2} value={tarefas.filter(t => t.status === "concluida").length} label="Tarefas concluídas" tone="success" />
-            <OperationalMetric icon={Users} value={clientes.length} label="Clientes" tone="accent" />
-            <OperationalMetric icon={CalendarDays} value={tarefasPendentes.length} label="Demandas abertas" tone="warning" />
-          </div>
-        </div>
-      </section>
-
       <div className="mb-3 flex items-end justify-between">
         <div>
           <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Indicadores</p>
