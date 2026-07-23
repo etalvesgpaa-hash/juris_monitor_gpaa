@@ -755,7 +755,11 @@ export function useAutoFetchIntimacoes() {
         // Abre o modal de novas intimações se houver novidades no dia
         if (paraExibirNoToast.length > 0) {
           window.dispatchEvent(new CustomEvent("intimacoes-novas-encontradas", {
-            detail: { count: paraExibirNoToast.length, hoje: dias[0] },
+            detail: {
+              count: paraExibirNoToast.length,
+              hoje: dias[0],
+              intimacoes: paraExibirNoToast,
+            },
           }));
         }
 

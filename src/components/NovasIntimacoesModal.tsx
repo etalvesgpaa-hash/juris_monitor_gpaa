@@ -19,20 +19,24 @@ interface NovasIntimacoesModalProps {
 export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) {
   const [open, setOpen]             = useState(false);
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>([]);
+  const [quantidadeEncontrada, setQuantidadeEncontrada] = useState(0);
   const [visivel, setVisivel]       = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const ev = e as CustomEvent<{ count: number; hoje: string }>;
+      const ev = e as CustomEvent<{ count: number; hoje: string; intimacoes?: AaspIntimacao[] }>;
       if (ev.detail.count <= 0) return;
 
       const hoje  = ev.detail.hoje;
-      const todas = loadStore();
+      // O payload do evento é a fonte de verdade para esta execução.
+      // O cache pode ser atualizado em paralelo pela sincronização com o Supabase.
+      const todas = ev.detail.intimacoes?.length ? ev.detail.intimacoes : loadStore();
       const deHoje = todas
         .filter(i => (i._data || "").slice(0, 10) === hoje)
         .sort((a, b) => (a._lida === b._lida ? 0 : a._lida ? 1 : -1));
 
       setIntimacoes(deHoje.slice(0, 10));
+      setQuantidadeEncontrada(ev.detail.count);
       setOpen(true);
       // Pequeno delay para a animação de entrada funcionar
       setTimeout(() => setVisivel(true), 20);
@@ -47,6 +51,7 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
     setTimeout(() => {
       setOpen(false);
       setIntimacoes([]);
+      setQuantidadeEncontrada(0);
     }, 250);
   }
 
@@ -58,7 +63,7 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
   if (!open) return null;
 
   const naoLidas = intimacoes.filter(i => !i._lida).length;
-  const total    = intimacoes.length;
+  const total    = quantidadeEncontrada;
 
   return (
     <>
