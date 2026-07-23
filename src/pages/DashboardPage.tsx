@@ -319,7 +319,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
 
   return (
     <div className="page-stack">
-      <header className="relative mb-6 overflow-hidden rounded-[1.5rem] bg-primary px-5 py-6 text-primary-foreground shadow-xl shadow-primary/10 sm:px-7 sm:py-7">
+      <header className="relative overflow-hidden rounded-t-[1.5rem] bg-primary px-5 pb-5 pt-6 text-primary-foreground shadow-xl shadow-primary/10 sm:px-7 sm:pt-7">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent/15 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-white/5 blur-3xl" />
         <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
@@ -336,11 +336,6 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-primary-foreground/60">
             Veja primeiro o que exige atenção e acompanhe a operação sem perder prazos.
           </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><TriangleAlert className="h-3.5 w-3.5 text-red-300" /> {tarefasVencidas.length} vencida(s)</span>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><Clock3 className="h-3.5 w-3.5 text-amber-300" /> {tarefasAVencer.length} tarefa(s) vencendo em até 3 dias</span>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold"><FileText className="h-3.5 w-3.5 text-accent" /> {intimacoesHoje.length} intimação(ões) hoje</span>
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onOpenTv} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
@@ -369,14 +364,6 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         </div>
       )}
 
-      <div className="mb-3 flex items-end justify-between">
-        <div>
-          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Indicadores</p>
-          <h2 className="mt-0.5 font-display text-lg font-semibold">Visão geral do escritório</h2>
-        </div>
-        {!organizingCards && <p className="hidden text-xs text-muted-foreground sm:block">Use “Organizar painel” para personalizar a ordem</p>}
-      </div>
-
       {/* Banner de erro de sincronização — visível no mobile */}
       {erroSync && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-400/40 rounded-xl text-sm text-red-600 flex items-start gap-2">
@@ -386,22 +373,22 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         </div>
       )}
       {/* ── Cards de estatísticas — linha 1 ── */}
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+      <div className={`relative z-10 mb-6 grid grid-cols-1 gap-3 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-6 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-2 sm:px-7 xl:grid-cols-12 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
         {/* Intimações de HOJE */}
         <div
           {...cardContainerProps("intimacoes")}
           onClick={() => onNavigate?.("intimacoes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-amber-300/45 hover:bg-amber-300/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="intimacoes" />
-          <div className="absolute right-4 top-4 rounded-xl bg-accent/10 p-2.5 text-accent"><FileText className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Intimações hoje</div>
-          <div className="font-display text-4xl font-semibold text-foreground transition-transform">
+          <div className="absolute right-4 top-4 rounded-xl bg-amber-300/15 p-2.5 text-amber-300"><FileText className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-amber-200/80">Intimações hoje</div>
+          <div className="font-display text-4xl font-semibold text-white transition-transform">
             {intimacoesHoje.length}
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">publicações do dia</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">publicações do dia</div>
           {intimacoesNaoLidas.length > 0 && (
-            <div className="mt-3 inline-flex rounded-full bg-accent/10 px-2.5 py-1 text-[0.68rem] font-bold text-accent">
+            <div className="mt-3 inline-flex rounded-full bg-amber-300/15 px-2.5 py-1 text-[0.68rem] font-bold text-amber-200">
               {intimacoesNaoLidas.length} não lida(s)
             </div>
           )}
@@ -411,14 +398,14 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <div
           {...cardContainerProps("processos")}
           onClick={() => onNavigate?.("processos")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-blue-300/20 bg-blue-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-blue-300/45 hover:bg-blue-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="processos" />
-          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><BriefcaseBusiness className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Processos</div>
-          <div className="font-display text-4xl font-semibold text-foreground">{processos.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
-          <div className="mt-1.5 text-[0.6rem] bg-blue-500/20 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
+          <div className="absolute right-4 top-4 rounded-xl bg-blue-300/15 p-2.5 text-blue-300"><BriefcaseBusiness className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-blue-200/80">Processos</div>
+          <div className="font-display text-4xl font-semibold text-white">{processos.length}</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">cadastrados</div>
+          <div className="mt-1.5 inline-block rounded bg-blue-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-blue-200">
             {processos.filter(p => p.status === "ativo").length} ativos
           </div>
         </div>
@@ -427,21 +414,21 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <div
           {...cardContainerProps("clientes")}
           onClick={() => onNavigate?.("clientes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-emerald-300/20 bg-emerald-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="clientes" />
-          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><Users className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Clientes</div>
-          <div className="font-display text-4xl font-semibold text-foreground">{clientes.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
+          <div className="absolute right-4 top-4 rounded-xl bg-emerald-300/15 p-2.5 text-emerald-300"><Users className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-emerald-200/80">Clientes</div>
+          <div className="font-display text-4xl font-semibold text-white">{clientes.length}</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">cadastrados</div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {clientesComPublicacoes > 0 && (
-              <div className="text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
+              <div className="inline-block rounded bg-amber-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-200">
                 {clientesComPublicacoes} com publicações
               </div>
             )}
             {clientesNotificadosHoje > 0 && (
-              <div className="text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
+              <div className="inline-block rounded bg-emerald-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-emerald-200">
                 {clientesNotificadosHoje} notificado(s) hoje
               </div>
             )}
@@ -452,14 +439,14 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <div
           {...cardContainerProps("tarefas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-300/45 hover:bg-cyan-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="tarefas" />
-          <div className="absolute right-4 top-4 rounded-xl bg-primary/7 p-2.5 text-primary"><CheckSquare2 className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">Tarefas</div>
-          <div className="font-display text-4xl font-semibold text-foreground">{tarefasPendentes.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">pendentes</div>
-          <div className="mt-1.5 text-[0.6rem] bg-cyan-500/20 text-cyan-700 px-1.5 py-0.5 rounded font-bold inline-block">
+          <div className="absolute right-4 top-4 rounded-xl bg-cyan-300/15 p-2.5 text-cyan-300"><CheckSquare2 className="h-5 w-5" /></div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-200/80">Tarefas</div>
+          <div className="font-display text-4xl font-semibold text-white">{tarefasPendentes.length}</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">pendentes</div>
+          <div className="mt-1.5 inline-block rounded bg-cyan-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-cyan-200">
             {tarefas.filter(t => t.status === "concluida").length} concluídas
           </div>
         </div>
@@ -468,38 +455,38 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <div
           {...cardContainerProps("a-vencer")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
             tarefasAVencer.length > 0
-              ? "border-amber-500/25 bg-amber-500/5 hover:border-amber-500/40"
-              : "border-border bg-card hover:border-accent/40"
+              ? "border-orange-300/30 bg-orange-400/[0.12] hover:border-orange-300/55"
+              : "border-orange-300/15 bg-orange-400/[0.06] hover:border-orange-300/35"
           }`}
         >
           <CardOrganizer id="a-vencer" />
-          <div className="absolute right-5 top-5 rounded-xl bg-amber-500/10 p-2.5 text-amber-600"><Clock3 className="h-5 w-5" /></div>
-          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>Vencem em até 3 dias</div>
-          <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
+          <div className="absolute right-5 top-5 rounded-xl bg-orange-300/15 p-2.5 text-orange-300"><Clock3 className="h-5 w-5" /></div>
+          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-orange-200/80">Vencem em até 3 dias</div>
+          <div className="font-display text-3xl font-black text-orange-300">
             {tarefasAVencer.length}
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">tarefas pendentes</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">tarefas pendentes</div>
         </div>
 
         {/* Vencidas */}
         <div
           {...cardContainerProps("vencidas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 shadow-panel transition-all hover:-translate-y-0.5 hover:shadow-panel-hover xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/20" : ""} ${
+          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
             tarefasVencidas.length > 0
-              ? "border-red-500/30 bg-red-500/5 hover:border-red-500/45"
-              : "border-border bg-card hover:border-accent/40"
+              ? "border-red-300/30 bg-red-400/[0.12] hover:border-red-300/55"
+              : "border-red-300/15 bg-red-400/[0.06] hover:border-red-300/35"
           }`}
         >
           <CardOrganizer id="vencidas" />
-          <div className="absolute right-5 top-5 rounded-xl bg-red-500/10 p-2.5 text-red-600"><TriangleAlert className="h-5 w-5" /></div>
-          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasVencidas.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Vencidas</div>
-          <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-600" : ""}`}>
+          <div className="absolute right-5 top-5 rounded-xl bg-red-300/15 p-2.5 text-red-300"><TriangleAlert className="h-5 w-5" /></div>
+          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-red-200/80">Vencidas</div>
+          <div className="font-display text-3xl font-black text-red-300">
             {tarefasVencidas.length}
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">prazo expirado</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">prazo expirado</div>
         </div>
       </div>
 
