@@ -1,3 +1,6 @@
+import { requireDebugAccess } from './_security.js';
+import https from 'https';
+import { URL } from 'url';
 /**
  * /api/aasp-test?chave=SUA_CHAVE&data=24/04/2026
  * /api/aasp-test?chave=SUA_CHAVE&data=2026-04-24
@@ -5,8 +8,6 @@
  * Testa AMBOS os formatos de data e retorna o raw bruto da API AASP.
  * Abra no browser após deploy para ver exatamente o que a API retorna.
  */
-const https = require('https');
-const { URL } = require('url');
 
 function httpGet(url) {
   return new Promise((resolve) => {
@@ -33,8 +34,8 @@ function httpGet(url) {
   });
 }
 
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+export default async function handler(req, res) {
+  if (!requireDebugAccess(req, res, { methods: "GET, OPTIONS" })) return;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   const chave = req.query.chave;
