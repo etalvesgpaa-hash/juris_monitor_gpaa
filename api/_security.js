@@ -45,7 +45,7 @@ export function requireSameOrigin(req, res, options = {}) {
     return false;
   }
   if (!isAllowedOrigin(req)) {
-    res.status(403).json({ error: "Origem n?o autorizada." });
+    res.status(403).json({ error: "Origem nao autorizada." });
     return false;
   }
   return true;
@@ -65,7 +65,7 @@ export function requireAdminSecret(req, res, options = {}) {
     return false;
   }
   if (!hasValidAdminSecret(req)) {
-    res.status(403).json({ error: "Acesso administrativo n?o autorizado." });
+    res.status(403).json({ error: "Acesso administrativo nao autorizado." });
     return false;
   }
   return true;
@@ -82,18 +82,18 @@ export function requireDebugAccess(req, res, options = {}) {
     return false;
   }
   if (!debugEndpointsEnabled() && !hasValidAdminSecret(req)) {
-    res.status(404).json({ error: "Endpoint indispon?vel em produ??o." });
+    res.status(404).json({ error: "Endpoint indisponivel em producao." });
     return false;
   }
   if (!isAllowedOrigin(req) && !hasValidAdminSecret(req)) {
-    res.status(403).json({ error: "Origem n?o autorizada." });
+    res.status(403).json({ error: "Origem nao autorizada." });
     return false;
   }
   return true;
 }
 
 export function isValidEmail(value) {
-  return typeof value === "string" && /^[^s@]+@[^s@]+.[^s@]+$/.test(value);
+  return typeof value === "string" && /^\S+@\S+\.\S+$/.test(value);
 }
 
 export function escapeHtml(value) {
