@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
+import { chamarGroq } from "@/lib/groqClient";
 import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail, UserCheck } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
@@ -753,35 +754,12 @@ export function IntimacoesPage() {
     }
 
     try {
-      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: "Você é um assistente jurídico especializado em análise de intimações. Faça um resumo objetivo e profissional em até 3 frases, destacando: tipo de ato, prazo se houver, e ação necessária."
-            },
-            {
-              role: "user",
-              content: `Analise esta intimação e faça um resumo:\n\n${texto}`
-            }
-          ],
-          temperature: 0.3,
-          max_tokens: 200,
-        }),
-      });
-
-      if (!resp.ok) {
-        throw new Error(`Erro na API Groq: ${resp.status}`);
-      }
-
-      const data = await resp.json();
-      const resumoBruto = data.choices?.[0]?.message?.content?.trim() || "";
+      const resumoBruto = await chamarGroq(
+        groqKey,
+        "Você é um assistente jurídico especializado em análise de intimações. Faça um resumo objetivo e profissional em até 3 frases, destacando: tipo de ato, prazo se houver, e ação necessária.",
+        `Analise esta intimação e faça um resumo:\n\n${texto}`,
+        { maxTokens: 200 }
+      );
       const resumo = resumoBruto
         .replace(/^(aqui (está|estão|segue|seguem)[^:\n]*:\s*)/i, "")
         .replace(/^(segue[^:\n]*:\s*)/i, "")

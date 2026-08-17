@@ -13,6 +13,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { chamarGroq } from "@/lib/groqClient";
 
 // ── Chave ÚNICA de localStorage — exportada para todos os arquivos ──
 export const INTIMACOES_STORE_KEY = "jm_aasp_intimacoes";
@@ -668,22 +669,11 @@ export function useAutoFetchIntimacoes() {
           ].filter(Boolean).join("\n");
           if (!texto || texto.length < 20) return null;
 
-            const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-              body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: [
-                  { role: "system", content: "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português." },
-                  { role: "user", content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}` },
-                ],
-                temperature: 0.3,
-                max_tokens: 300,
-              }),
-            });
-            if (!resp.ok) return null;
-            const aiData = await resp.json();
-            const resumo: string | null = aiData.choices?.[0]?.message?.content || null;
+            const resumo: string | null = await chamarGroq(
+              groqKey,
+              "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+              `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`
+            ).catch(() => null);
             if (!resumo) return null;
 
             // Persiste no Supabase

@@ -8,6 +8,7 @@ import {
   useDeleteCliente,
 } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
+import { chamarGroq } from "@/lib/groqClient";
 import {
   Edit2,
   Trash2,
@@ -472,33 +473,11 @@ export function ClientesPage() {
       const groqKey = apiKeys?.groq_api_key;
       if (!groqKey) return null;
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content:
-                "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
-            },
-            {
-              role: "user",
-              content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 300,
-        }),
-      });
-
-      if (!response.ok) return null;
-      const data = await response.json();
-      const resumo = data.choices?.[0]?.message?.content || null;
+      const resumo = await chamarGroq(
+        groqKey,
+        "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+        `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`
+      ).catch(() => null);
 
       // Salva resumo de volta no localStorage
       if (resumo) {

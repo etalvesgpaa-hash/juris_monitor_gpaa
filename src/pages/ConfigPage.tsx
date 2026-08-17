@@ -9,6 +9,7 @@ import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCirc
 import { loadStore, INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getGroqModelPreferido, setGroqModelPreferido, MODEL_FALLBACK_CHAIN } from "@/lib/groqClient";
 
 export function ConfigPage() {
   const { user } = useAuth();
@@ -36,6 +37,7 @@ export function ConfigPage() {
   const [testingDatajud, setTestingDatajud] = useState(false);
   const [testingAasp, setTestingAasp] = useState(false);
   const [testingGroq, setTestingGroq] = useState(false);
+  const [groqModel, setGroqModelState] = useState(getGroqModelPreferido());
 
   // Estado do diagnóstico AASP
   type DiagRow = {
@@ -355,10 +357,21 @@ export function ConfigPage() {
       }
 
       const data = await response.json();
-      toast({ 
-        title: "✅ Groq AI conectada!", 
-        description: `${data.data?.length || 0} modelos disponíveis` 
-      });
+      const modelosDisponiveis: string[] = (data.data || []).map((m: any) => m.id);
+      const modeloAtual = groqModel || MODEL_FALLBACK_CHAIN[0];
+
+      if (modelosDisponiveis.length && !modelosDisponiveis.includes(modeloAtual)) {
+        toast({
+          title: "⚠️ Chave OK, mas o modelo configurado não existe mais",
+          description: `"${modeloAtual}" não está na lista de modelos ativos da Groq. Atualize o campo "Modelo de IA" acima (ex: ${modelosDisponiveis[0]}).`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "✅ Groq AI conectada!",
+          description: `${modelosDisponiveis.length} modelos disponíveis · modelo atual OK`
+        });
+      }
     } catch (err: any) {
       toast({ 
         title: "❌ Erro ao conectar com Groq", 
@@ -825,6 +838,38 @@ export function ConfigPage() {
                       <>⚡ Testar Conexão</>
                     )}
                   </Button>
+                </div>
+
+                {/* Modelo de IA — editável sem precisar de deploy caso a Groq descontinue o modelo padrão */}
+                <div className="mt-4 pt-4 border-t border-border">
+                  <Label htmlFor="groq_model" className="text-xs text-muted-foreground">
+                    Modelo de IA
+                  </Label>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Input
+                      id="groq_model"
+                      type="text"
+                      value={groqModel}
+                      onChange={(e) => setGroqModelState(e.target.value)}
+                      placeholder={MODEL_FALLBACK_CHAIN[0]}
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setGroqModelPreferido(groqModel);
+                        toast({ title: "✅ Modelo de IA salvo", description: groqModel || MODEL_FALLBACK_CHAIN[0] });
+                      }}
+                    >
+                      Salvar
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Se a Groq descontinuar este modelo, o sistema tenta automaticamente um dos
+                    modelos de reserva ({MODEL_FALLBACK_CHAIN.join(", ")}). Se isso acontecer,
+                    atualize o modelo aqui — não precisa esperar uma nova versão do sistema.
+                  </p>
                 </div>
               </div>
 
