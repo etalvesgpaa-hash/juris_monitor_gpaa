@@ -41,10 +41,19 @@ export default async function handler(req, res) {
   // 1) Tenta usar a configuração de e-mail salva pelo próprio usuário
   //    (Configurações > E-mail). 2) Se não houver, cai para as variáveis
   //    de ambiente da Vercel, mantendo compatibilidade com quem já usa assim.
+  //
+  // Importante: uma linha em `api_keys` pode existir (ex: DataJud/AASP já
+  // configurados) sem que os campos de e-mail tenham sido preenchidos —
+  // por isso a origem é decidida campo a campo, não pela existência da linha.
   const { config } = await getUserEmailConfig(req);
 
+  const providerVemDoUsuario = Boolean(config?.email_provider);
   const provider = config?.email_provider || (((process.env.USE_GMAIL || '').toLowerCase() === 'true' || process.env.USE_GMAIL === '1') ? 'gmail' : 'resend');
   const useGmail = provider === 'gmail';
+
+  const gmailUserVemDoUsuario = Boolean(clean(config?.email_gmail_user));
+  const gmailPassVemDoUsuario = Boolean(clean(config?.email_gmail_app_password));
+  const resendKeyVemDoUsuario = Boolean(clean(config?.email_resend_api_key));
 
   const rawGmailUser = clean(config?.email_gmail_user) || clean(process.env.GMAIL_USER);
   const rawGmailPass = clean(config?.email_gmail_app_password) || clean(process.env.GMAIL_APP_PASSWORD);
@@ -52,13 +61,23 @@ export default async function handler(req, res) {
   const remetenteNome = config?.email_remetente_nome || 'JurisMonitor';
   const portalUrlPadrao = config?.email_portal_url || '';
 
-  console.log('[send-email] provider:', provider, config ? '(config do usuario)' : '(fallback env Vercel)');
+  // Origem real usada nesta requisição, para diagnóstico (log + resposta JSON).
+  let origem;
+  if (useGmail) {
+    if (gmailUserVemDoUsuario && gmailPassVemDoUsuario) origem = 'app';
+    else if (gmailUserVemDoUsuario || gmailPassVemDoUsuario) origem = 'mista'; // ex: e-mail salvo no app, senha ainda só na env
+    else origem = 'vercel';
+  } else {
+    origem = resendKeyVemDoUsuario ? 'app' : 'vercel';
+  }
+
+  console.log('[send-email] provider:', provider, providerVemDoUsuario ? '(escolhido no app)' : '(inferido da env Vercel)', '| origem das credenciais:', origem);
 
   if (useGmail && (!rawGmailUser || !rawGmailPass)) {
-    return res.status(500).json({ error: 'Configuracao do Gmail incompleta. Configure em Configurações > E-mail.' });
+    return res.status(500).json({ error: 'Configuracao do Gmail incompleta. Configure em Configurações > E-mail.', origem });
   }
   if (!useGmail && !rawResendKey) {
-    return res.status(500).json({ error: 'Nenhum servico de e-mail configurado. Configure em Configurações > E-mail.' });
+    return res.status(500).json({ error: 'Nenhum servico de e-mail configurado. Configure em Configurações > E-mail.', origem });
   }
 
   const {
@@ -171,7 +190,7 @@ export default async function handler(req, res) {
       });
 
       console.log('[send-email] Gmail OK, messageId:', info.messageId);
-      return res.status(200).json({ success: true, id: info.messageId, provider: 'gmail' });
+      return res.status(200).json({ success: true, id: info.messageId, provider: 'gmail', origem });
     }
 
     const resp = await fetch('https://api.resend.com/emails', {
@@ -195,7 +214,7 @@ export default async function handler(req, res) {
     }
 
     console.log('[send-email] Resend OK, id:', data.id);
-    return res.status(200).json({ success: true, id: data.id, provider: 'resend' });
+    return res.status(200).json({ success: true, id: data.id, provider: 'resend', origem });
   } catch (err) {
     console.error('[send-email] EXCECAO:', err.message);
     return res.status(500).json({

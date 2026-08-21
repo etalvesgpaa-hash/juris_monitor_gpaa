@@ -215,7 +215,18 @@ export function ConfigPage() {
         resumo: "Este é um e-mail de teste para confirmar que sua configuração de envio está funcionando corretamente.",
       });
       if (!ok) throw new Error(data?.dica || data?.error || "Falha ao enviar e-mail de teste");
-      toast({ title: "✅ E-mail de teste enviado!", description: `Verifique a caixa de entrada de ${user.email}` });
+
+      const origemTexto: Record<string, string> = {
+        app: "usando a configuração salva aqui no app ✅",
+        vercel: "usando variáveis de ambiente da Vercel (não a configuração desta página)",
+        mista: "usando parte da configuração deste app e parte de variáveis da Vercel — revise os campos abaixo",
+      };
+      const descricaoOrigem = origemTexto[data?.origem] || "";
+
+      toast({
+        title: "✅ E-mail de teste enviado!",
+        description: `Verifique a caixa de entrada de ${user.email}. ${descricaoOrigem}`,
+      });
     } catch (err: any) {
       toast({ title: "Erro no teste de e-mail", description: err.message, variant: "destructive" });
     } finally {
