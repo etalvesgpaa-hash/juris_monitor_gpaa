@@ -36,6 +36,7 @@ import type { Cliente } from "../hooks/useClientes";
 import { supabase } from "@/lib/supabase";
 import { INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { useAuth } from "@/hooks/useAuth";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -529,19 +530,11 @@ export function ClientesPage() {
         nomeAdvogado,
       };
 
-      const response = await fetch("/api/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailData),
-      });
+      const { ok, data: respData } = await enviarEmailNotificacao(emailData);
 
-      if (!response.ok) {
+      if (!ok) {
         // Lê o erro real retornado pelo servidor para mostrar ao usuário
-        let errMsg = "Falha ao enviar e-mail";
-        try {
-          const errData = await response.json();
-          errMsg = errData.dica || errData.error || errMsg;
-        } catch {}
+        const errMsg = respData?.dica || respData?.error || "Falha ao enviar e-mail";
         throw new Error(errMsg);
       }
 
@@ -628,12 +621,8 @@ export function ClientesPage() {
             textoCompleto: "",
             nomeAdvogado,
           };
-          const res = await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(emailData),
-          });
-          if (res.ok) {
+          const { ok } = await enviarEmailNotificacao(emailData);
+          if (ok) {
             await supabase.from("notificacoes_enviadas").insert({
               user_id: user!.id,
               cliente_id: c.id,

@@ -5,11 +5,12 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical, CloudUpload, Database } from "lucide-react";
+import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical, CloudUpload, Database, Mail, Send } from "lucide-react";
 import { loadStore, INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getGroqModelPreferido, setGroqModelPreferido, MODEL_FALLBACK_CHAIN } from "@/lib/groqClient";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 
 export function ConfigPage() {
   const { user } = useAuth();
@@ -32,6 +33,30 @@ export function ConfigPage() {
     groq_api_key: false,
     whatsapp_token: false,
   });
+  // Configuração de e-mail (envio automático de notificações) — por usuário,
+  // salva no Supabase em vez de depender de variáveis de ambiente na Vercel.
+  const [emailConfig, setEmailConfig] = useState({
+    email_provider: "gmail" as "gmail" | "resend",
+    email_gmail_user: "",
+    email_gmail_app_password: "",
+    email_resend_api_key: "",
+    email_remetente_nome: "",
+    email_portal_url: "",
+  });
+  // Indica se já existe uma senha/chave salva no banco, sem nunca carregar
+  // o valor real de volta para o navegador depois de salvo.
+  const [emailSecretsSet, setEmailSecretsSet] = useState({
+    gmail_app_password: false,
+    resend_api_key: false,
+  });
+  const [showEmailSecrets, setShowEmailSecrets] = useState({
+    gmail_app_password: false,
+    resend_api_key: false,
+  });
+  const [loadingEmailConfig, setLoadingEmailConfig] = useState(false);
+  const [savingEmailConfig, setSavingEmailConfig] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [testingDatajud, setTestingDatajud] = useState(false);
@@ -90,7 +115,113 @@ export function ConfigPage() {
       .catch(() => {
         // Tabela não existe ainda
       });
+
+    // Carregar configuração de e-mail.
+    // Os campos de senha/chave são pedidos no select apenas para sabermos
+    // se já existe algo salvo (booleano) — nunca ficam no state visível.
+    setLoadingEmailConfig(true);
+    supabase
+      .from("api_keys")
+      .select("email_provider, email_gmail_user, email_gmail_app_password, email_resend_api_key, email_remetente_nome, email_portal_url")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          // Se o usuário nunca escolheu um provedor explicitamente (coluna NULL),
+          // infere pela credencial que já existe, pra não mostrar "Gmail"
+          // selecionado quando na verdade só existe uma chave Resend salva.
+          const providerInferido = data.email_provider
+            || (data.email_resend_api_key && !data.email_gmail_app_password ? "resend" : "gmail");
+          setEmailConfig({
+            email_provider: providerInferido as "gmail" | "resend",
+            email_gmail_user: data.email_gmail_user || "",
+            email_gmail_app_password: "", // nunca preenchido a partir do banco
+            email_resend_api_key: "", // nunca preenchido a partir do banco
+            email_remetente_nome: data.email_remetente_nome || "",
+            email_portal_url: data.email_portal_url || "",
+          });
+          setEmailSecretsSet({
+            gmail_app_password: Boolean(data.email_gmail_app_password),
+            resend_api_key: Boolean(data.email_resend_api_key),
+          });
+        }
+      })
+      .catch(() => {
+        // Colunas ainda não existem (migration não aplicada)
+      })
+      .finally(() => setLoadingEmailConfig(false));
   }, [user]);
+
+  const handleSaveEmailConfig = async () => {
+    if (!user) return;
+    setSavingEmailConfig(true);
+    try {
+      const payload: Record<string, unknown> = {
+        email_provider: emailConfig.email_provider,
+        email_gmail_user: emailConfig.email_gmail_user || null,
+        email_remetente_nome: emailConfig.email_remetente_nome || null,
+        email_portal_url: emailConfig.email_portal_url || null,
+        updated_at: new Date().toISOString(),
+      };
+      // Só sobrescreve a senha/chave se o usuário digitou algo novo.
+      // Campo vazio = mantém o que já está salvo (não apaga sem querer).
+      if (emailConfig.email_gmail_app_password) {
+        payload.email_gmail_app_password = emailConfig.email_gmail_app_password;
+      }
+      if (emailConfig.email_resend_api_key) {
+        payload.email_resend_api_key = emailConfig.email_resend_api_key;
+      }
+
+      const { data: existing } = await supabase
+        .from("api_keys")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase.from("api_keys").update(payload).eq("user_id", user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("api_keys").insert({ user_id: user.id, ...payload });
+        if (error) throw error;
+      }
+
+      setEmailSecretsSet({
+        gmail_app_password: emailConfig.email_gmail_app_password ? true : emailSecretsSet.gmail_app_password,
+        resend_api_key: emailConfig.email_resend_api_key ? true : emailSecretsSet.resend_api_key,
+      });
+      // Limpa os campos de senha da tela após salvar (nunca ficam expostos)
+      setEmailConfig((prev) => ({ ...prev, email_gmail_app_password: "", email_resend_api_key: "" }));
+
+      toast({ title: "✅ Configuração de e-mail salva!" });
+    } catch (err: any) {
+      toast({
+        title: "Erro ao salvar configuração de e-mail",
+        description: err.message || "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingEmailConfig(false);
+    }
+  };
+
+  const handleTestEmailConfig = async () => {
+    if (!user) return;
+    setTestingEmail(true);
+    try {
+      const { ok, data } = await enviarEmailNotificacao({
+        to_email: user.email,
+        titulo: "Teste de envio - JurisMonitor",
+        resumo: "Este é um e-mail de teste para confirmar que sua configuração de envio está funcionando corretamente.",
+      });
+      if (!ok) throw new Error(data?.dica || data?.error || "Falha ao enviar e-mail de teste");
+      toast({ title: "✅ E-mail de teste enviado!", description: `Verifique a caixa de entrada de ${user.email}` });
+    } catch (err: any) {
+      toast({ title: "Erro no teste de e-mail", description: err.message, variant: "destructive" });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -556,6 +687,7 @@ export function ConfigPage() {
         <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1 lg:w-fit">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
+          <TabsTrigger value="email">E-mail</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
           <TabsTrigger value="diagnostico">Diagnóstico AASP</TabsTrigger>
           <TabsTrigger value="sincronizacao">Sincronização</TabsTrigger>
@@ -923,6 +1055,165 @@ export function ConfigPage() {
         </TabsContent>
 
         {/* ABA INTEGRAÇÕES */}
+        <TabsContent value="email" className="space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+            <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
+              <Mail className="h-6 w-6" />
+              Envio automático de e-mails
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Configure aqui as credenciais usadas para notificar clientes automaticamente
+              quando chega uma nova publicação. Não é necessário mexer em nada na Vercel —
+              tudo fica salvo com a sua conta.
+            </p>
+
+            {loadingEmailConfig ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+              </div>
+            ) : (
+              <form onSubmit={(e) => e.preventDefault()} autoComplete="off" className="space-y-5">
+                <div>
+                  <Label className="text-sm font-bold uppercase tracking-wider">Provedor de envio</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant={emailConfig.email_provider === "gmail" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEmailConfig({ ...emailConfig, email_provider: "gmail" })}
+                    >
+                      Gmail
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={emailConfig.email_provider === "resend" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEmailConfig({ ...emailConfig, email_provider: "resend" })}
+                    >
+                      Resend
+                    </Button>
+                  </div>
+                </div>
+
+                {emailConfig.email_provider === "gmail" ? (
+                  <div className="border border-border rounded-lg p-4 space-y-3">
+                    <div>
+                      <Label className="text-xs">E-mail do Gmail</Label>
+                      <Input
+                        type="email"
+                        value={emailConfig.email_gmail_user}
+                        onChange={(e) => setEmailConfig({ ...emailConfig, email_gmail_user: e.target.value })}
+                        placeholder="seu-email@gmail.com"
+                        autoComplete="new-password"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs flex items-center gap-2">
+                        Senha de app do Gmail (16 caracteres)
+                        {emailSecretsSet.gmail_app_password && (
+                          <span className="text-green-ok flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> configurada
+                          </span>
+                        )}
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type={showEmailSecrets.gmail_app_password ? "text" : "password"}
+                          value={emailConfig.email_gmail_app_password}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_gmail_app_password: e.target.value })}
+                          placeholder={emailSecretsSet.gmail_app_password ? "•••••••••••••••• (deixe em branco para manter)" : "abcdefghijklmnop"}
+                          className="pr-10 font-mono text-sm"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEmailSecrets({ ...showEmailSecrets, gmail_app_password: !showEmailSecrets.gmail_app_password })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showEmailSecrets.gmail_app_password ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Gere em{" "}
+                        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="underline">
+                          myaccount.google.com/apppasswords
+                        </a>{" "}
+                        (exige verificação em 2 etapas ativada).
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg p-4 space-y-3">
+                    <div>
+                      <Label className="text-xs flex items-center gap-2">
+                        Resend API Key
+                        {emailSecretsSet.resend_api_key && (
+                          <span className="text-green-ok flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> configurada
+                          </span>
+                        )}
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type={showEmailSecrets.resend_api_key ? "text" : "password"}
+                          value={emailConfig.email_resend_api_key}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_resend_api_key: e.target.value })}
+                          placeholder={emailSecretsSet.resend_api_key ? "•••••••••••••••• (deixe em branco para manter)" : "re_sua_chave_aqui"}
+                          className="pr-10 font-mono text-sm"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEmailSecrets({ ...showEmailSecrets, resend_api_key: !showEmailSecrets.resend_api_key })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showEmailSecrets.resend_api_key ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Nome do remetente</Label>
+                    <Input
+                      value={emailConfig.email_remetente_nome}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, email_remetente_nome: e.target.value })}
+                      placeholder="Ex: Fulano de Tal Advocacia"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">URL do portal do cliente (opcional)</Label>
+                    <Input
+                      value={emailConfig.email_portal_url}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, email_portal_url: e.target.value })}
+                      placeholder="https://seu-site.vercel.app"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button onClick={handleSaveEmailConfig} disabled={savingEmailConfig}>
+                    {savingEmailConfig ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Salvando...</>
+                    ) : (
+                      <><Save className="h-4 w-4 mr-2" /> Salvar configuração</>
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={handleTestEmailConfig} disabled={testingEmail}>
+                    {testingEmail ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enviando...</>
+                    ) : (
+                      <><Send className="h-4 w-4 mr-2" /> Enviar e-mail de teste</>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </TabsContent>
+
         <TabsContent value="integracoes" className="space-y-4">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
             <h2 className="font-display text-xl font-bold mb-4">Status das Integrações</h2>

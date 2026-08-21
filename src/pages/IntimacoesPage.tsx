@@ -17,6 +17,7 @@ import {
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
 import { chamarGroq } from "@/lib/groqClient";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail, UserCheck } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
@@ -974,20 +975,16 @@ export function IntimacoesPage() {
     let ok = 0;
     for (const cliente of destinatarios) {
       try {
-        const res = await fetch("/api/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            destinatario:   cliente.email,
-            nomeCliente:    cliente.nome,
-            numeroProcesso: intim._numProc,
-            dataPublicacao: fmtDataBR(intim._data),
-            assunto:        intim._titulo || "Nova Publicação AASP",
-            resumoIA:       intim._resumoIA || null,
-            textoCompleto:  "",
-          }),
+        const { ok: enviado } = await enviarEmailNotificacao({
+          destinatario:   cliente.email,
+          nomeCliente:    cliente.nome,
+          numeroProcesso: intim._numProc,
+          dataPublicacao: fmtDataBR(intim._data),
+          assunto:        intim._titulo || "Nova Publicação AASP",
+          resumoIA:       intim._resumoIA || null,
+          textoCompleto:  "",
         });
-        const status = res.ok ? "enviado" : "falha";
+        const status = enviado ? "enviado" : "falha";
         await supabase.from("notificacoes_enviadas").insert({
           user_id:         user!.id,
           cliente_id:      cliente.id,
@@ -998,7 +995,7 @@ export function IntimacoesPage() {
           email_destino:   cliente.email,
           status,
         });
-        if (res.ok) {
+        if (enviado) {
           ok++;
           await supabase.from("clientes").update({ ultima_notificacao: new Date().toISOString() }).eq("id", cliente.id);
         }

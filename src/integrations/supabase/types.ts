@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          id: string
+          user_id: string
+          datajud_token: string | null
+          aasp_chave: string | null
+          groq_api_key: string | null
+          whatsapp_token: string | null
+          email_provider: string | null
+          email_gmail_user: string | null
+          email_gmail_app_password: string | null
+          email_resend_api_key: string | null
+          email_remetente_nome: string | null
+          email_portal_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          datajud_token?: string | null
+          aasp_chave?: string | null
+          groq_api_key?: string | null
+          whatsapp_token?: string | null
+          email_provider?: string | null
+          email_gmail_user?: string | null
+          email_gmail_app_password?: string | null
+          email_resend_api_key?: string | null
+          email_remetente_nome?: string | null
+          email_portal_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          datajud_token?: string | null
+          aasp_chave?: string | null
+          groq_api_key?: string | null
+          whatsapp_token?: string | null
+          email_provider?: string | null
+          email_gmail_user?: string | null
+          email_gmail_app_password?: string | null
+          email_resend_api_key?: string | null
+          email_remetente_nome?: string | null
+          email_portal_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           cpf_cnpj: string | null

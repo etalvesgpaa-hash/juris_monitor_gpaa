@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { chamarGroq } from "@/lib/groqClient";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 
 // ── Chave ÚNICA de localStorage — exportada para todos os arquivos ──
 export const INTIMACOES_STORE_KEY = "jm_aasp_intimacoes";
@@ -326,21 +327,17 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
         if (enviadosPorProcData.has(chaveProcData)) continue;
 
         try {
-          const res = await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              destinatario:  cliente.email,
-              nomeCliente:   cliente.nome,
-              numeroProcesso: intim._numProc,
-              dataPublicacao: fmtDataBR(intim._data),
-              assunto:       intim._titulo || "Nova Publicação AASP",
-              resumoIA:      intim._resumoIA || null,
-              textoCompleto: "",
-            }),
+          const { ok: enviado } = await enviarEmailNotificacao({
+            destinatario:  cliente.email,
+            nomeCliente:   cliente.nome,
+            numeroProcesso: intim._numProc,
+            dataPublicacao: fmtDataBR(intim._data),
+            assunto:       intim._titulo || "Nova Publicação AASP",
+            resumoIA:      intim._resumoIA || null,
+            textoCompleto: "",
           });
 
-          const status = res.ok ? "enviado" : "falha";
+          const status = enviado ? "enviado" : "falha";
           await supabase.from("notificacoes_enviadas").insert({
             user_id:        userId,
             cliente_id:     cliente.id,
@@ -352,7 +349,7 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
             status,
           });
 
-          if (res.ok) {
+          if (enviado) {
             enviados.add(chave);
             totalEnviados++;
             await supabase.from("clientes")

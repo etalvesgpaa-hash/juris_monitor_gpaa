@@ -1,33 +1,70 @@
 import nodemailer from 'nodemailer';
+import { createClient } from '@supabase/supabase-js';
 import { escapeHtml, isValidEmail, requireSameOrigin } from './_security.js';
 
+const clean = (v) => (v || '').replace(/[`'"\s]/g, '');
+
+// Cliente Supabase autenticado com o token do próprio usuário que fez a
+// requisição. A consulta respeita RLS (auth.uid() = user_id), então cada
+// usuário só consegue ler a própria configuração de e-mail — sem precisar
+// de nenhuma service_role key na Vercel.
+async function getUserEmailConfig(req) {
+  const authHeader = req.headers?.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) return { user: null, config: null };
+
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) return { user: null, config: null };
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+
+  const { data: { user } } = await supabase.auth.getUser(token);
+  if (!user) return { user: null, config: null };
+
+  const { data: config } = await supabase
+    .from('api_keys')
+    .select('email_provider, email_gmail_user, email_gmail_app_password, email_resend_api_key, email_remetente_nome, email_portal_url')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  return { user, config };
+}
+
 export default async function handler(req, res) {
-  if (!requireSameOrigin(req, res, { methods: 'POST, OPTIONS', headers: 'Content-Type, Accept' })) return;
+  if (!requireSameOrigin(req, res, { methods: 'POST, OPTIONS', headers: 'Content-Type, Accept, Authorization' })) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const rawUseGmail = (process.env.USE_GMAIL || '').replace(/[`'"\s]/g, '');
-  const rawGmailUser = (process.env.GMAIL_USER || '').replace(/[`'"\s]/g, '');
-  const rawGmailPass = (process.env.GMAIL_APP_PASSWORD || '').replace(/[`'"\s]/g, '');
-  const rawResendKey = (process.env.RESEND_API_KEY || '').replace(/[`'"\s]/g, '');
-  const useGmail = rawUseGmail.toLowerCase() === 'true' || rawUseGmail === '1';
+  // 1) Tenta usar a configuração de e-mail salva pelo próprio usuário
+  //    (Configurações > E-mail). 2) Se não houver, cai para as variáveis
+  //    de ambiente da Vercel, mantendo compatibilidade com quem já usa assim.
+  const { config } = await getUserEmailConfig(req);
 
-  console.log('[send-email] USE_GMAIL:', useGmail);
-  console.log('[send-email] GMAIL_USER:', rawGmailUser ? 'OK' : 'AUSENTE');
-  console.log('[send-email] GMAIL_APP_PASSWORD length:', rawGmailPass.length);
-  console.log('[send-email] RESEND_API_KEY:', rawResendKey ? 'OK' : 'AUSENTE');
+  const provider = config?.email_provider || (((process.env.USE_GMAIL || '').toLowerCase() === 'true' || process.env.USE_GMAIL === '1') ? 'gmail' : 'resend');
+  const useGmail = provider === 'gmail';
+
+  const rawGmailUser = clean(config?.email_gmail_user) || clean(process.env.GMAIL_USER);
+  const rawGmailPass = clean(config?.email_gmail_app_password) || clean(process.env.GMAIL_APP_PASSWORD);
+  const rawResendKey = clean(config?.email_resend_api_key) || clean(process.env.RESEND_API_KEY);
+  const remetenteNome = config?.email_remetente_nome || 'JurisMonitor';
+  const portalUrlPadrao = config?.email_portal_url || '';
+
+  console.log('[send-email] provider:', provider, config ? '(config do usuario)' : '(fallback env Vercel)');
 
   if (useGmail && (!rawGmailUser || !rawGmailPass)) {
-    return res.status(500).json({ error: 'Configuracao do Gmail incompleta' });
+    return res.status(500).json({ error: 'Configuracao do Gmail incompleta. Configure em Configurações > E-mail.' });
   }
   if (!useGmail && !rawResendKey) {
-    return res.status(500).json({ error: 'Nenhum servico de e-mail configurado' });
+    return res.status(500).json({ error: 'Nenhum servico de e-mail configurado. Configure em Configurações > E-mail.' });
   }
 
   const {
     to_email,
     titulo,
     resumo,
-    portal_url,
     destinatario,
     nomeCliente,
     numeroProcesso,
@@ -37,6 +74,7 @@ export default async function handler(req, res) {
     textoCompleto,
     nomeAdvogado,
   } = req.body || {};
+  const portal_url = req.body?.portal_url || portalUrlPadrao;
 
   const isIntimacao = Boolean(destinatario && numeroProcesso);
   const emailDestino = destinatario || to_email;
@@ -126,7 +164,7 @@ export default async function handler(req, res) {
       });
 
       const info = await transporter.sendMail({
-        from: `"JurisMonitor" <${rawGmailUser}>`,
+        from: `"${remetenteNome}" <${rawGmailUser}>`,
         to: emailDestino,
         subject: emailTitulo,
         html: emailBody,
@@ -153,7 +191,7 @@ export default async function handler(req, res) {
     const data = await resp.json();
     if (!resp.ok) {
       console.error('[send-email] Resend erro:', data);
-      return res.status(500).json({ error: data.message || 'Erro Resend', dica: 'Verifique RESEND_API_KEY no Vercel.' });
+      return res.status(500).json({ error: data.message || 'Erro Resend', dica: 'Verifique a Resend API Key em Configurações > E-mail.' });
     }
 
     console.log('[send-email] Resend OK, id:', data.id);
@@ -163,8 +201,8 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error: err.message,
       dica: useGmail
-        ? 'Erro SMTP Gmail. Confirme verificacao em 2 etapas, senha de app e variaveis no Vercel.'
-        : 'Verifique a RESEND_API_KEY no Vercel.',
+        ? 'Erro SMTP Gmail. Confirme verificacao em 2 etapas e a senha de app em Configurações > E-mail.'
+        : 'Verifique a Resend API Key em Configurações > E-mail.',
     });
   }
 }
