@@ -33,6 +33,25 @@ function csvEscape(v: unknown) {
   return `"${String(v ?? "").replace(/"/g, '""')}"`;
 }
 
+/** Processos vinculados a um cliente (via processos.cliente_id) */
+function processosDoCliente(processos: { cliente_id: string | null }[], clienteId: string) {
+  return processos.filter((p: any) => p.cliente_id === clienteId);
+}
+
+/** Lista de números CNJ dos processos de um cliente, separados por "; " */
+function numerosProcessoCliente(processos: any[], clienteId: string): string {
+  return processosDoCliente(processos, clienteId).map(p => p.numero_cnj).join("; ");
+}
+
+/** Data mais recente entre ultima_movimentacao/updated_at dos processos do cliente */
+function ultimaAtualizacaoCliente(processos: any[], clienteId: string): string | null {
+  const datas = processosDoCliente(processos, clienteId)
+    .map(p => p.ultima_movimentacao || p.updated_at)
+    .filter(Boolean) as string[];
+  if (!datas.length) return null;
+  return datas.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+}
+
 function statusBadge(status: string | null | undefined) {
   const map: Record<string, string> = {
     ativo:     "bg-emerald-100 text-emerald-700",
@@ -127,9 +146,10 @@ export function AdminPage() {
 
     linhas.push([]);
     linhas.push(["=== CLIENTES ==="]);
-    linhas.push(["Nome","CPF/CNPJ","E-mail","Telefone","Status","Responsável","Escritório","Cadastrado em"]);
+    linhas.push(["Nome","CPF/CNPJ","E-mail","Telefone","Nº Processo(s)","Última atualização","Status","Responsável","Escritório","Cadastrado em"]);
     clientes.forEach(c => linhas.push([
       c.nome, c.cpf_cnpj ?? "", c.email ?? "", c.telefone ?? "",
+      numerosProcessoCliente(processos, c.id), fmtDate(ultimaAtualizacaoCliente(processos, c.id)),
       c.status_monitoramento ?? "", nomeResponsavel(c.user_id),
       profileMap[c.user_id]?.escritorio ?? "", fmtDate(c.created_at),
     ]));
@@ -224,7 +244,7 @@ export function AdminPage() {
       if (userClientes.length > 0) {
         corpo += `<h3>Clientes</h3><table>
           <thead><tr>
-            <th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>Telefone</th><th>Status</th>
+            <th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>Telefone</th><th>Nº Processo(s)</th><th>Última atualização</th><th>Status</th>
           </tr></thead><tbody>`;
         userClientes.forEach(c => {
           corpo += `<tr>
@@ -232,6 +252,8 @@ export function AdminPage() {
             <td>${c.cpf_cnpj || '—'}</td>
             <td>${c.email || '—'}</td>
             <td>${c.telefone || '—'}</td>
+            <td>${numerosProcessoCliente(processos, c.id) || '—'}</td>
+            <td>${fmtDate(ultimaAtualizacaoCliente(processos, c.id))}</td>
             <td>${badge(c.status_monitoramento)}</td>
           </tr>`;
         });
@@ -486,6 +508,8 @@ export function AdminPage() {
                   <th className="text-left px-3 py-2.5 font-semibold">CPF/CNPJ</th>
                   <th className="text-left px-3 py-2.5 font-semibold">E-mail</th>
                   <th className="text-left px-3 py-2.5 font-semibold">Telefone</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Nº Processo(s)</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Última atualização</th>
                   <th className="text-left px-3 py-2.5 font-semibold">Status</th>
                   <th className="text-left px-3 py-2.5 font-semibold">Responsável</th>
                   <th className="text-left px-3 py-2.5 font-semibold">Cadastrado</th>
@@ -493,7 +517,7 @@ export function AdminPage() {
               </thead>
               <tbody>
                 {filteredClientes.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado.</td></tr>
                 )}
                 {filteredClientes.map(c => (
                   <tr key={c.id} className="border-t border-border/50 hover:bg-accent/5">
@@ -501,6 +525,8 @@ export function AdminPage() {
                     <td className="px-3 py-2">{c.cpf_cnpj || "—"}</td>
                     <td className="px-3 py-2">{c.email || "—"}</td>
                     <td className="px-3 py-2">{c.telefone || "—"}</td>
+                    <td className="px-3 py-2 font-mono">{numerosProcessoCliente(processos, c.id) || "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{fmtDate(ultimaAtualizacaoCliente(processos, c.id))}</td>
                     <td className="px-3 py-2">{statusBadge(c.status_monitoramento)}</td>
                     <td className="px-3 py-2">{nomeResponsavel(c.user_id)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmtDate(c.created_at)}</td>
