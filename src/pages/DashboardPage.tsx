@@ -544,7 +544,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           onClick={() => onNavigate?.("tarefas")}
           onMouseEnter={() => setHoverCard("a-vencer")}
           onMouseLeave={() => setHoverCard(null)}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
+          className={`relative cursor-pointer rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${hoverCard === "a-vencer" ? "" : "overflow-hidden"} ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
             tarefasAVencer.length + tarefasVenceHoje.length > 0
               ? "border-orange-300/30 bg-orange-400/[0.12] hover:border-orange-300/55"
               : "border-orange-300/15 bg-orange-400/[0.06] hover:border-orange-300/35"
@@ -574,7 +574,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           onClick={() => onNavigate?.("tarefas")}
           onMouseEnter={() => setHoverCard("vencidas")}
           onMouseLeave={() => setHoverCard(null)}
-          className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
+          className={`relative cursor-pointer rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${hoverCard === "vencidas" ? "" : "overflow-hidden"} ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
             tarefasVencidas.length > 0
               ? "border-red-300/30 bg-red-400/[0.12] hover:border-red-300/55"
               : "border-red-300/15 bg-red-400/[0.06] hover:border-red-300/35"
