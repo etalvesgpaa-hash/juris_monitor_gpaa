@@ -36,6 +36,86 @@ function dataLocalHoje(): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+function statusTarefaColor(status: string): string {
+  if (status === "concluida")     return "text-green-ok bg-green-ok/10";
+  if (status === "cancelada")     return "text-muted-foreground bg-muted";
+  if (status === "triagem")       return "text-gray-600 bg-gray-100";
+  if (status === "pendente")      return "text-gray-600 bg-gray-100";
+  if (status === "ag_documentos") return "text-amber-600 bg-amber-100";
+  if (status === "ag_cliente")    return "text-sky-600 bg-sky-100";
+  if (status === "elaboracao")    return "text-violet-600 bg-violet-100";
+  if (status === "andamento")     return "text-blue-600 bg-blue-100";
+  if (status === "audiencia")     return "text-red-600 bg-red-100";
+  if (status === "ag_tribunal")   return "text-purple-600 bg-purple-100";
+  return "text-muted-foreground bg-muted/50";
+}
+
+function statusTarefaLabel(status: string): string {
+  if (status === "concluida")     return "Concluída";
+  if (status === "cancelada")     return "Cancelada";
+  if (status === "triagem")       return "Triagem";
+  if (status === "pendente")      return "Triagem";
+  if (status === "ag_documentos") return "Ag. Documentos";
+  if (status === "ag_cliente")    return "Ag. Cliente";
+  if (status === "elaboracao")    return "Em Elaboração";
+  if (status === "andamento")     return "Em Andamento";
+  if (status === "audiencia")     return "Audiência/Diligência";
+  if (status === "ag_tribunal")   return "Ag. Tribunal";
+  return status || "—";
+}
+
+/** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
+function TarefasHoverList({ tarefas, corAccent, onNavigate }: {
+  tarefas: any[];
+  corAccent: "accent" | "red-alert";
+  onNavigate?: (page: PageId) => void;
+}) {
+  const corTexto = corAccent === "accent" ? "text-accent" : "text-red-alert";
+  const corBorda = corAccent === "accent" ? "border-accent/25" : "border-red-alert/25";
+
+  return (
+    <div
+      className={`absolute z-50 top-full left-0 right-0 mt-2 bg-card border ${corBorda} rounded-xl shadow-2xl max-h-[360px] overflow-y-auto`}
+      onClick={e => e.stopPropagation()}
+    >
+      {tarefas.length === 0 ? (
+        <div className="p-4 text-xs text-muted-foreground text-center">Nenhuma tarefa neste grupo.</div>
+      ) : (
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-card border-b border-border">
+            <tr>
+              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Processo</th>
+              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Tarefa</th>
+              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Prazo</th>
+              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tarefas.map(t => (
+              <tr
+                key={t.id}
+                className="border-b border-border/40 hover:bg-muted/30 cursor-pointer"
+                onClick={() => onNavigate?.("tarefas")}
+              >
+                <td className="px-3 py-2 font-mono">{t.processo?.numero_cnj || t.numero_processo || "—"}</td>
+                <td className="px-3 py-2 font-semibold max-w-[160px] truncate">{t.titulo}</td>
+                <td className={`px-3 py-2 font-mono font-bold whitespace-nowrap ${corTexto}`}>
+                  {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
+                </td>
+                <td className="px-3 py-2">
+                  <span className={`text-[0.62rem] font-bold px-1.5 py-0.5 rounded ${statusTarefaColor(t.status)}`}>
+                    {statusTarefaLabel(t.status)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 interface DashboardPageProps { onNavigate?: (page: PageId) => void; onOpenTv?: () => void; }
 
 type DashboardCardId = "intimacoes" | "processos" | "clientes" | "tarefas" | "a-vencer" | "vencidas";
@@ -64,6 +144,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
   const [organizingCards, setOrganizingCards] = useState(false);
+  const [hoverCard, setHoverCard] = useState<"a-vencer" | "vencidas" | null>(null);
   const [draggedCard, setDraggedCard] = useState<DashboardCardId | null>(null);
   const [cardOrder, setCardOrder] = useState<DashboardCardId[]>(loadDashboardCardOrder);
 
@@ -207,12 +288,18 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const tarefasPendentes  = tarefas.filter(t => t.status !== "concluida");
   const tarefasVencidas   = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    return parseDateLocal(t.data_vencimento) < now;
+    return t.data_vencimento.slice(0, 10) < hoje;
+  });
+  const tarefasVenceHoje = tarefas.filter(t => {
+    if (!t.data_vencimento || t.status === "concluida") return false;
+    return t.data_vencimento.slice(0, 10) === hoje;
   });
   const tarefasAVencer = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    const diff = parseDateLocal(t.data_vencimento).getTime() - now.getTime();
-    return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+    const diasRestantes = t.data_vencimento.slice(0, 10) > hoje
+      ? Math.ceil((parseDateLocal(t.data_vencimento).getTime() - parseDateLocal(hoje).getTime()) / (24 * 60 * 60 * 1000))
+      : -1;
+    return diasRestantes > 0 && diasRestantes <= 3;
   });
 
   // Gráficos
@@ -451,29 +538,42 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           </div>
         </div>
 
-        {/* A vencer (3 dias) */}
+        {/* A vencer (hoje + próximos 3 dias) */}
         <div
           {...cardContainerProps("a-vencer")}
           onClick={() => onNavigate?.("tarefas")}
+          onMouseEnter={() => setHoverCard("a-vencer")}
+          onMouseLeave={() => setHoverCard(null)}
           className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
-            tarefasAVencer.length > 0
+            tarefasAVencer.length + tarefasVenceHoje.length > 0
               ? "border-orange-300/30 bg-orange-400/[0.12] hover:border-orange-300/55"
               : "border-orange-300/15 bg-orange-400/[0.06] hover:border-orange-300/35"
           }`}
         >
           <CardOrganizer id="a-vencer" />
           <div className="absolute right-5 top-5 rounded-xl bg-orange-300/15 p-2.5 text-orange-300"><Clock3 className="h-5 w-5" /></div>
-          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-orange-200/80">Vencem em até 3 dias</div>
+          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-orange-200/80">Vencem hoje ou em até 3 dias</div>
           <div className="font-display text-3xl font-black text-orange-300">
-            {tarefasAVencer.length}
+            {tarefasAVencer.length + tarefasVenceHoje.length}
           </div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">tarefas pendentes</div>
+          <div className="mt-0.5 text-[0.65rem] text-white/50">
+            {tarefasVenceHoje.length > 0 ? `${tarefasVenceHoje.length} vencem hoje` : "tarefas pendentes"}
+          </div>
+          {hoverCard === "a-vencer" && (
+            <TarefasHoverList
+              tarefas={[...tarefasVenceHoje, ...tarefasAVencer]}
+              corAccent="accent"
+              onNavigate={onNavigate}
+            />
+          )}
         </div>
 
         {/* Vencidas */}
         <div
           {...cardContainerProps("vencidas")}
           onClick={() => onNavigate?.("tarefas")}
+          onMouseEnter={() => setHoverCard("vencidas")}
+          onMouseLeave={() => setHoverCard(null)}
           className={`relative cursor-pointer overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
             tarefasVencidas.length > 0
               ? "border-red-300/30 bg-red-400/[0.12] hover:border-red-300/55"
@@ -487,6 +587,13 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
             {tarefasVencidas.length}
           </div>
           <div className="mt-0.5 text-[0.65rem] text-white/50">prazo expirado</div>
+          {hoverCard === "vencidas" && (
+            <TarefasHoverList
+              tarefas={tarefasVencidas}
+              corAccent="red-alert"
+              onNavigate={onNavigate}
+            />
+          )}
         </div>
       </div>
 
@@ -642,20 +749,30 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
       </div>
 
       {/* ── Prazos críticos ── */}
-      {tarefasAVencer.length > 0 && (
+      {(tarefasVenceHoje.length + tarefasAVencer.length) > 0 && (
         <div className="content-panel mb-5 border-accent/25 p-5">
           <div className="text-[0.72rem] font-bold text-accent uppercase tracking-widest mb-3 flex items-center gap-1.5">
             <div className="w-[18px] h-0.5 bg-accent" />
-            ⚠️ Prazos Próximos — Próximos 3 dias
+            ⚠️ Prazos Próximos — Hoje e Próximos 3 dias
           </div>
           <div className="space-y-2">
-            {tarefasAVencer.map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-accent/5 rounded-lg px-4 py-3 border border-accent/10">
-                <div>
-                  <div className="font-semibold text-sm">{t.titulo}</div>
-                  <div className="text-xs text-muted-foreground">{t.descricao || "Sem descrição"}</div>
+            {[...tarefasVenceHoje, ...tarefasAVencer].map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-accent/5 rounded-lg px-4 py-3 border border-accent/10 gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{t.titulo}</span>
+                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${statusTarefaColor(t.status)}`}>
+                      {statusTarefaLabel(t.status)}
+                    </span>
+                    {t.data_vencimento?.slice(0,10) === dataLocalHoje() && (
+                      <span className="text-[0.6rem] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-600 shrink-0">HOJE</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {t.processo?.numero_cnj || t.numero_processo ? `Processo ${t.processo?.numero_cnj || t.numero_processo}` : (t.descricao || "Sem descrição")}
+                  </div>
                 </div>
-                <div className="text-xs font-mono text-accent font-bold whitespace-nowrap">
+                <div className="text-xs font-mono text-accent font-bold whitespace-nowrap shrink-0">
                   {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
                 </div>
               </div>
@@ -672,12 +789,19 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           </div>
           <div className="space-y-2">
             {tarefasVencidas.slice(0, 5).map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-red-alert/5 rounded-lg px-4 py-3 border border-red-alert/10">
-                <div>
-                  <div className="font-semibold text-sm">{t.titulo}</div>
-                  <div className="text-xs text-muted-foreground">{t.descricao || "Sem descrição"}</div>
+              <div key={t.id} className="flex items-center justify-between bg-red-alert/5 rounded-lg px-4 py-3 border border-red-alert/10 gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{t.titulo}</span>
+                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${statusTarefaColor(t.status)}`}>
+                      {statusTarefaLabel(t.status)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {t.processo?.numero_cnj || t.numero_processo ? `Processo ${t.processo?.numero_cnj || t.numero_processo}` : (t.descricao || "Sem descrição")}
+                  </div>
                 </div>
-                <div className="text-xs font-mono text-red-alert font-bold whitespace-nowrap">
+                <div className="text-xs font-mono text-red-alert font-bold whitespace-nowrap shrink-0">
                   {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
                 </div>
               </div>
