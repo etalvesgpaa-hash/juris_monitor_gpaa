@@ -150,6 +150,38 @@ export function useTarefasDelegadasNaoLidas() {
   });
 }
 
+// ── Compartilhado: lista de usuários (advogados) disponíveis para delegação ──
+// Extraído de TarefasPage para reuso também em Intimações e Processos.
+
+export function useAppUsersParaDelegacao() {
+  const { isAdmin } = useAuth();
+
+  return useQuery({
+    queryKey: ["profiles-para-delegacao"],
+    queryFn: async () => {
+      // 1. Busca todos os profiles
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("id, user_id, full_name, is_admin")
+        .order("full_name");
+
+      if (!allProfiles || allProfiles.length === 0) return [];
+
+      // 2. Busca user_ids dos clientes do portal para excluir da lista
+      const { data: portalUsers } = await supabase
+        .from("clientes_portal")
+        .select("user_id")
+        .not("user_id", "is", null);
+
+      const portalUserIds = new Set((portalUsers || []).map((c: any) => c.user_id));
+
+      // 3. Retorna apenas advogados (profiles que não são clientes do portal)
+      return allProfiles.filter((p: any) => !portalUserIds.has(p.user_id));
+    },
+    enabled: isAdmin,
+  });
+}
+
 // ── Admin: cria tarefa delegada ───────────────────────────────────────────────
 
 export function useCrearTarefaDelegada() {

@@ -12,8 +12,7 @@ import { CreateTaskModal } from "@/components/CreateTaskModal";
 
 import { useIntimacoes } from "@/hooks/useIntimacoes";
 import { DelegarTarefaModal } from "@/components/DelegarTarefaModal";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -116,30 +115,7 @@ export function TarefasPage() {
   const { data: processos = [] } = useProcessos();
   const { data: clientes = [] } = useClientes();
   const { data: feriados = [] } = useFeriados();
-  const { data: appUsers = [] } = useQuery({
-    queryKey: ["profiles-para-delegacao"],
-    queryFn: async () => {
-      // 1. Busca todos os profiles
-      const { data: allProfiles } = await supabase
-        .from("profiles")
-        .select("id, user_id, full_name, is_admin")
-        .order("full_name");
-
-      if (!allProfiles || allProfiles.length === 0) return [];
-
-      // 2. Busca user_ids dos clientes do portal para excluir da lista
-      const { data: portalUsers } = await supabase
-        .from("clientes_portal")
-        .select("user_id")
-        .not("user_id", "is", null);
-
-      const portalUserIds = new Set((portalUsers || []).map((c: any) => c.user_id));
-
-      // 3. Retorna apenas advogados (profiles que não são clientes do portal)
-      return allProfiles.filter((p: any) => !portalUserIds.has(p.user_id));
-    },
-    enabled: isAdmin,
-  });
+  const { data: appUsers = [] } = useAppUsersParaDelegacao();
 
   const { data: intimacoesResumo = [] } = useIntimacoes();
 

@@ -60,6 +60,41 @@ export function useMovimentacoes(processoId: string | null) {
   });
 }
 
+export function useCreateMovimentacao() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: { processo_id: string; titulo: string; descricao?: string | null; data: string }) => {
+      const { data, error } = await supabase
+        .from("movimentacoes")
+        .insert({ ...input, user_id: user!.id })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["movimentacoes", vars.processo_id] });
+      qc.invalidateQueries({ queryKey: ["processos"] });
+    },
+  });
+}
+
+export function useDeleteMovimentacao() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; processo_id: string }) => {
+      const { error } = await supabase.from("movimentacoes").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["movimentacoes", vars.processo_id] });
+    },
+  });
+}
+
 export function useCreateProcesso() {
   const qc = useQueryClient();
   const { user } = useAuth();

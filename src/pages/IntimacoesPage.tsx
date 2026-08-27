@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
 import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
+import { useCrearTarefaDelegada, useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
@@ -267,12 +268,14 @@ function saveStore(items: AaspIntimacao[]) {
 
 // ── Componente ─────────────────────────────────────────────────
 export function IntimacoesPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { data: clientes = [] } = useClientes();
   const createCliente = useCreateCliente();
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
+  const criarTarefaDelegada = useCrearTarefaDelegada();
+  const { data: profilesParaDelegacao = [] } = useAppUsersParaDelegacao();
 
   // Estado do modal de novo cliente (pré-preenchido da intimação)
   const [novoClienteIntimacao, setNovoClienteIntimacao] = useState<AaspIntimacao | null>(null);
@@ -843,15 +846,29 @@ export function IntimacoesPage() {
 
   const handleSubmitTarefa = async (data: any) => {
     try {
-      await createTarefa.mutateAsync({
-        titulo: data.titulo,
-        descricao: data.descricao || null,
-        data_vencimento: data.data_vencimento || null,
-        prioridade: data.prioridade,
-        status: data.status || "triagem",
-        processo_id: data.processo_id || null,
-      });
-      toast.success("Tarefa criada com sucesso!");
+      if (data.delegado_para) {
+        // Admin escolheu delegar para outro usuário
+        await criarTarefaDelegada.mutateAsync({
+          titulo: data.titulo,
+          descricao: data.descricao || undefined,
+          data_vencimento: data.data_vencimento || undefined,
+          prioridade: data.prioridade,
+          status: data.status || "triagem",
+          processo_id: data.processo_id || undefined,
+          numero_processo: data.numero_processo || undefined,
+          delegado_para: data.delegado_para,
+        });
+      } else {
+        await createTarefa.mutateAsync({
+          titulo: data.titulo,
+          descricao: data.descricao || null,
+          data_vencimento: data.data_vencimento || null,
+          prioridade: data.prioridade,
+          status: data.status || "triagem",
+          processo_id: data.processo_id || null,
+        });
+        toast.success("Tarefa criada com sucesso!");
+      }
       setShowTaskModal(false);
       setTaskModalInitialData(null);
     } catch (err: any) {
@@ -1482,6 +1499,8 @@ export function IntimacoesPage() {
         processos={processos}
         clientes={clientes}
         feriados={feriados}
+        isAdmin={isAdmin}
+        delegacaoProfiles={profilesParaDelegacao.map((p: any) => ({ id: p.user_id, full_name: p.full_name || "Usuário" }))}
       />
     </div>
   );

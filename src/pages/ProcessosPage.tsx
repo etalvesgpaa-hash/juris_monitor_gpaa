@@ -1,12 +1,14 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { useProcessos, useCreateProcesso, useDeleteProcesso, useUpdateProcesso, useMovimentacoes } from "@/hooks/useProcessos";
+import { useProcessos, useCreateProcesso, useDeleteProcesso, useUpdateProcesso, useMovimentacoes, useCreateMovimentacao, useDeleteMovimentacao } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { RefreshCw, X, Sparkles } from "lucide-react";
-import { useGroqIA } from "@/hooks/useGroqIA";
+import { useFeriados } from "@/hooks/useFeriados";
+import { useCreateTarefa } from "@/hooks/useTarefas";
+import { useCrearTarefaDelegada, useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
+import { CreateTaskModal } from "@/components/CreateTaskModal";
+import { X, Plus, ClipboardList } from "lucide-react";
 import type { Processo } from "@/hooks/useProcessos";
 
 // ── Mapa completo de tribunais (igual ao HTML de referência) ──────────────────
@@ -80,9 +82,6 @@ const TRIBUNAIS_MAP: Record<number, Record<number, { nome: string; alias: string
   },
 };
 
-const DATAJUD_BASE = "https://api-publica.datajud.cnj.jus.br";
-const DEFAULT_TOKEN = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
-
 function detectarTribunalCNJ(numero: string): { nome: string; alias: string } | null {
   const limpo = numero.replace(/\D/g, "");
   if (limpo.length < 15) return null;
@@ -100,118 +99,6 @@ function maskCNJ(v: string): string {
   if (d.length <= 16) return `${d.slice(0,7)}-${d.slice(7,9)}.${d.slice(9,13)}.${d.slice(13,14)}.${d.slice(14)}`;
   if (d.length <= 20) return `${d.slice(0,7)}-${d.slice(7,9)}.${d.slice(9,13)}.${d.slice(13,14)}.${d.slice(14,16)}.${d.slice(16)}`;
   return v;
-}
-
-// Normaliza resposta DataJud → formato interno
-function normalizarDatajud(src: any, tribunal: { nome: string }) {
-  const partes = (src.partes || []).map((p: any) => ({
-    nome: p.nome || "",
-    tipo: (p.tipoParte || "").toLowerCase().includes("passiv") ? "Passivo" : "Ativo",
-    advogados: (p.advogados || []).map((a: any) => ({ nome: a.nome || "", oab: a.numeroOab || "" })),
-  }));
-
-  const autor = partes.find((x: any) => x.tipo === "Ativo")?.nome || "—";
-  const reu   = partes.find((x: any) => x.tipo === "Passivo")?.nome || "—";
-
-  const movimentacoes = (src.movimentos || [])
-    .map((m: any) => {
-      const dataRaw = m.dataHora || m.data || "";
-      const dataISO = dataRaw.slice(0, 10);
-      const dataBR  = dataISO
-        ? dataISO.split("-").reverse().join("/")
-        : "—";
-      const comps = (m.complementosTabelados || []).map((c: any) => ({
-        codigo: c.codigo || "",
-        nome: c.nome || c.descricao || "",
-        valor: c.valor || "",
-      }));
-      return {
-        data: dataBR,
-        dataISO,
-        tipo: m.nome || m.descricao || "Movimentação",
-        codigo: m.codigo || "",
-        classificacao: m.complementosTabelados?.[0]?.nome || "",
-        complementosTabelados: comps,
-        complementoLivre: m.complemento || "",
-        resumo_ia: null as string | null,
-        urgencia: "baixa" as "alta" | "media" | "baixa",
-        nova: false,
-      };
-    })
-    .sort((a: any, b: any) => b.dataISO.localeCompare(a.dataISO));
-
-  return {
-    tribunalNome: tribunal.nome,
-    classe:        src.classe?.nome || "—",
-    assunto:       src.assuntos?.[0]?.nome || "—",
-    orgaoJulgador: src.orgaoJulgador?.nome || "—",
-    dataAjuizamento: src.dataAjuizamento
-      ? src.dataAjuizamento.slice(0, 10).split("-").reverse().join("/")
-      : "—",
-    autor,
-    reu,
-    partes,
-    ultimaMov: movimentacoes[0]?.data || "—",
-    _movimentacoes: movimentacoes,
-  };
-}
-
-// Busca DataJud via /api/proxy (funciona em produção e dev via Vite proxy)
-async function buscarDataJud(numero: string, token: string) {
-  const tribunal = detectarTribunalCNJ(numero);
-  if (!tribunal) throw new Error("Tribunal não identificado. Verifique o número CNJ.");
-
-  const numeroPuro = numero.replace(/\D/g, "");
-  const endpoint = `${DATAJUD_BASE}/${tribunal.alias}/_search`;
-  const proxyUrl = `/api/proxy?url=${encodeURIComponent(endpoint)}`;
-
-  const bodyPayload = {
-    size: 1,
-    query: {
-      bool: {
-        should: [
-          { term:  { numeroProcesso: numeroPuro } },
-          { match: { numeroProcesso: numeroPuro } },
-          { term:  { numeroProcesso: numero } },
-        ],
-        minimum_should_match: 1,
-      },
-    },
-    _source: [
-      "numeroProcesso", "tribunal", "classe", "assuntos",
-      "dataAjuizamento", "orgaoJulgador", "partes", "movimentos",
-    ],
-  };
-
-  const resp = await fetch(proxyUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // "ApiKey" com K maiúsculo — formato exato exigido pela DataJud CNJ
-      "Authorization": `ApiKey ${token}`,
-    },
-    body: JSON.stringify(bodyPayload),
-    signal: AbortSignal.timeout(35000),
-  });
-
-  const rawText = await resp.text();
-
-  if (!resp.ok) {
-    // Tenta extrair mensagem de erro da resposta
-    let detalhe = rawText.slice(0, 300);
-    try { detalhe = JSON.stringify(JSON.parse(rawText)); } catch(_) {}
-    throw new Error(`Erro HTTP ${resp.status} — ${detalhe}`);
-  }
-
-  let data: any;
-  try { data = JSON.parse(rawText); } catch(_) {
-    throw new Error(`Resposta inválida da API: ${rawText.slice(0, 200)}`);
-  }
-
-  const parsed = typeof data.contents === "string" ? JSON.parse(data.contents) : data;
-  const hit = parsed?.hits?.hits?.[0]?._source;
-  if (!hit) return null;
-  return normalizarDatajud(hit, tribunal);
 }
 
 // ── Status badges ──────────────────────────────────────────────────────────────
@@ -243,12 +130,57 @@ interface ProcessoRico extends Processo {
 // ── Componente Principal ──────────────────────────────────────────────────────
 export function ProcessosPage() {
   const { data: rawProcessos = [], isLoading, refetch } = useProcessos();
-  const { user } = useAuth();
-  const { loadingIA, progresso, gerarResumoProcesso, gerarTodosResumosProcessos } = useGroqIA();
+  const { user, isAdmin } = useAuth();
+  const { data: clientes = [] } = useClientes();
+  const { data: feriados = [] } = useFeriados();
   const createProcesso = useCreateProcesso();
   const deleteProcesso = useDeleteProcesso();
   const updateProcesso = useUpdateProcesso();
+  const createTarefa = useCreateTarefa();
+  const criarTarefaDelegada = useCrearTarefaDelegada();
+  const { data: profilesParaDelegacao = [] } = useAppUsersParaDelegacao();
   const { toast } = useToast();
+
+  // ── Criar Tarefa a partir de um processo ──────────────────────────────────
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
+  const [processoParaTarefa, setProcessoParaTarefa] = useState<ProcessoRico | null>(null);
+
+  const criarTarefaDeProcesso = (processo: ProcessoRico) => {
+    setProcessoParaTarefa(processo);
+    setTaskModalInitialData({
+      titulo: `Processo ${processo.numero_cnj}`,
+      numero_processo: processo.numero_cnj,
+      prioridade: "media",
+    });
+    setShowTaskModal(true);
+  };
+
+  const handleSubmitTarefaDeProcesso = async (data: any) => {
+    try {
+      const payloadBase = {
+        titulo: data.titulo,
+        descricao: data.descricao || null,
+        data_vencimento: data.data_vencimento || null,
+        prioridade: data.prioridade,
+        status: data.status || "triagem",
+        processo_id: processoParaTarefa?.id || null,
+        numero_processo: data.numero_processo || processoParaTarefa?.numero_cnj || null,
+      };
+
+      if (data.delegado_para) {
+        await criarTarefaDelegada.mutateAsync({ ...payloadBase, delegado_para: data.delegado_para } as any);
+      } else {
+        await createTarefa.mutateAsync(payloadBase as any);
+        toast({ title: "✅ Tarefa criada com sucesso!" });
+      }
+      setShowTaskModal(false);
+      setTaskModalInitialData(null);
+      setProcessoParaTarefa(null);
+    } catch (err: any) {
+      toast({ title: "Erro ao criar tarefa", description: err.message, variant: "destructive" });
+    }
+  };
 
   // Estado local enriquecido (adiciona _movimentacoes etc.)
   // hidratarDoSupabase é definida logo abaixo — usamos inline aqui para o estado inicial
@@ -273,8 +205,6 @@ export function ProcessosPage() {
   const [panelProcesso, setPanelProcesso] = useState<ProcessoRico | null>(null);
   const [showForm, setShowForm]   = useState(false);
   const [editId, setEditId]       = useState<string | null>(null);
-  const [syncing, setSyncing]     = useState<Set<string>>(new Set());
-  const [syncingAll, setSyncingAll] = useState(false);
   const [tribunalDetect, setTribunalDetect] = useState("");
 
   // Hidrata campos ricos a partir de dados_datajud salvo no Supabase
@@ -328,28 +258,16 @@ export function ProcessosPage() {
     });
   }
 
-  const [form, setForm] = useState({
+  const FORM_VAZIO = {
     numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "",
     area: "Cível", status: "Ativo", obs: "", cliente_id: "",
     autorManual: "", reuManual: "",
-  });
-
-  const getToken = useCallback(async () => {
-    const local = localStorage.getItem("jurismonitor_datajud_token");
-    if (local) return local;
-    try {
-      const { data } = await supabase
-        .from("api_keys").select("datajud_token").eq("user_id", user!.id).maybeSingle();
-      if (data?.datajud_token) {
-        localStorage.setItem("jurismonitor_datajud_token", data.datajud_token);
-        return data.datajud_token;
-      }
-    } catch (_) {}
-    return DEFAULT_TOKEN;
-  }, [user]);
+    classe: "", assunto: "", vara: "", comarca: "", valorCausa: "",
+  };
+  const [form, setForm] = useState(FORM_VAZIO);
 
   const resetForm = () => {
-    setForm({ numero_cnj: "", advogado: "", oab: "", clienteNome: "", whatsapp: "", area: "Cível", status: "Ativo", obs: "", cliente_id: "", autorManual: "", reuManual: "" });
+    setForm(FORM_VAZIO);
     setEditId(null);
     setTribunalDetect("");
     setShowForm(false);
@@ -360,139 +278,6 @@ export function ProcessosPage() {
     setForm(f => ({ ...f, numero_cnj: masked }));
     const trib = detectarTribunalCNJ(masked);
     setTribunalDetect(trib ? `✓ ${trib.nome}` : masked.replace(/\D/g,"").length >= 15 ? "Tribunal não reconhecido" : "");
-  };
-
-  // ── Sincronizar processo com DataJud ──────────────────────────────────────
-  const sincronizar = useCallback(async (id: string, numero: string, silencioso = false) => {
-    setSyncing(prev => new Set(prev).add(id));
-    try {
-      const token = await getToken();
-      if (!silencioso) toast({ title: `🔄 Consultando DataJud: ${numero.slice(0,18)}…` });
-
-      const norm = await buscarDataJud(numero, token);
-      if (!norm) {
-        if (!silencioso) toast({ title: "Processo não localizado no DataJud", variant: "destructive" });
-        return;
-      }
-
-      // Monta partes formatadas — a API pública do DataJud costuma OMITIR nome das partes
-      // (protegido por sigilo/LGPD). Quando isso acontece, NÃO sobrescrevemos o que
-      // já foi preenchido manualmente (undefined = campo não entra no update).
-      const partesFormatadas = [norm.autor, norm.reu].filter(x => x && x !== "—").join(" × ") || null;
-
-      // Atualiza processo no Supabase com todos os campos DataJud
-      await updateProcesso.mutateAsync({
-        id,
-        classe:              norm.classe !== "—" ? norm.classe : undefined,
-        assunto:             norm.assunto !== "—" ? norm.assunto : undefined,
-        tribunal:            norm.tribunalNome,
-        vara:                norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
-        comarca:             norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
-        partes:              partesFormatadas ?? undefined,
-        ultima_movimentacao: norm._movimentacoes[0]?.dataISO || null,
-        dados_datajud:       norm as any,
-      });
-
-      // Salva movimentações no Supabase
-      if (user) {
-        // Deleta antigas
-        await supabase.from("movimentacoes").delete().eq("processo_id", id);
-
-        if (norm._movimentacoes.length > 0) {
-          const rows = norm._movimentacoes.slice(0, 200).map((m: any) => ({
-            processo_id: id,
-            user_id:     user.id,
-            data:        m.dataISO || new Date().toISOString().slice(0, 10),
-            titulo:      m.tipo || "Movimentação",
-            descricao:   [
-              ...(m.complementosTabelados || []).map((c: any) => c.nome).filter(Boolean),
-              m.complementoLivre,
-            ].filter(Boolean).join("; ") || null,
-            analise_ia: null,
-          }));
-
-          const { error: insErr } = await supabase.from("movimentacoes").insert(rows);
-          if (insErr) console.error("[sync] Erro ao inserir movimentações:", insErr.message);
-        }
-      }
-
-      // Atualiza estado local imediatamente (sem esperar refetch)
-      // Observação: só incluímos partes/autor/reu quando a DataJud realmente os retornou —
-      // caso contrário preservamos o que já foi preenchido manualmente no cadastro.
-      const processoAtualizado: Partial<ProcessoRico> = {
-        classe:      norm.classe !== "—" ? norm.classe : undefined,
-        assunto:     norm.assunto !== "—" ? norm.assunto : undefined,
-        tribunal:    norm.tribunalNome,
-        vara:        norm.orgaoJulgador !== "—" ? norm.orgaoJulgador : undefined,
-        ...(partesFormatadas ? { partes: partesFormatadas } : {}),
-        ultima_movimentacao: norm._movimentacoes[0]?.dataISO || null,
-        dados_datajud: norm as any,
-        tribunalNome: norm.tribunalNome,
-        ...(norm.autor !== "—" ? { autor: norm.autor } : {}),
-        ...(norm.reu   !== "—" ? { reu: norm.reu }     : {}),
-        orgaoJulgador: norm.orgaoJulgador,
-        dataAjuizamento: norm.dataAjuizamento,
-        ultimaMov:    norm.ultimaMov,
-        _movimentacoes: norm._movimentacoes,
-      };
-
-      setProcessos(prev => prev.map(p => p.id === id ? { ...p, ...processoAtualizado } : p));
-      if (panelProcesso?.id === id) setPanelProcesso(p => p ? { ...p, ...processoAtualizado } as ProcessoRico : p);
-
-      if (!silencioso) toast({
-        title: `✅ ${norm._movimentacoes.length} movimentação(ões) sincronizada(s)!`,
-        description: norm.tribunalNome,
-      });
-
-    } catch (err: any) {
-      if (!silencioso) toast({ title: "Erro ao sincronizar", description: err.message, variant: "destructive" });
-    } finally {
-      setSyncing(prev => { const s = new Set(prev); s.delete(id); return s; });
-    }
-  }, [getToken, updateProcesso, user, panelProcesso, toast]);
-
-  // ── Resumo IA de um processo ─────────────────────────────────────────────
-  const gerarResumoUmProcesso = useCallback(async (processo: ProcessoRico, movimentacoesDB?: any[]) => {
-    // Usa movimentações locais (pós-sync) ou as do banco como fallback
-    const movs = (processo._movimentacoes?.length ? processo._movimentacoes : movimentacoesDB) || [];
-    const resumo = await gerarResumoProcesso(processo, movs);
-    if (!resumo) return;
-
-    // Salva no Supabase
-    await supabase.from("processos").update({ resumo_ia: resumo } as any).eq("id", processo.id);
-
-    // Atualiza estado local
-    setProcessos(prev => prev.map(p => p.id === processo.id ? { ...p, resumo_ia: resumo } : p));
-    if (panelProcesso?.id === processo.id) setPanelProcesso(p => p ? { ...p, resumo_ia: resumo } as ProcessoRico : p);
-    toast.success("✦ Resumo IA gerado e salvo!");
-  }, [gerarResumoProcesso, panelProcesso]);
-
-  // ── Gerar todos os resumos IA ───────────────────────────────────────────────
-  const gerarTodosResumos = useCallback(async () => {
-    await gerarTodosResumosProcessos(
-      processos,
-      async (id: string) => {
-        const p = processos.find(x => x.id === id);
-        return p?._movimentacoes || [];
-      },
-      async (id: string, resumo: string) => {
-        await supabase.from("processos").update({ resumo_ia: resumo } as any).eq("id", id);
-        setProcessos(prev => prev.map(p => p.id === id ? { ...p, resumo_ia: resumo } : p));
-      }
-    );
-  }, [gerarTodosResumosProcessos, processos]);
-
-  const sincronizarTodos = async () => {
-    if (!processos.length) return;
-    setSyncingAll(true);
-    toast({ title: `🔄 Sincronizando ${processos.length} processo(s)…` });
-    for (let i = 0; i < processos.length; i++) {
-      const p = processos[i];
-      await sincronizar(p.id, p.numero_cnj, true);
-      if (i < processos.length - 1) await new Promise(r => setTimeout(r, 600));
-    }
-    setSyncingAll(false);
-    toast({ title: "✅ Sincronização concluída!" });
   };
 
   const handleSalvar = async () => {
@@ -514,23 +299,36 @@ export function ProcessosPage() {
           advogados: form.advogado || null,
           status: form.status.toLowerCase(),
           partes: partesManuais,
+          classe: form.classe.trim() || null,
+          assunto: form.assunto.trim() || null,
+          vara: form.vara.trim() || null,
+          comarca: form.comarca.trim() || null,
+          valor_causa: form.valorCausa ? parseFloat(form.valorCausa.replace(/\./g, "").replace(",", ".")) : null,
         });
         // Reflete imediatamente na lista/painel local, sem esperar refetch
         setProcessos(prev => prev.map(p => p.id === editId
-          ? { ...p, partes: partesManuais, autor: autorManual || p.autor, reu: reuManual || p.reu }
+          ? {
+              ...p, partes: partesManuais, autor: autorManual || p.autor, reu: reuManual || p.reu,
+              classe: form.classe.trim() || p.classe, assunto: form.assunto.trim() || p.assunto,
+              vara: form.vara.trim() || p.vara, comarca: form.comarca.trim() || p.comarca,
+            }
           : p));
         toast({ title: "✅ Processo atualizado!" });
       } else {
-        const created = await createProcesso.mutateAsync({
+        await createProcesso.mutateAsync({
           numero_cnj: form.numero_cnj,
           tribunal: tribunal.nome,
           status: "ativo",
           advogados: form.advogado || null,
-          classe: null, assunto: null, vara: null, comarca: null,
-          partes: partesManuais, valor_causa: null, cliente_id: null,
+          classe: form.classe.trim() || null,
+          assunto: form.assunto.trim() || null,
+          vara: form.vara.trim() || null,
+          comarca: form.comarca.trim() || null,
+          partes: partesManuais,
+          valor_causa: form.valorCausa ? parseFloat(form.valorCausa.replace(/\./g, "").replace(",", ".")) : null,
+          cliente_id: form.cliente_id || null,
         });
-        toast({ title: "✅ Processo cadastrado! Buscando na DataJud…", description: tribunal.nome });
-        if (created?.id) setTimeout(() => sincronizar(created.id, form.numero_cnj), 500);
+        toast({ title: "✅ Processo cadastrado!", description: tribunal.nome });
       }
       resetForm();
       refetch();
@@ -560,6 +358,8 @@ export function ProcessosPage() {
       numero_cnj: p.numero_cnj, advogado: p.advogados || "", oab: "", clienteNome: "", whatsapp: "",
       area: "Cível", status: p.status || "Ativo", obs: "", cliente_id: p.cliente_id || "",
       autorManual: autorAtual, reuManual: reuAtual,
+      classe: p.classe || "", assunto: p.assunto || "", vara: p.vara || "", comarca: p.comarca || "",
+      valorCausa: p.valor_causa != null ? String(p.valor_causa) : "",
     });
     setEditId(p.id);
     setTribunalDetect(p.tribunal ? `✓ ${p.tribunal}` : "");
@@ -582,25 +382,9 @@ export function ProcessosPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Processos Cadastrados</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Gerencie e monitore processos via API DataJud CNJ</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Gerencie os processos e prazos do escritório</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={sincronizarTodos}
-            disabled={syncingAll || processos.length === 0}
-            className="flex items-center gap-1.5 bg-accent/15 border border-accent/40 rounded-md text-accent text-xs font-bold px-3 py-2 hover:bg-accent/25 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingAll ? "animate-spin" : ""}`} />
-            Sincronizar
-          </button>
-          <button
-            onClick={gerarTodosResumos}
-            disabled={loadingIA || processos.length === 0}
-            className="flex items-center gap-1.5 bg-purple-500/10 border border-purple-400/40 rounded-md text-purple-600 text-xs font-bold px-3 py-2 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
-          >
-            <Sparkles className={`h-3.5 w-3.5 ${loadingIA ? "animate-pulse" : ""}`} />
-            {loadingIA && progresso.total > 0 ? `Resumindo ${progresso.atual}/${progresso.total}…` : "✦ Resumir Todos"}
-          </button>
           <Button variant="gold" onClick={() => { setEditId(null); setShowForm(true); }}>
             + Cadastrar Processo
           </Button>
@@ -610,7 +394,7 @@ export function ProcessosPage() {
       {/* LGPD Banner */}
       <div className="flex items-start gap-2.5 bg-blue-500/5 border border-blue-500/15 rounded-lg px-4 py-2.5 mb-5 text-xs text-muted-foreground">
         <span className="text-base shrink-0">🔒</span>
-        <span><strong>LGPD & Sigilo Profissional:</strong> Consultas à API DataJud são públicas por natureza (Res. CNJ 331/2020). Dados armazenados no Supabase com criptografia em trânsito.</span>
+        <span><strong>LGPD & Sigilo Profissional:</strong> Dados de processos e clientes armazenados no Supabase com criptografia em trânsito, sob responsabilidade do escritório.</span>
       </div>
 
       {/* Card principal */}
@@ -657,7 +441,6 @@ export function ProcessosPage() {
                   const rico = p as ProcessoRico;
                   const movs = rico._movimentacoes || [];
                   const m = movs[0];
-                  const isSyncing = syncing.has(p.id);
                   return (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                       {/* Número CNJ */}
@@ -754,10 +537,8 @@ export function ProcessosPage() {
                             className="text-xs border border-border rounded px-2 py-1 hover:bg-muted transition-colors">📋</button>
                           <button onClick={() => abrirEdicao(rico)} title="Editar"
                             className="text-xs border border-border rounded px-2 py-1 hover:bg-muted transition-colors">✏️</button>
-                          <button onClick={() => sincronizar(p.id, p.numero_cnj)} disabled={isSyncing} title="Sincronizar DataJud"
-                            className="text-xs bg-accent/15 text-accent border border-accent/30 rounded px-2 py-1 hover:bg-accent/25 transition-colors disabled:opacity-40 font-bold">
-                            {isSyncing ? "⏳" : "⟳"}
-                          </button>
+                          <button onClick={() => criarTarefaDeProcesso(rico)} title="Criar Tarefa"
+                            className="text-xs bg-accent/15 text-accent border border-accent/30 rounded px-2 py-1 hover:bg-accent/25 transition-colors font-bold">📌</button>
                           <button onClick={() => handleDelete(p.id)} title="Remover"
                             className="text-xs bg-red-alert/10 text-red-alert border border-red-alert/20 rounded px-2 py-1 hover:bg-red-alert/20 transition-colors">✕</button>
                         </div>
@@ -799,8 +580,19 @@ export function ProcessosPage() {
                 <FG label="Parte Passiva (Réu)"><input value={form.reuManual} onChange={e => setForm(f => ({ ...f, reuManual: e.target.value }))} placeholder="Nome do réu/requerido" className="field" /></FG>
               </div>
               <div className="text-[0.68rem] text-muted-foreground -mt-1.5">
-                💡 A API pública do DataJud/CNJ geralmente não retorna o nome das partes (dado protegido por sigilo/LGPD). Preencha aqui manualmente — isso será usado sempre que a sincronização não trouxer essa informação.
+                💡 Preencha os dados do processo manualmente. Essas informações ficam salvas e podem ser editadas a qualquer momento.
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FG label="Classe"><input value={form.classe} onChange={e => setForm(f => ({ ...f, classe: e.target.value }))} placeholder="Ex: Procedimento Comum Cível" className="field" /></FG>
+                <FG label="Assunto"><input value={form.assunto} onChange={e => setForm(f => ({ ...f, assunto: e.target.value }))} placeholder="Ex: Indenização por Dano Moral" className="field" /></FG>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FG label="Vara"><input value={form.vara} onChange={e => setForm(f => ({ ...f, vara: e.target.value }))} placeholder="Ex: 3ª Vara Cível" className="field" /></FG>
+                <FG label="Comarca"><input value={form.comarca} onChange={e => setForm(f => ({ ...f, comarca: e.target.value }))} placeholder="Ex: São Paulo/SP" className="field" /></FG>
+              </div>
+              <FG label="Valor da Causa (R$)">
+                <input value={form.valorCausa} onChange={e => setForm(f => ({ ...f, valorCausa: e.target.value.replace(/[^0-9.,]/g, "") }))} placeholder="Ex: 15000,00" className="field" />
+              </FG>
               <div className="grid grid-cols-2 gap-3">
                 <FG label="Área do Direito">
                   <select value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} className="field">
@@ -820,7 +612,7 @@ export function ProcessosPage() {
             <div className="flex gap-2 justify-end mt-5">
               <button onClick={resetForm} className="btn-outline-sm">Cancelar</button>
               <Button variant="gold" onClick={handleSalvar} disabled={createProcesso.isPending || updateProcesso.isPending}>
-                {editId ? "💾 Salvar Alterações" : "Cadastrar + Buscar na API"}
+                {editId ? "💾 Salvar Alterações" : "💾 Cadastrar Processo"}
               </Button>
             </div>
           </div>
@@ -839,32 +631,39 @@ export function ProcessosPage() {
             processo={panelProcesso}
             onClose={() => setPanelProcesso(null)}
             onDelete={handleDelete}
-            onSincronizar={sincronizar}
-            onResumoIA={gerarResumoUmProcesso}
-            loadingIA={loadingIA}
-            syncing={syncing}
+            onCriarTarefa={criarTarefaDeProcesso}
             statusBadge={statusBadge}
           />
         )}
       </div>
+
+      {/* Modal de Criação de Tarefa (a partir de um processo) */}
+      <CreateTaskModal
+        open={showTaskModal}
+        onClose={() => { setShowTaskModal(false); setTaskModalInitialData(null); setProcessoParaTarefa(null); }}
+        onSubmit={handleSubmitTarefaDeProcesso}
+        initialData={taskModalInitialData}
+        feriados={feriados}
+        isAdmin={isAdmin}
+        delegacaoProfiles={profilesParaDelegacao.map((p: any) => ({ id: p.user_id, full_name: p.full_name || "Usuário" }))}
+      />
     </div>
   );
 }
 
 // ── Painel de Detalhe ──────────────────────────────────────────────────────────
-function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, loadingIA, syncing, statusBadge }: {
+function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }: {
   processo: ProcessoRico;
   onClose: () => void;
   onDelete: (id: string) => void;
-  onSincronizar: (id: string, numero: string) => void;
-  onResumoIA: (processo: ProcessoRico, movimentacoesDB?: any[]) => void;
-  loadingIA: boolean;
-  syncing: Set<string>;
+  onCriarTarefa: (processo: ProcessoRico) => void;
   statusBadge: (s: string) => React.ReactNode;
 }) {
   const { data: movimentacoesDB = [] } = useMovimentacoes(processo.id);
-  const isSyncing = syncing.has(processo.id);
-  // Prioriza movimentações locais (pós-sync) sobre as do banco
+  const createMovimentacao = useCreateMovimentacao();
+  const deleteMovimentacao = useDeleteMovimentacao();
+  const { toast } = useToast();
+  // Prioriza movimentações locais (pós-sync antigo, se existir) sobre as do banco
   const movs = (processo._movimentacoes?.length ? processo._movimentacoes : movimentacoesDB) as any[];
 
   const djData = processo.dados_datajud as any;
@@ -883,6 +682,27 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
   const autor = autorLimpo || djAutorLimpo || autorFallback || "—";
   const reu   = reuLimpo   || djReuLimpo   || reuFallback   || "—";
 
+  // ── Adicionar movimentação manual ─────────────────────────────────────────
+  const [showMovForm, setShowMovForm] = useState(false);
+  const [movForm, setMovForm] = useState({ titulo: "", descricao: "", data: new Date().toISOString().slice(0, 10) });
+
+  const salvarMovimentacao = async () => {
+    if (!movForm.titulo.trim()) { toast({ title: "Informe um título para a movimentação", variant: "destructive" }); return; }
+    try {
+      await createMovimentacao.mutateAsync({
+        processo_id: processo.id,
+        titulo: movForm.titulo.trim(),
+        descricao: movForm.descricao.trim() || null,
+        data: movForm.data,
+      });
+      setMovForm({ titulo: "", descricao: "", data: new Date().toISOString().slice(0, 10) });
+      setShowMovForm(false);
+      toast({ title: "✅ Movimentação adicionada!" });
+    } catch (err: any) {
+      toast({ title: "Erro ao adicionar movimentação", description: err.message, variant: "destructive" });
+    }
+  };
+
   return (
     <>
       <div className="sticky top-0 bg-card border-b border-border px-5 py-4 flex items-center justify-between z-10">
@@ -892,20 +712,11 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => onSincronizar(processo.id, processo.numero_cnj)}
-            disabled={isSyncing}
-            className="flex items-center gap-1 text-xs bg-accent/15 text-accent border border-accent/30 rounded-md px-3 py-1.5 font-bold hover:bg-accent/25 transition-colors disabled:opacity-40"
+            onClick={() => onCriarTarefa(processo)}
+            className="flex items-center gap-1 text-xs bg-accent/15 text-accent border border-accent/30 rounded-md px-3 py-1.5 font-bold hover:bg-accent/25 transition-colors"
           >
-            <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Sincronizando…" : "⟳ DataJud"}
-          </button>
-          <button
-            onClick={() => onResumoIA(processo, movimentacoesDB)}
-            disabled={loadingIA}
-            className="flex items-center gap-1 text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
-          >
-            <Sparkles className={`h-3 w-3 ${loadingIA ? "animate-pulse" : ""}`} />
-            {loadingIA ? "Gerando…" : "✦ Resumo IA"}
+            <ClipboardList className="h-3 w-3" />
+            Criar Tarefa
           </button>
           <button onClick={onClose} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
             <X className="h-4 w-4" />
@@ -922,7 +733,9 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
               ["Tribunal",        processo.tribunalNome || processo.tribunal],
               ["Classe",          processo.classe],
               ["Assunto",         processo.assunto],
-              ["Órgão Julgador",  processo.orgaoJulgador || processo.vara],
+              ["Vara / Órgão Julgador", processo.orgaoJulgador || processo.vara],
+              ["Comarca",         processo.comarca],
+              ["Valor da Causa",  processo.valor_causa != null ? `R$ ${Number(processo.valor_causa).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : null],
               ["Data Ajuizamento",processo.dataAjuizamento || (processo.dados_datajud as any)?.dataAjuizamento],
               ["Polo Ativo",      autor],
               ["Polo Passivo",    reu],
@@ -941,55 +754,56 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
           </div>
         </div>
 
-        {/* Resumo IA */}
-        <div>
-          <div className="text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground border-b border-border pb-2 mb-3 flex items-center gap-1.5">
-            <Sparkles className="h-3 w-3 text-purple-500" />
-            Resumo IA das Movimentações
-          </div>
-          {processo.resumo_ia ? (
-            <div className="bg-purple-500/5 border border-purple-400/20 rounded-lg p-4">
-              <p className="text-sm leading-relaxed text-foreground">{processo.resumo_ia as string}</p>
-              <button
-                onClick={() => onResumoIA(processo, movimentacoesDB)}
-                disabled={loadingIA}
-                className="mt-2 text-[0.68rem] text-purple-600 hover:underline disabled:opacity-50"
-              >
-                {loadingIA ? "Atualizando…" : "↻ Atualizar resumo"}
-              </button>
-            </div>
-          ) : (
-            <div className="border border-dashed border-purple-300/40 rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground mb-2">
-                {movs.length > 0
-                  ? "Clique para gerar um resumo inteligente das movimentações."
-                  : "Sincronize com DataJud primeiro para gerar o resumo IA."}
-              </p>
-              <button
-                onClick={() => onResumoIA(processo, movimentacoesDB)}
-                disabled={loadingIA || movs.length === 0}
-                className="flex items-center gap-1.5 mx-auto text-xs bg-purple-500/10 text-purple-600 border border-purple-400/30 rounded-md px-3 py-1.5 font-bold hover:bg-purple-500/20 transition-colors disabled:opacity-40"
-              >
-                <Sparkles className="h-3 w-3" />
-                {loadingIA ? "Gerando resumo…" : "✦ Gerar Resumo IA"}
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* Movimentações */}
         <div>
-          <div className="text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground border-b border-border pb-2 mb-3">
-            Movimentações ({movs.length}) — Fonte: DataJud CNJ
+          <div className="flex items-center justify-between border-b border-border pb-2 mb-3">
+            <div className="text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground">
+              Movimentações ({movs.length})
+            </div>
+            <button
+              onClick={() => setShowMovForm(v => !v)}
+              className="flex items-center gap-1 text-[0.68rem] font-bold text-accent hover:underline"
+            >
+              <Plus className="h-3 w-3" /> Adicionar
+            </button>
           </div>
+
+          {showMovForm && (
+            <div className="bg-muted/30 border border-border rounded-lg p-3 mb-3 space-y-2">
+              <FG label="Título">
+                <input value={movForm.titulo} onChange={e => setMovForm(f => ({ ...f, titulo: e.target.value }))} placeholder="Ex: Juntada de petição" className="field" />
+              </FG>
+              <FG label="Data">
+                <input type="date" value={movForm.data} onChange={e => setMovForm(f => ({ ...f, data: e.target.value }))} className="field" />
+              </FG>
+              <FG label="Descrição (opcional)">
+                <textarea value={movForm.descricao} onChange={e => setMovForm(f => ({ ...f, descricao: e.target.value }))} className="field min-h-[60px]" />
+              </FG>
+              <div className="flex gap-2 justify-end pt-1">
+                <button onClick={() => setShowMovForm(false)} className="btn-outline-sm">Cancelar</button>
+                <Button variant="gold" size="sm" onClick={salvarMovimentacao} disabled={createMovimentacao.isPending}>Salvar</Button>
+              </div>
+            </div>
+          )}
+
           {movs.length > 0 ? (
             <div className="relative pl-5">
               <div className="absolute left-[5px] top-2 bottom-2 w-px bg-border" />
               <div className="space-y-4">
                 {movs.map((m: any, i: number) => (
-                  <div key={i} className="relative">
+                  <div key={m.id || i} className="relative group">
                     <div className="absolute -left-5 top-1 w-3 h-3 rounded-full bg-accent border-2 border-card shadow" />
-                    <div className="text-[0.65rem] font-bold text-blue-600 uppercase tracking-wider mb-0.5">{m.data || m.data_publicacao}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-[0.65rem] font-bold text-blue-600 uppercase tracking-wider mb-0.5">{m.data || m.data_publicacao}</div>
+                      {m.id && (
+                        <button
+                          onClick={() => deleteMovimentacao.mutate({ id: m.id, processo_id: processo.id })}
+                          className="opacity-0 group-hover:opacity-100 text-[0.65rem] text-red-alert hover:underline transition-opacity"
+                        >
+                          remover
+                        </button>
+                      )}
+                    </div>
                     <div className="text-sm font-semibold leading-snug">
                       {m.tipo || m.titulo}
                       {m.codigo && <span className="ml-1.5 text-[0.6rem] font-mono text-muted-foreground">TPU {m.codigo}</span>}
@@ -1006,19 +820,13 @@ function DetailPanel({ processo, onClose, onDelete, onSincronizar, onResumoIA, l
                       </div>
                     )}
                     {m.descricao && <p className="text-xs text-muted-foreground mt-1">{m.descricao}</p>}
-                    {m.analise_ia && (
-                      <div className="mt-1.5 bg-accent/5 border border-accent/20 rounded px-2.5 py-1.5">
-                        <div className="text-[0.6rem] font-bold text-accent uppercase tracking-wider mb-0.5">✦ Resumo IA</div>
-                        <div className="text-xs text-foreground">{m.analise_ia}</div>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
             </div>
           ) : (
             <div className="text-center py-6 border border-dashed border-border rounded-lg text-sm text-muted-foreground">
-              Sem movimentações. Clique <strong>⟳ DataJud</strong> para sincronizar.
+              Nenhuma movimentação registrada. Clique em <strong>Adicionar</strong> para incluir a primeira.
             </div>
           )}
         </div>

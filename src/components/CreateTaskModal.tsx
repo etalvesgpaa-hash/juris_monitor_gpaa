@@ -17,6 +17,12 @@ interface TarefaFormData {
   data_vencimento: string;
   hora_vencimento: string;
   prioridade: string;
+  delegado_para: string;
+}
+
+interface DelegacaoProfile {
+  id: string; // auth.users.id do destinatário
+  full_name: string;
 }
 
 interface CreateTaskModalProps {
@@ -26,6 +32,10 @@ interface CreateTaskModalProps {
   initialData?: Partial<TarefaFormData>;
   feriados?: Feriado[];
   submitLabel?: string;
+  /** Se true (admin), exibe o campo opcional "Delegar para". */
+  isAdmin?: boolean;
+  /** Lista de usuários disponíveis para delegação — só usada quando isAdmin=true. */
+  delegacaoProfiles?: DelegacaoProfile[];
 }
 
 const STATUS_OPTIONS = [
@@ -53,6 +63,7 @@ const EMPTY_FORM: TarefaFormData = {
   data_vencimento: "",
   hora_vencimento: "",
   prioridade: "media",
+  delegado_para: "",
 };
 
 export function CreateTaskModal({
@@ -62,6 +73,8 @@ export function CreateTaskModal({
   initialData,
   feriados = [],
   submitLabel,
+  isAdmin = false,
+  delegacaoProfiles = [],
 }: CreateTaskModalProps) {
   const [showFeriados, setShowFeriados] = useState(false);
   const [form, setForm] = useState<TarefaFormData>(EMPTY_FORM);
@@ -150,6 +163,29 @@ export function CreateTaskModal({
                 className="mt-1.5 min-h-[80px]"
               />
             </div>
+
+            {/* Delegar para (somente admin) */}
+            {isAdmin && delegacaoProfiles.length > 0 && (
+              <div className="bg-accent/5 p-3 rounded-xl border border-accent/20">
+                <Label htmlFor="delegado_para" className="text-sm font-bold flex items-center gap-1.5">
+                  👤 Delegar para (opcional)
+                </Label>
+                <select
+                  id="delegado_para"
+                  value={form.delegado_para}
+                  onChange={e => setForm(f => ({ ...f, delegado_para: e.target.value }))}
+                  className="mt-1.5 w-full px-3 py-2 border border-input bg-background rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                >
+                  <option value="">— Ninguém (fica para mim) —</option>
+                  {delegacaoProfiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.full_name}</option>
+                  ))}
+                </select>
+                <p className="text-[0.68rem] text-muted-foreground mt-1">
+                  Se escolher alguém, a tarefa é criada já atribuída a essa pessoa, que recebe notificação.
+                </p>
+              </div>
+            )}
 
             {/* Status */}
             <div>
