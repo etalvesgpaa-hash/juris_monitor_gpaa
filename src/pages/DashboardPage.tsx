@@ -66,9 +66,9 @@ function statusTarefaLabel(status: string): string {
 
 /** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
 const CORES_PRAZO_CARD = {
-  orange: { border: "border-orange-300/25", bg: "bg-orange-400/[0.07]", texto: "text-orange-300", chipBg: "bg-orange-300/15", chipTexto: "text-orange-200", icone: "bg-orange-300/15 text-orange-300" },
-  amber:  { border: "border-amber-300/25",  bg: "bg-amber-400/[0.08]", texto: "text-amber-300",  chipBg: "bg-amber-300/15",  chipTexto: "text-amber-200",  icone: "bg-amber-300/15 text-amber-300" },
-  red:    { border: "border-red-300/25",    bg: "bg-red-400/[0.09]",  texto: "text-red-300",     chipBg: "bg-red-300/15",    chipTexto: "text-red-200",    icone: "bg-red-300/15 text-red-300" },
+  orange: { border: "border-orange-300/40", bg: "bg-orange-50 dark:bg-orange-950/20", texto: "text-orange-600", titulo: "text-orange-800/70 dark:text-orange-200/70", chipBg: "bg-orange-100 dark:bg-orange-900/40", chipTexto: "text-orange-700 dark:text-orange-300", icone: "bg-orange-200/60 text-orange-600" },
+  amber:  { border: "border-amber-300/40",  bg: "bg-amber-50 dark:bg-amber-950/20",  texto: "text-amber-600",  titulo: "text-amber-800/70 dark:text-amber-200/70",  chipBg: "bg-amber-100 dark:bg-amber-900/40",  chipTexto: "text-amber-700 dark:text-amber-300",  icone: "bg-amber-200/60 text-amber-600" },
+  red:    { border: "border-red-300/40",    bg: "bg-red-50 dark:bg-red-950/20",     texto: "text-red-600",     titulo: "text-red-800/70 dark:text-red-200/70",     chipBg: "bg-red-100 dark:bg-red-900/40",     chipTexto: "text-red-700 dark:text-red-300",     icone: "bg-red-200/60 text-red-600" },
 } as const;
 
 /** Card grande do Dashboard: mostra a contagem + a lista completa de tarefas daquele grupo (sempre visível, sem hover). */
@@ -85,45 +85,37 @@ function TarefaPrazoCard({ titulo, icon, cor, tarefas, onNavigate }: {
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <div className={`rounded-lg p-1.5 ${c.icone}`}>{icon}</div>
-          <span className="text-xs font-bold uppercase tracking-wider text-white/80">{titulo}</span>
+          <span className={`text-xs font-bold uppercase tracking-wider ${c.titulo}`}>{titulo}</span>
         </div>
         <span className={`font-display text-2xl font-black ${c.texto}`}>{tarefas.length}</span>
       </div>
 
-      <div className="mt-3 flex-1 max-h-[320px] overflow-y-auto rounded-lg bg-black/10">
+      <div className="mt-3 flex-1 max-h-[320px] overflow-y-auto space-y-1.5 pr-0.5">
         {tarefas.length === 0 ? (
-          <div className="p-6 text-xs text-white/40 text-center">Nenhuma tarefa neste grupo. 🎉</div>
+          <div className="p-6 text-xs text-muted-foreground text-center">Nenhuma tarefa neste grupo. 🎉</div>
         ) : (
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-primary/95 backdrop-blur-sm">
-              <tr>
-                <th className="text-left px-3 py-2 font-bold text-white/50">Processo</th>
-                <th className="text-left px-3 py-2 font-bold text-white/50">Tarefa</th>
-                <th className="text-left px-3 py-2 font-bold text-white/50">Prazo</th>
-                <th className="text-left px-3 py-2 font-bold text-white/50">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tarefas.map(t => (
-                <tr
-                  key={t.id}
-                  className="border-t border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
-                  onClick={() => onNavigate?.("tarefas")}
-                >
-                  <td className="px-3 py-2 font-mono text-white/70 whitespace-nowrap">{t.processo?.numero_cnj || t.numero_processo || "—"}</td>
-                  <td className="px-3 py-2 font-semibold text-white max-w-[140px] truncate">{t.titulo}</td>
-                  <td className={`px-3 py-2 font-mono font-bold whitespace-nowrap ${c.texto}`}>
-                    {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded ${c.chipBg} ${c.chipTexto}`}>
-                      {statusTarefaLabel(t.status)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          tarefas.map(t => (
+            <div
+              key={t.id}
+              onClick={() => onNavigate?.("tarefas")}
+              className="rounded-lg bg-card/70 border border-border/50 px-3 py-2 cursor-pointer hover:bg-card transition-colors"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground truncate">{t.titulo}</span>
+                <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${c.chipBg} ${c.chipTexto}`}>
+                  {statusTarefaLabel(t.status)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span className="text-[0.68rem] font-mono text-muted-foreground truncate">
+                  {t.processo?.numero_cnj || t.numero_processo || "Sem processo vinculado"}
+                </span>
+                <span className={`text-[0.68rem] font-mono font-bold whitespace-nowrap shrink-0 ${c.texto}`}>
+                  {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
+                </span>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
