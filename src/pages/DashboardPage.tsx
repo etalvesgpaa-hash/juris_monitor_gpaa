@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, AlertCircle, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
@@ -65,53 +65,67 @@ function statusTarefaLabel(status: string): string {
 }
 
 /** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
-function TarefasHoverList({ tarefas, corAccent, onNavigate }: {
+const CORES_PRAZO_CARD = {
+  orange: { border: "border-orange-300/25", bg: "bg-orange-400/[0.07]", texto: "text-orange-300", chipBg: "bg-orange-300/15", chipTexto: "text-orange-200", icone: "bg-orange-300/15 text-orange-300" },
+  amber:  { border: "border-amber-300/25",  bg: "bg-amber-400/[0.08]", texto: "text-amber-300",  chipBg: "bg-amber-300/15",  chipTexto: "text-amber-200",  icone: "bg-amber-300/15 text-amber-300" },
+  red:    { border: "border-red-300/25",    bg: "bg-red-400/[0.09]",  texto: "text-red-300",     chipBg: "bg-red-300/15",    chipTexto: "text-red-200",    icone: "bg-red-300/15 text-red-300" },
+} as const;
+
+/** Card grande do Dashboard: mostra a contagem + a lista completa de tarefas daquele grupo (sempre visível, sem hover). */
+function TarefaPrazoCard({ titulo, icon, cor, tarefas, onNavigate }: {
+  titulo: string;
+  icon: React.ReactNode;
+  cor: keyof typeof CORES_PRAZO_CARD;
   tarefas: any[];
-  corAccent: "accent" | "red-alert";
   onNavigate?: (page: PageId) => void;
 }) {
-  const corTexto = corAccent === "accent" ? "text-accent" : "text-red-alert";
-  const corBorda = corAccent === "accent" ? "border-accent/25" : "border-red-alert/25";
-
+  const c = CORES_PRAZO_CARD[cor];
   return (
-    <div
-      className={`absolute z-50 top-full left-0 right-0 mt-2 bg-card border ${corBorda} rounded-xl shadow-2xl max-h-[360px] overflow-y-auto`}
-      onClick={e => e.stopPropagation()}
-    >
-      {tarefas.length === 0 ? (
-        <div className="p-4 text-xs text-muted-foreground text-center">Nenhuma tarefa neste grupo.</div>
-      ) : (
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-card border-b border-border">
-            <tr>
-              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Processo</th>
-              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Tarefa</th>
-              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Prazo</th>
-              <th className="text-left px-3 py-2 font-bold text-muted-foreground">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tarefas.map(t => (
-              <tr
-                key={t.id}
-                className="border-b border-border/40 hover:bg-muted/30 cursor-pointer"
-                onClick={() => onNavigate?.("tarefas")}
-              >
-                <td className="px-3 py-2 font-mono">{t.processo?.numero_cnj || t.numero_processo || "—"}</td>
-                <td className="px-3 py-2 font-semibold max-w-[160px] truncate">{t.titulo}</td>
-                <td className={`px-3 py-2 font-mono font-bold whitespace-nowrap ${corTexto}`}>
-                  {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`text-[0.62rem] font-bold px-1.5 py-0.5 rounded ${statusTarefaColor(t.status)}`}>
-                    {statusTarefaLabel(t.status)}
-                  </span>
-                </td>
+    <div className={`rounded-2xl border ${c.border} ${c.bg} p-5 flex flex-col`}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <div className={`rounded-lg p-1.5 ${c.icone}`}>{icon}</div>
+          <span className="text-xs font-bold uppercase tracking-wider text-white/80">{titulo}</span>
+        </div>
+        <span className={`font-display text-2xl font-black ${c.texto}`}>{tarefas.length}</span>
+      </div>
+
+      <div className="mt-3 flex-1 max-h-[320px] overflow-y-auto rounded-lg bg-black/10">
+        {tarefas.length === 0 ? (
+          <div className="p-6 text-xs text-white/40 text-center">Nenhuma tarefa neste grupo. 🎉</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-primary/95 backdrop-blur-sm">
+              <tr>
+                <th className="text-left px-3 py-2 font-bold text-white/50">Processo</th>
+                <th className="text-left px-3 py-2 font-bold text-white/50">Tarefa</th>
+                <th className="text-left px-3 py-2 font-bold text-white/50">Prazo</th>
+                <th className="text-left px-3 py-2 font-bold text-white/50">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {tarefas.map(t => (
+                <tr
+                  key={t.id}
+                  className="border-t border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
+                  onClick={() => onNavigate?.("tarefas")}
+                >
+                  <td className="px-3 py-2 font-mono text-white/70 whitespace-nowrap">{t.processo?.numero_cnj || t.numero_processo || "—"}</td>
+                  <td className="px-3 py-2 font-semibold text-white max-w-[140px] truncate">{t.titulo}</td>
+                  <td className={`px-3 py-2 font-mono font-bold whitespace-nowrap ${c.texto}`}>
+                    {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded ${c.chipBg} ${c.chipTexto}`}>
+                      {statusTarefaLabel(t.status)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -144,7 +158,6 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
   const [organizingCards, setOrganizingCards] = useState(false);
-  const [hoverCard, setHoverCard] = useState<"a-vencer" | "vencidas" | null>(null);
   const [draggedCard, setDraggedCard] = useState<DashboardCardId | null>(null);
   const [cardOrder, setCardOrder] = useState<DashboardCardId[]>(loadDashboardCardOrder);
 
@@ -285,6 +298,11 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   })();
 
   const now = new Date();
+  const amanha = (() => {
+    const d = parseDateLocal(hoje);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  })();
   const tarefasPendentes  = tarefas.filter(t => t.status !== "concluida");
   const tarefasVencidas   = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
@@ -296,10 +314,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   });
   const tarefasAVencer = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    const diasRestantes = t.data_vencimento.slice(0, 10) > hoje
-      ? Math.ceil((parseDateLocal(t.data_vencimento).getTime() - parseDateLocal(hoje).getTime()) / (24 * 60 * 60 * 1000))
-      : -1;
-    return diasRestantes > 0 && diasRestantes <= 3;
+    return t.data_vencimento.slice(0, 10) === amanha;
   });
 
   // Gráficos
@@ -459,41 +474,45 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           <button onClick={() => setErroSync(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600 font-bold">✕</button>
         </div>
       )}
-      {/* ── Cards de estatísticas — linha 1 ── */}
-      <div className={`relative z-10 mb-6 grid grid-cols-1 gap-3 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-6 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-2 sm:px-7 xl:grid-cols-12 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
+      {/* ── Linha compacta: Intimações / Processos / Clientes / Tarefas (totais) ── */}
+      <div className={`relative z-10 mb-4 grid grid-cols-2 gap-2.5 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-4 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-4 sm:px-7 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
         {/* Intimações de HOJE */}
         <div
           {...cardContainerProps("intimacoes")}
           onClick={() => onNavigate?.("intimacoes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-amber-300/45 hover:bg-amber-300/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-amber-300/20 bg-amber-300/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-amber-300/45 hover:bg-amber-300/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="intimacoes" />
-          <div className="absolute right-4 top-4 rounded-xl bg-amber-300/15 p-2.5 text-amber-300"><FileText className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-amber-200/80">Intimações hoje</div>
-          <div className="font-display text-4xl font-semibold text-white transition-transform">
-            {intimacoesHoje.length}
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-amber-200/80">Intimações hoje</div>
+            <FileText className="h-3.5 w-3.5 text-amber-300/70 shrink-0" />
           </div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">publicações do dia</div>
-          {intimacoesNaoLidas.length > 0 && (
-            <div className="mt-3 inline-flex rounded-full bg-amber-300/15 px-2.5 py-1 text-[0.68rem] font-bold text-amber-200">
-              {intimacoesNaoLidas.length} não lida(s)
-            </div>
-          )}
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {intimacoesHoje.length}
+            {intimacoesNaoLidas.length > 0 && (
+              <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-amber-200 bg-amber-300/15 rounded-full px-1.5 py-0.5">
+                {intimacoesNaoLidas.length} não lida(s)
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Processos */}
         <div
           {...cardContainerProps("processos")}
           onClick={() => onNavigate?.("processos")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-blue-300/20 bg-blue-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-blue-300/45 hover:bg-blue-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-blue-300/20 bg-blue-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-blue-300/45 hover:bg-blue-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="processos" />
-          <div className="absolute right-4 top-4 rounded-xl bg-blue-300/15 p-2.5 text-blue-300"><BriefcaseBusiness className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-blue-200/80">Processos</div>
-          <div className="font-display text-4xl font-semibold text-white">{processos.length}</div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">cadastrados</div>
-          <div className="mt-1.5 inline-block rounded bg-blue-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-blue-200">
-            {processos.filter(p => p.status === "ativo").length} ativos
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-blue-200/80">Processos</div>
+            <BriefcaseBusiness className="h-3.5 w-3.5 text-blue-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {processos.length}
+            <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-blue-200 bg-blue-300/15 rounded-full px-1.5 py-0.5">
+              {processos.filter(p => p.status === "ativo").length} ativos
+            </span>
           </div>
         </div>
 
@@ -501,100 +520,66 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <div
           {...cardContainerProps("clientes")}
           onClick={() => onNavigate?.("clientes")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-emerald-300/20 bg-emerald-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-emerald-300/20 bg-emerald-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="clientes" />
-          <div className="absolute right-4 top-4 rounded-xl bg-emerald-300/15 p-2.5 text-emerald-300"><Users className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-emerald-200/80">Clientes</div>
-          <div className="font-display text-4xl font-semibold text-white">{clientes.length}</div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">cadastrados</div>
-          <div className="flex flex-wrap gap-1 mt-1.5">
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-emerald-200/80">Clientes</div>
+            <Users className="h-3.5 w-3.5 text-emerald-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {clientes.length}
             {clientesComPublicacoes > 0 && (
-              <div className="inline-block rounded bg-amber-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-200">
-                {clientesComPublicacoes} com publicações
-              </div>
-            )}
-            {clientesNotificadosHoje > 0 && (
-              <div className="inline-block rounded bg-emerald-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-emerald-200">
-                {clientesNotificadosHoje} notificado(s) hoje
-              </div>
+              <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-amber-200 bg-amber-300/15 rounded-full px-1.5 py-0.5">
+                {clientesComPublicacoes} c/ public.
+              </span>
             )}
           </div>
         </div>
 
-        {/* Tarefas pendentes */}
+        {/* Tarefas (total pendentes) */}
         <div
           {...cardContainerProps("tarefas")}
           onClick={() => onNavigate?.("tarefas")}
-          className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.08] p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-300/45 hover:bg-cyan-400/[0.12] xl:col-span-2 ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""}`}
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-cyan-300/20 bg-cyan-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-cyan-300/45 hover:bg-cyan-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
           <CardOrganizer id="tarefas" />
-          <div className="absolute right-4 top-4 rounded-xl bg-cyan-300/15 p-2.5 text-cyan-300"><CheckSquare2 className="h-5 w-5" /></div>
-          <div className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-200/80">Tarefas</div>
-          <div className="font-display text-4xl font-semibold text-white">{tarefasPendentes.length}</div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">pendentes</div>
-          <div className="mt-1.5 inline-block rounded bg-cyan-300/15 px-1.5 py-0.5 text-[0.6rem] font-bold text-cyan-200">
-            {tarefas.filter(t => t.status === "concluida").length} concluídas
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-cyan-200/80">Tarefas</div>
+            <CheckSquare2 className="h-3.5 w-3.5 text-cyan-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {tarefasPendentes.length}
+            <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-cyan-200 bg-cyan-300/15 rounded-full px-1.5 py-0.5">
+              {tarefas.filter(t => t.status === "concluida").length} concluídas
+            </span>
           </div>
         </div>
+      </div>
 
-        {/* A vencer (hoje + próximos 3 dias) */}
-        <div
-          {...cardContainerProps("a-vencer")}
-          onClick={() => onNavigate?.("tarefas")}
-          onMouseEnter={() => setHoverCard("a-vencer")}
-          onMouseLeave={() => setHoverCard(null)}
-          className={`relative cursor-pointer rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${hoverCard === "a-vencer" ? "" : "overflow-hidden"} ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
-            tarefasAVencer.length + tarefasVenceHoje.length > 0
-              ? "border-orange-300/30 bg-orange-400/[0.12] hover:border-orange-300/55"
-              : "border-orange-300/15 bg-orange-400/[0.06] hover:border-orange-300/35"
-          }`}
-        >
-          <CardOrganizer id="a-vencer" />
-          <div className="absolute right-5 top-5 rounded-xl bg-orange-300/15 p-2.5 text-orange-300"><Clock3 className="h-5 w-5" /></div>
-          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-orange-200/80">Vencem hoje ou em até 3 dias</div>
-          <div className="font-display text-3xl font-black text-orange-300">
-            {tarefasAVencer.length + tarefasVenceHoje.length}
-          </div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">
-            {tarefasVenceHoje.length > 0 ? `${tarefasVenceHoje.length} vencem hoje` : "tarefas pendentes"}
-          </div>
-          {hoverCard === "a-vencer" && (
-            <TarefasHoverList
-              tarefas={[...tarefasVenceHoje, ...tarefasAVencer]}
-              corAccent="accent"
-              onNavigate={onNavigate}
-            />
-          )}
-        </div>
-
-        {/* Vencidas */}
-        <div
-          {...cardContainerProps("vencidas")}
-          onClick={() => onNavigate?.("tarefas")}
-          onMouseEnter={() => setHoverCard("vencidas")}
-          onMouseLeave={() => setHoverCard(null)}
-          className={`relative cursor-pointer rounded-2xl border p-5 transition-all hover:-translate-y-0.5 xl:col-span-2 ${hoverCard === "vencidas" ? "" : "overflow-hidden"} ${organizingCards ? "pt-16 ring-1 ring-accent/40" : ""} ${
-            tarefasVencidas.length > 0
-              ? "border-red-300/30 bg-red-400/[0.12] hover:border-red-300/55"
-              : "border-red-300/15 bg-red-400/[0.06] hover:border-red-300/35"
-          }`}
-        >
-          <CardOrganizer id="vencidas" />
-          <div className="absolute right-5 top-5 rounded-xl bg-red-300/15 p-2.5 text-red-300"><TriangleAlert className="h-5 w-5" /></div>
-          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-red-200/80">Vencidas</div>
-          <div className="font-display text-3xl font-black text-red-300">
-            {tarefasVencidas.length}
-          </div>
-          <div className="mt-0.5 text-[0.65rem] text-white/50">prazo expirado</div>
-          {hoverCard === "vencidas" && (
-            <TarefasHoverList
-              tarefas={tarefasVencidas}
-              corAccent="red-alert"
-              onNavigate={onNavigate}
-            />
-          )}
-        </div>
+      {/* ── Prazos: Amanhã / Hoje / Vencidas — cards grandes com a lista sempre visível ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5 mb-6">
+        <TarefaPrazoCard
+          titulo="Vencem Amanhã"
+          icon={<Clock3 className="h-4 w-4" />}
+          cor="orange"
+          tarefas={tarefasAVencer}
+          onNavigate={onNavigate}
+        />
+        <TarefaPrazoCard
+          titulo="Vencem Hoje"
+          icon={<AlertCircle className="h-4 w-4" />}
+          cor="amber"
+          tarefas={tarefasVenceHoje}
+          onNavigate={onNavigate}
+        />
+        <TarefaPrazoCard
+          titulo="Vencidas"
+          icon={<TriangleAlert className="h-4 w-4" />}
+          cor="red"
+          tarefas={tarefasVencidas}
+          onNavigate={onNavigate}
+        />
       </div>
 
       {/* ── Card extra: Clientes notificados hoje (se houver) ── */}
@@ -747,73 +732,6 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           <AgendaCalendario tarefas={tarefas} onNavigate={onNavigate} />
         </div>
       </div>
-
-      {/* ── Prazos críticos ── */}
-      {(tarefasVenceHoje.length + tarefasAVencer.length) > 0 && (
-        <div className="content-panel mb-5 border-accent/25 p-5">
-          <div className="text-[0.72rem] font-bold text-accent uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            ⚠️ Prazos Próximos — Hoje e Próximos 3 dias
-          </div>
-          <div className="space-y-2">
-            {[...tarefasVenceHoje, ...tarefasAVencer].map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-accent/5 rounded-lg px-4 py-3 border border-accent/10 gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{t.titulo}</span>
-                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${statusTarefaColor(t.status)}`}>
-                      {statusTarefaLabel(t.status)}
-                    </span>
-                    {t.data_vencimento?.slice(0,10) === dataLocalHoje() && (
-                      <span className="text-[0.6rem] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-600 shrink-0">HOJE</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {t.processo?.numero_cnj || t.numero_processo ? `Processo ${t.processo?.numero_cnj || t.numero_processo}` : (t.descricao || "Sem descrição")}
-                  </div>
-                </div>
-                <div className="text-xs font-mono text-accent font-bold whitespace-nowrap shrink-0">
-                  {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tarefasVencidas.length > 0 && (
-        <div className="content-panel mb-5 border-red-alert/25 p-5">
-          <div className="text-[0.72rem] font-bold text-red-alert uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-red-alert" />
-            🔴 Tarefas Vencidas — Atenção Imediata
-          </div>
-          <div className="space-y-2">
-            {tarefasVencidas.slice(0, 5).map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-red-alert/5 rounded-lg px-4 py-3 border border-red-alert/10 gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{t.titulo}</span>
-                    <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${statusTarefaColor(t.status)}`}>
-                      {statusTarefaLabel(t.status)}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {t.processo?.numero_cnj || t.numero_processo ? `Processo ${t.processo?.numero_cnj || t.numero_processo}` : (t.descricao || "Sem descrição")}
-                  </div>
-                </div>
-                <div className="text-xs font-mono text-red-alert font-bold whitespace-nowrap shrink-0">
-                  {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
-                </div>
-              </div>
-            ))}
-            {tarefasVencidas.length > 5 && (
-              <button onClick={() => onNavigate?.("tarefas")} className="text-xs text-red-alert underline font-semibold">
-                + {tarefasVencidas.length - 5} vencida(s) a mais → ver todas
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       <CreateTaskModal
         open={showCreateTaskModal}
