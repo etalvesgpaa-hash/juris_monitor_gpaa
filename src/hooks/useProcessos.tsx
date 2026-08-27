@@ -60,6 +60,22 @@ export function useMovimentacoes(processoId: string | null) {
   });
 }
 
+/** Recalcula processos.ultima_movimentacao a partir do maior valor de "data" em movimentacoes. */
+async function recalcularUltimaMovimentacao(processoId: string) {
+  const { data: ultima } = await supabase
+    .from("movimentacoes")
+    .select("data")
+    .eq("processo_id", processoId)
+    .order("data", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  await supabase
+    .from("processos")
+    .update({ ultima_movimentacao: ultima?.data || null })
+    .eq("id", processoId);
+}
+
 export function useCreateMovimentacao() {
   const qc = useQueryClient();
   const { user } = useAuth();
@@ -72,6 +88,8 @@ export function useCreateMovimentacao() {
         .select()
         .single();
       if (error) throw error;
+      // Mantém a coluna "Última Mov." da lista de processos sempre em dia
+      await recalcularUltimaMovimentacao(input.processo_id);
       return data;
     },
     onSuccess: (_data, vars) => {
@@ -85,12 +103,79 @@ export function useDeleteMovimentacao() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id }: { id: string; processo_id: string }) => {
+    mutationFn: async ({ id, processo_id }: { id: string; processo_id: string }) => {
       const { error } = await supabase.from("movimentacoes").delete().eq("id", id);
       if (error) throw error;
+      // Recalcula "Última Mov." caso a movimentação removida fosse a mais recente
+      await recalcularUltimaMovimentacao(processo_id);
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["movimentacoes", vars.processo_id] });
+      qc.invalidateQueries({ queryKey: ["processos"] });
+    },
+  });
+}
+
+/**
+ * Cria um processo vinculado a um cliente, ou — se já existir um processo com
+ * esse número CNJ — apenas vincula o cliente a ele (evita duplicar).
+ * Usado na integração Clientes ⇄ Processos (cadastro conjunto).
+ */
+export function useCriarOuVincularProcesso() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: {
+      cliente_id: string;
+      numero_cnj: string;
+      tribunal?: string | null;
+      partes?: string | null;
+      assunto?: string | null;
+      vara?: string | null;
+    }) => {
+      // Já existe um processo com esse número? Só vincula ao cliente.
+      const { data: existente } = await supabase
+        .from("processos")
+        .select("id, cliente_id, partes, assunto, vara")
+        .eq("numero_cnj", input.numero_cnj)
+        .eq("user_id", user!.id)
+        .maybeSingle();
+
+      if (existente) {
+        const { error } = await supabase
+          .from("processos")
+          .update({
+            cliente_id: input.cliente_id,
+            // Só preenche o que ainda estiver vazio — não sobrescreve dado já existente
+            partes:  existente.partes  || input.partes  || null,
+            assunto: existente.assunto || input.assunto || null,
+            vara:    existente.vara    || input.vara    || null,
+          })
+          .eq("id", existente.id);
+        if (error) throw error;
+        return existente.id;
+      }
+
+      const { data: criado, error } = await supabase
+        .from("processos")
+        .insert({
+          numero_cnj: input.numero_cnj,
+          tribunal: input.tribunal || null,
+          status: "ativo",
+          cliente_id: input.cliente_id,
+          partes: input.partes || null,
+          assunto: input.assunto || null,
+          vara: input.vara || null,
+          user_id: user!.id,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return criado.id;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["processos"] });
     },
   });
 }

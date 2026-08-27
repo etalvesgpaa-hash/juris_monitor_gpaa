@@ -37,6 +37,8 @@ import { supabase } from "@/lib/supabase";
 import { INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { useAuth } from "@/hooks/useAuth";
 import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
+import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
+import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,7 @@ export function ClientesPage() {
   const createCliente = useCreateCliente();
   const updateCliente = useUpdateCliente();
   const deleteCliente = useDeleteCliente();
+  const criarOuVincularProcesso = useCriarOuVincularProcesso();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
@@ -137,6 +140,12 @@ export function ClientesPage() {
     notificacoes_email: true,
     notificacoes_whatsapp: false,
     status_monitoramento: "ativo" as "ativo" | "pausado" | "inativo",
+    status_processo: "Novo Caso",
+    // Processo vinculado (obrigatório) — cria/vincula um registro real em Processos
+    processoNumero: "",
+    processoPartes: "",
+    processoAssunto: "",
+    processoVara: "",
   });
   const [processoInput, setProcessoInput] = useState("");
 
@@ -277,7 +286,12 @@ export function ClientesPage() {
       notificacoes_email: true,
       notificacoes_whatsapp: false,
       status_monitoramento: "ativo",
-    });
+      status_processo: "Novo Caso",
+      processoNumero: "",
+      processoPartes: "",
+      processoAssunto: "",
+      processoVara: "",
+    } as any);
     setProcessoInput("");
     setShowForm(false);
     setEditing(null);
@@ -295,7 +309,12 @@ export function ClientesPage() {
       notificacoes_email: c.notificacoes_email ?? true,
       notificacoes_whatsapp: (c as any).notificacoes_whatsapp ?? false,
       status_monitoramento: c.status_monitoramento || "ativo",
-    });
+      status_processo: (c as any).status_processo || "Novo Caso",
+      processoNumero: "",
+      processoPartes: "",
+      processoAssunto: "",
+      processoVara: "",
+    } as any);
     setEditing(c);
     setShowForm(true);
   };
@@ -336,6 +355,23 @@ export function ClientesPage() {
       });
       return;
     }
+    // Todo cliente precisa ter ao menos um processo vinculado
+    if (!editing && !form.processoNumero.trim()) {
+      toast({ title: "Informe o número do processo (CNJ)", description: "Todo cliente cadastrado precisa ter um processo vinculado.", variant: "destructive" });
+      return;
+    }
+    let tribunalDetectado: { nome: string; alias: string } | null = null;
+    if (!editing && form.processoNumero.trim()) {
+      tribunalDetectado = detectarTribunalCNJ(form.processoNumero);
+      if (!tribunalDetectado) {
+        toast({ title: "Número CNJ inválido", description: "Verifique o número do processo — tribunal não reconhecido.", variant: "destructive" });
+        return;
+      }
+    }
+
+    const numerosProcesso = form.processoNumero.trim()
+      ? [form.processoNumero.trim(), ...form.numeros_processo.filter(n => n !== form.processoNumero.trim())]
+      : form.numeros_processo;
 
     const payload = {
       nome: form.nome,
@@ -344,7 +380,7 @@ export function ClientesPage() {
       telefone: form.telefone || null,
       endereco: form.endereco || null,
       observacoes: form.observacoes || null,
-      numeros_processo: form.numeros_processo.length > 0 ? form.numeros_processo : null,
+      numeros_processo: numerosProcesso.length > 0 ? numerosProcesso : null,
       notificacoes_email: form.notificacoes_email,
       notificacoes_whatsapp: (form as any).notificacoes_whatsapp,
       status_monitoramento: form.status_monitoramento,
@@ -352,13 +388,28 @@ export function ClientesPage() {
     };
 
     try {
+      let clienteId = editing?.id;
       if (editing) {
         await updateCliente.mutateAsync({ id: editing.id, ...payload });
         toast({ title: "✅ Cliente atualizado com sucesso!" });
       } else {
-        await createCliente.mutateAsync(payload);
+        const criado = await createCliente.mutateAsync(payload);
+        clienteId = criado.id;
         toast({ title: "✅ Cliente cadastrado com sucesso!" });
       }
+
+      // Cria (ou vincula, se já existir) o processo real na tela de Processos
+      if (!editing && clienteId && form.processoNumero.trim()) {
+        await criarOuVincularProcesso.mutateAsync({
+          cliente_id: clienteId,
+          numero_cnj: form.processoNumero.trim(),
+          tribunal: tribunalDetectado?.nome || null,
+          partes: form.processoPartes.trim() || null,
+          assunto: form.processoAssunto.trim() || null,
+          vara: form.processoVara.trim() || null,
+        });
+      }
+
       resetForm();
     } catch (err: any) {
       toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
@@ -855,51 +906,89 @@ export function ClientesPage() {
               placeholder="Rua, número, bairro, cidade - UF"
             />
 
-            {/* Processos */}
-            <div className="border border-border rounded-xl p-4 bg-muted/30">
-              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-3 block">
-                Números de Processo (CNJ)
-              </label>
-              <p className="text-xs text-muted-foreground mb-3">
-                Adicione os números de processo CNJ. Quando houver novas intimações, o cliente
-                receberá notificação automática por e-mail e/ou WhatsApp.
-              </p>
-              <div className="flex gap-2 mb-3">
-                <input
-                  value={processoInput}
-                  onChange={(e) => setProcessoInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && adicionarProcesso()}
-                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all font-mono"
-                  placeholder="0000000-00.0000.0.00.0000"
-                />
-                <Button variant="outline" size="sm" onClick={adicionarProcesso}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Adicionar
-                </Button>
-              </div>
-              {form.numeros_processo.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {form.numeros_processo.map((proc) => (
-                    <div
-                      key={proc}
-                      className="inline-flex items-center gap-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-1.5 text-xs font-mono"
-                    >
-                      {proc}
-                      <button
-                        onClick={() => removerProcesso(proc)}
-                        className="text-red-500 hover:text-red-700 ml-1"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  Nenhum processo adicionado ainda
+            {/* Processo vinculado (obrigatório na criação) */}
+            {!editing ? (
+              <div className="border border-accent/30 rounded-xl p-4 bg-accent/5">
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-1 block">
+                  📋 Processo Vinculado *
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Todo cliente cadastrado precisa ter um processo. Isso cria automaticamente o registro
+                  na tela de Processos, já vinculado a este cliente.
                 </p>
-              )}
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <InputField
+                    label="Número CNJ *"
+                    value={form.processoNumero}
+                    onChange={(v) => setForm({ ...form, processoNumero: maskCNJ(v) } as any)}
+                    placeholder="0000000-00.0000.0.00.0000"
+                  />
+                  <InputField
+                    label="Partes (Autor × Réu)"
+                    value={(form as any).processoPartes}
+                    onChange={(v) => setForm({ ...form, processoPartes: v } as any)}
+                    placeholder="Como consta na AASP — ex: Fulano × Empresa XYZ"
+                  />
+                  <InputField
+                    label="Assunto / Título"
+                    value={(form as any).processoAssunto}
+                    onChange={(v) => setForm({ ...form, processoAssunto: v } as any)}
+                    placeholder="Ex: Indenização por Dano Moral"
+                  />
+                  <InputField
+                    label="Vara / Órgão"
+                    value={(form as any).processoVara}
+                    onChange={(v) => setForm({ ...form, processoVara: v } as any)}
+                    placeholder="Ex: 3ª Vara Cível"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="border border-border rounded-xl p-4 bg-muted/30">
+                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-3 block">
+                  Números de Processo (CNJ)
+                </label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Para adicionar um novo processo detalhado (com partes, assunto e vara), use a tela de Processos
+                  e selecione este cliente. Aqui você só pode anexar números de referência rápida.
+                </p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={processoInput}
+                    onChange={(e) => setProcessoInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && adicionarProcesso()}
+                    className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all font-mono"
+                    placeholder="0000000-00.0000.0.00.0000"
+                  />
+                  <Button variant="outline" size="sm" onClick={adicionarProcesso}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Adicionar
+                  </Button>
+                </div>
+                {form.numeros_processo.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {form.numeros_processo.map((proc) => (
+                      <div
+                        key={proc}
+                        className="inline-flex items-center gap-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-1.5 text-xs font-mono"
+                      >
+                        {proc}
+                        <button
+                          onClick={() => removerProcesso(proc)}
+                          className="text-red-500 hover:text-red-700 ml-1"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    Nenhum processo adicionado ainda
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Notificações */}
             <div className="border border-border rounded-xl p-4 bg-muted/30">

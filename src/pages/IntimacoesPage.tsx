@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
 import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
+import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
+import { detectarTribunalCNJ } from "@/lib/cnj";
 import { useCrearTarefaDelegada, useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
@@ -271,6 +273,7 @@ export function IntimacoesPage() {
   const { user, isAdmin } = useAuth();
   const { data: clientes = [] } = useClientes();
   const createCliente = useCreateCliente();
+  const criarOuVincularProcesso = useCriarOuVincularProcesso();
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
@@ -1481,7 +1484,25 @@ export function IntimacoesPage() {
           intim={novoClienteIntimacao}
           onClose={() => setNovoClienteIntimacao(null)}
           onCreate={async (dados) => {
-            await createCliente.mutateAsync(dados);
+            const clienteCriado = await createCliente.mutateAsync(dados);
+            // Cria (ou vincula) o processo real na tela de Processos, usando os
+            // dados que já vieram prontos da intimação — sem digitar de novo.
+            const numero = novoClienteIntimacao._numProc;
+            if (numero) {
+              const tribunal = detectarTribunalCNJ(numero);
+              try {
+                await criarOuVincularProcesso.mutateAsync({
+                  cliente_id: clienteCriado.id,
+                  numero_cnj: numero,
+                  tribunal: tribunal?.nome || null,
+                  partes: novoClienteIntimacao._partes || null,
+                  assunto: novoClienteIntimacao._titulo || null,
+                  vara: novoClienteIntimacao._orgaoJulgador || null,
+                });
+              } catch (err: any) {
+                toast.error(`Cliente criado, mas houve erro ao vincular o processo: ${err.message}`);
+              }
+            }
             setNovoClienteIntimacao(null);
             toast.success("✅ Cliente cadastrado com sucesso!");
           }}
