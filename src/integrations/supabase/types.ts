@@ -219,6 +219,7 @@ export type Database = {
           comarca: string | null
           created_at: string
           dados_datajud: Json | null
+          fase: string | null
           id: string
           numero_cnj: string
           partes: string | null
@@ -226,6 +227,8 @@ export type Database = {
           status: string
           tribunal: string | null
           ultima_movimentacao: string | null
+          ultima_movimentacao_titulo: string | null
+          ultima_movimentacao_descricao: string | null
           updated_at: string
           user_id: string
           valor_causa: number | null
@@ -239,6 +242,7 @@ export type Database = {
           comarca?: string | null
           created_at?: string
           dados_datajud?: Json | null
+          fase?: string | null
           id?: string
           numero_cnj: string
           partes?: string | null
@@ -246,6 +250,8 @@ export type Database = {
           status?: string
           tribunal?: string | null
           ultima_movimentacao?: string | null
+          ultima_movimentacao_titulo?: string | null
+          ultima_movimentacao_descricao?: string | null
           updated_at?: string
           user_id: string
           valor_causa?: number | null
@@ -259,6 +265,7 @@ export type Database = {
           comarca?: string | null
           created_at?: string
           dados_datajud?: Json | null
+          fase?: string | null
           id?: string
           numero_cnj?: string
           partes?: string | null
@@ -266,6 +273,8 @@ export type Database = {
           status?: string
           tribunal?: string | null
           ultima_movimentacao?: string | null
+          ultima_movimentacao_titulo?: string | null
+          ultima_movimentacao_descricao?: string | null
           updated_at?: string
           user_id?: string
           valor_causa?: number | null

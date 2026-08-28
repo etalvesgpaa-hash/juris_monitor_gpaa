@@ -25,6 +25,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 const STATUS_OPTS = ["Ativo","Em Recurso","Em Execução","Suspenso","Transitado em Julgado","Encerrado","Arquivado"];
 const AREAS = ["Cível","Criminal","Trabalhista","Previdenciário","Tributário","Administrativo","Família","Eleitoral"];
+const FASES_PROCESSO = ["Postulatória","Instrutória","Decisória","Recursal","Execução / Cumprimento de Sentença","Arquivamento Provisório"];
 
 // ── Tipo interno rico (estendendo Processo do Supabase) ───────────────────────
 interface ProcessoRico extends Processo {
@@ -174,6 +175,7 @@ export function ProcessosPage() {
     area: "Cível", status: "Ativo", obs: "", cliente_id: "",
     autorManual: "", reuManual: "",
     classe: "", assunto: "", vara: "", comarca: "", valorCausa: "",
+    fase: "",
   };
   const [form, setForm] = useState(FORM_VAZIO);
 
@@ -214,6 +216,7 @@ export function ProcessosPage() {
           assunto: form.assunto.trim() || null,
           vara: form.vara.trim() || null,
           comarca: form.comarca.trim() || null,
+          fase: form.fase || null,
           valor_causa: form.valorCausa ? parseFloat(form.valorCausa.replace(/\./g, "").replace(",", ".")) : null,
         });
         // Reflete imediatamente na lista/painel local, sem esperar refetch
@@ -222,6 +225,7 @@ export function ProcessosPage() {
               ...p, partes: partesManuais, autor: autorManual || p.autor, reu: reuManual || p.reu,
               classe: form.classe.trim() || p.classe, assunto: form.assunto.trim() || p.assunto,
               vara: form.vara.trim() || p.vara, comarca: form.comarca.trim() || p.comarca,
+              fase: form.fase || p.fase,
             }
           : p));
         toast({ title: "✅ Processo atualizado!" });
@@ -235,6 +239,7 @@ export function ProcessosPage() {
           assunto: form.assunto.trim() || null,
           vara: form.vara.trim() || null,
           comarca: form.comarca.trim() || null,
+          fase: form.fase || null,
           partes: partesManuais,
           valor_causa: form.valorCausa ? parseFloat(form.valorCausa.replace(/\./g, "").replace(",", ".")) : null,
           cliente_id: form.cliente_id || null,
@@ -271,6 +276,7 @@ export function ProcessosPage() {
       autorManual: autorAtual, reuManual: reuAtual,
       classe: p.classe || "", assunto: p.assunto || "", vara: p.vara || "", comarca: p.comarca || "",
       valorCausa: p.valor_causa != null ? String(p.valor_causa) : "",
+      fase: p.fase || "",
     });
     setEditId(p.id);
     setTribunalDetect(p.tribunal ? `✓ ${p.tribunal}` : "");
@@ -342,7 +348,7 @@ export function ProcessosPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  {["Número CNJ", "Tribunal / Classe", "Partes", "Assunto / Órgão", "Última Mov.", "Status", "Ações"].map(h => (
+                  {["Número CNJ", "Tribunal / Classe", "Partes", "Assunto / Órgão", "Fase", "Última Mov.", "Status", "Ações"].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[0.68rem] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -418,22 +424,42 @@ export function ProcessosPage() {
                         })()}
                       </td>
 
+                      {/* Fase do Processo */}
+                      <td className="px-4 py-3 text-xs">
+                        {p.fase ? (
+                          <span className="inline-block text-[0.65rem] font-semibold bg-purple-500/10 text-purple-600 border border-purple-400/25 rounded px-2 py-1">{p.fase}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+
                       {/* Última Movimentação */}
-                      <td className="px-4 py-3">
-                        {m ? (
+                      <td className="px-4 py-3 max-w-[220px]">
+                        {p.ultima_movimentacao_titulo || p.ultima_movimentacao ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[0.68rem] text-blue-600 font-semibold">
+                              {(() => {
+                                const raw = p.ultima_movimentacao;
+                                if (!raw) return "—";
+                                const [ano, mes, dia] = raw.slice(0, 10).split("-");
+                                return (ano && mes && dia) ? `${dia}/${mes}/${ano}` : "—";
+                              })()}
+                            </span>
+                            {p.ultima_movimentacao_titulo && (
+                              <span className="text-xs font-semibold text-foreground leading-tight line-clamp-1">{p.ultima_movimentacao_titulo}</span>
+                            )}
+                            {p.ultima_movimentacao_descricao && (
+                              <span className="text-[0.65rem] text-muted-foreground leading-snug line-clamp-2">{p.ultima_movimentacao_descricao}</span>
+                            )}
+                          </div>
+                        ) : m ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[0.68rem] text-blue-600 font-semibold">{m.data}</span>
                             <span className="text-xs font-semibold text-foreground leading-tight max-w-[160px] line-clamp-2">{m.tipo}</span>
                           </div>
-                        ) : (() => {
-                          // Corrige Invalid Date: ultima_movimentacao pode ser "YYYY-MM-DD" ou ISO completo
-                          const raw = p.ultima_movimentacao;
-                          if (!raw) return <span className="text-muted-foreground text-xs">—</span>;
-                          const dataParte = raw.slice(0, 10); // "YYYY-MM-DD"
-                          const [ano, mes, dia] = dataParte.split("-");
-                          const dataBR = (ano && mes && dia) ? `${dia}/${mes}/${ano}` : "—";
-                          return <span className="text-muted-foreground text-xs">{dataBR}</span>;
-                        })()}
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </td>
 
                       {/* Status */}
@@ -516,6 +542,12 @@ export function ProcessosPage() {
                   </select>
                 </FG>
               </div>
+              <FG label="Fase do Processo">
+                <select value={form.fase} onChange={e => setForm(f => ({ ...f, fase: e.target.value }))} className="field">
+                  <option value="">— Não informado —</option>
+                  {FASES_PROCESSO.map(f => <option key={f}>{f}</option>)}
+                </select>
+              </FG>
               <FG label="Observações Internas (sigilo profissional)">
                 <textarea value={form.obs} onChange={e => setForm(f => ({ ...f, obs: e.target.value }))} placeholder="Notas do advogado — não compartilhadas com o cliente" className="field min-h-[70px]" />
               </FG>
@@ -644,6 +676,7 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
               ["Tribunal",        processo.tribunalNome || processo.tribunal],
               ["Classe",          processo.classe],
               ["Assunto",         processo.assunto],
+              ["Fase",            processo.fase],
               ["Vara / Órgão Julgador", processo.orgaoJulgador || processo.vara],
               ["Comarca",         processo.comarca],
               ["Valor da Causa",  processo.valor_causa != null ? `R$ ${Number(processo.valor_causa).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : null],
@@ -664,6 +697,19 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
             ))}
           </div>
         </div>
+
+        {/* Última movimentação em destaque */}
+        {(processo.ultima_movimentacao_titulo || processo.ultima_movimentacao_descricao) && (
+          <div className="bg-blue-500/5 border border-blue-400/20 rounded-lg p-3">
+            <div className="text-[0.62rem] font-bold uppercase tracking-wider text-blue-600 mb-1">📌 Última Movimentação</div>
+            {processo.ultima_movimentacao_titulo && (
+              <div className="text-sm font-semibold text-foreground">{processo.ultima_movimentacao_titulo}</div>
+            )}
+            {processo.ultima_movimentacao_descricao && (
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{processo.ultima_movimentacao_descricao}</p>
+            )}
+          </div>
+        )}
 
         {/* Movimentações */}
         <div>

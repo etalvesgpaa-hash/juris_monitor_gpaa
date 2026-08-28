@@ -60,11 +60,11 @@ export function useMovimentacoes(processoId: string | null) {
   });
 }
 
-/** Recalcula processos.ultima_movimentacao a partir do maior valor de "data" em movimentacoes. */
+/** Recalcula processos.ultima_movimentacao(_titulo/_descricao) a partir da movimentação mais recente. */
 async function recalcularUltimaMovimentacao(processoId: string) {
   const { data: ultima } = await supabase
     .from("movimentacoes")
-    .select("data")
+    .select("data, titulo, descricao")
     .eq("processo_id", processoId)
     .order("data", { ascending: false })
     .limit(1)
@@ -72,7 +72,11 @@ async function recalcularUltimaMovimentacao(processoId: string) {
 
   await supabase
     .from("processos")
-    .update({ ultima_movimentacao: ultima?.data || null })
+    .update({
+      ultima_movimentacao: ultima?.data || null,
+      ultima_movimentacao_titulo: ultima?.titulo || null,
+      ultima_movimentacao_descricao: ultima?.descricao || null,
+    })
     .eq("id", processoId);
 }
 

@@ -66,9 +66,9 @@ function statusTarefaLabel(status: string): string {
 
 /** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
 const CORES_PRAZO_CARD = {
-  orange: { border: "border-orange-300/40", bg: "bg-orange-50 dark:bg-orange-950/20", texto: "text-orange-600", titulo: "text-orange-800/70 dark:text-orange-200/70", chipBg: "bg-orange-100 dark:bg-orange-900/40", chipTexto: "text-orange-700 dark:text-orange-300", icone: "bg-orange-200/60 text-orange-600" },
-  amber:  { border: "border-amber-300/40",  bg: "bg-amber-50 dark:bg-amber-950/20",  texto: "text-amber-600",  titulo: "text-amber-800/70 dark:text-amber-200/70",  chipBg: "bg-amber-100 dark:bg-amber-900/40",  chipTexto: "text-amber-700 dark:text-amber-300",  icone: "bg-amber-200/60 text-amber-600" },
-  red:    { border: "border-red-300/40",    bg: "bg-red-50 dark:bg-red-950/20",     texto: "text-red-600",     titulo: "text-red-800/70 dark:text-red-200/70",     chipBg: "bg-red-100 dark:bg-red-900/40",     chipTexto: "text-red-700 dark:text-red-300",     icone: "bg-red-200/60 text-red-600" },
+  green:  { border: "border-emerald-600/50", bg: "bg-emerald-500",  texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
+  orange: { border: "border-orange-600/50",  bg: "bg-orange-400",   texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
+  red:    { border: "border-red-600/50",     bg: "bg-red-500",      texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
 } as const;
 
 /** Card grande do Dashboard: mostra a contagem + a lista completa de tarefas daquele grupo (sempre visível, sem hover). */
@@ -85,32 +85,32 @@ function TarefaPrazoCard({ titulo, icon, cor, tarefas, onNavigate }: {
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <div className={`rounded-lg p-1.5 ${c.icone}`}>{icon}</div>
-          <span className={`text-xs font-bold uppercase tracking-wider ${c.titulo}`}>{titulo}</span>
+          <span className={`text-xs font-extrabold uppercase tracking-wider ${c.titulo}`}>{titulo}</span>
         </div>
         <span className={`font-display text-2xl font-black ${c.texto}`}>{tarefas.length}</span>
       </div>
 
       <div className="mt-3 flex-1 max-h-[320px] overflow-y-auto space-y-1.5 pr-0.5">
         {tarefas.length === 0 ? (
-          <div className="p-6 text-xs text-muted-foreground text-center">Nenhuma tarefa neste grupo. 🎉</div>
+          <div className="p-6 text-xs text-black/50 text-center font-semibold">Nenhuma tarefa neste grupo. 🎉</div>
         ) : (
           tarefas.map(t => (
             <div
               key={t.id}
               onClick={() => onNavigate?.("tarefas")}
-              className="rounded-lg bg-card/70 border border-border/50 px-3 py-2 cursor-pointer hover:bg-card transition-colors"
+              className="rounded-lg bg-white/85 border border-black/10 px-3 py-2 cursor-pointer hover:bg-white transition-colors"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-foreground truncate">{t.titulo}</span>
+                <span className="text-xs font-bold text-black truncate">{t.titulo}</span>
                 <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${c.chipBg} ${c.chipTexto}`}>
                   {statusTarefaLabel(t.status)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2 mt-1">
-                <span className="text-[0.68rem] font-mono text-muted-foreground truncate">
+                <span className="text-[0.68rem] font-mono text-black/60 font-semibold truncate">
                   {t.processo?.numero_cnj || t.numero_processo || "Sem processo vinculado"}
                 </span>
-                <span className={`text-[0.68rem] font-mono font-bold whitespace-nowrap shrink-0 ${c.texto}`}>
+                <span className={`text-[0.68rem] font-mono font-black whitespace-nowrap shrink-0 ${c.texto}`}>
                   {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
                 </span>
               </div>
@@ -554,14 +554,14 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         <TarefaPrazoCard
           titulo="Vencem Amanhã"
           icon={<Clock3 className="h-4 w-4" />}
-          cor="orange"
+          cor="green"
           tarefas={tarefasAVencer}
           onNavigate={onNavigate}
         />
         <TarefaPrazoCard
           titulo="Vencem Hoje"
           icon={<AlertCircle className="h-4 w-4" />}
-          cor="amber"
+          cor="orange"
           tarefas={tarefasVenceHoje}
           onNavigate={onNavigate}
         />
