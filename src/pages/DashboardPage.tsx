@@ -66,6 +66,32 @@ function statusTarefaLabel(status: string): string {
 }
 
 /** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
+// Cores fortes por fase do processo, agrupadas por etapa (early → final),
+// sempre com texto preto em negrito para máximo contraste/leitura rápida.
+const CORES_FASE: Record<string, string> = {
+  // Etapa inicial
+  "Novo Caso":               "bg-sky-400 text-black",
+  "Documentação Pendente":   "bg-amber-400 text-black",
+  "Petição Inicial":         "bg-indigo-400 text-black",
+  // Protocolo/tramitação
+  "Protocolado":             "bg-violet-400 text-black",
+  "Distribuído":             "bg-purple-400 text-black",
+  "Citado":                  "bg-fuchsia-400 text-black",
+  "Contestação":             "bg-pink-400 text-black",
+  // Instrução/audiências
+  "Audiência Designada":     "bg-orange-400 text-black",
+  "Audiência Realizada":     "bg-orange-500 text-black",
+  "Produção de Provas":      "bg-yellow-400 text-black",
+  // Decisão/recursos
+  "Sentença":                "bg-red-400 text-black",
+  "Recurso":                 "bg-rose-500 text-black",
+  "Trânsito em Julgado":     "bg-emerald-400 text-black",
+  // Final
+  "Cumprimento de Sentença": "bg-teal-400 text-black",
+  "Arquivado":               "bg-slate-400 text-black",
+  _default:                  "bg-accent text-black",
+};
+
 const CORES_PRAZO_CARD = {
   green:  { border: "border-emerald-600/50", bg: "bg-emerald-500",  texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
   orange: { border: "border-orange-600/50",  bg: "bg-orange-400",   texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
@@ -558,32 +584,35 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">📋 Processos por Fase</span>
             <span className="text-[0.65rem] text-muted-foreground">Clique numa fase para ver os processos</span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             {FASE_PROCESSO_OPTIONS
               .map(fase => ({ fase, count: processos.filter(p => p.fase === fase).length }))
               .filter(f => f.count > 0)
               .sort((a, b) => b.count - a.count)
-              .map(({ fase, count }) => (
-                <button
-                  key={fase}
-                  onClick={() => onNavigate?.("processos", { fase })}
-                  className="flex items-center gap-1.5 bg-accent/8 hover:bg-accent/15 border border-accent/20 hover:border-accent/40 rounded-full pl-3 pr-2 py-1.5 text-xs font-semibold text-foreground transition-colors"
-                >
-                  {fase}
-                  <span className="bg-accent/20 text-accent font-black rounded-full min-w-[20px] h-5 flex items-center justify-center text-[0.68rem] px-1">
-                    {count}
-                  </span>
-                </button>
-              ))}
+              .map(({ fase, count }) => {
+                const cor = CORES_FASE[fase] || CORES_FASE._default;
+                return (
+                  <button
+                    key={fase}
+                    onClick={() => onNavigate?.("processos", { fase })}
+                    className={`flex items-center gap-2 ${cor} rounded-xl pl-3.5 pr-2.5 py-2 text-sm font-extrabold shadow-sm hover:brightness-95 hover:-translate-y-0.5 transition-all`}
+                  >
+                    {fase}
+                    <span className="bg-black/15 rounded-full min-w-[24px] h-6 flex items-center justify-center text-sm font-black px-1.5">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             {(() => {
               const semFase = processos.filter(p => !p.fase).length;
               return semFase > 0 ? (
                 <button
                   onClick={() => onNavigate?.("processos")}
-                  className="flex items-center gap-1.5 bg-muted hover:bg-muted/70 border border-border rounded-full pl-3 pr-2 py-1.5 text-xs font-semibold text-muted-foreground transition-colors"
+                  className="flex items-center gap-2 bg-muted hover:bg-muted/70 border border-border rounded-xl pl-3.5 pr-2.5 py-2 text-sm font-extrabold text-muted-foreground transition-colors"
                 >
                   Sem fase informada
-                  <span className="bg-black/10 font-black rounded-full min-w-[20px] h-5 flex items-center justify-center text-[0.68rem] px-1">
+                  <span className="bg-black/10 rounded-full min-w-[24px] h-6 flex items-center justify-center text-sm font-black px-1.5">
                     {semFase}
                   </span>
                 </button>
