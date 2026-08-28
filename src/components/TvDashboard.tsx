@@ -110,8 +110,9 @@ export function TvDashboard({ onClose }: { onClose: () => void }) {
   ];
   const statusProcessos = [
     { name: "Ativos", value: processos.filter(p => p.status === "ativo").length, color: "#34d399" },
-    { name: "Pendentes", value: processos.filter(p => p.status === "pendente").length, color: "#fbbf24" },
-    { name: "Arquivados", value: processos.filter(p => p.status === "arquivado").length, color: "#64748b" },
+    { name: "Pausados", value: processos.filter(p => p.status === "pausado").length, color: "#fbbf24" },
+    { name: "Inativos", value: processos.filter(p => p.status === "inativo").length, color: "#f87171" },
+    { name: "Finalizados", value: processos.filter(p => p.status === "finalizado").length, color: "#64748b" },
   ];
 
   const intimacoesSemana = useMemo(() => {

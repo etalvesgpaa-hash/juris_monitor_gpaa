@@ -11,21 +11,18 @@ import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { X, Plus, ClipboardList } from "lucide-react";
 import type { Processo } from "@/hooks/useProcessos";
 import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
+import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 
 // ── Status badges ──────────────────────────────────────────────────────────────
 const STATUS_BADGE: Record<string, string> = {
-  "Ativo":                "bg-green-ok/10 text-green-ok border border-green-ok/20",
-  "Em Recurso":           "bg-blue-500/10 text-blue-700 border border-blue-200",
-  "Em Execução":          "bg-accent/10 text-accent border border-accent/20",
-  "Suspenso":             "bg-purple-500/10 text-purple-700 border border-purple-200",
-  "Transitado em Julgado":"bg-emerald-500/10 text-emerald-700 border border-emerald-200",
-  "Encerrado":            "bg-muted text-muted-foreground border border-border",
-  "Arquivado":            "bg-muted text-muted-foreground border border-border",
+  "Ativo":     "bg-green-ok/10 text-green-ok border border-green-ok/20",
+  "Pausado":   "bg-amber-500/10 text-amber-700 border border-amber-300/40",
+  "Inativo":   "bg-red-alert/10 text-red-alert border border-red-alert/20",
+  "Finalizado":"bg-muted text-muted-foreground border border-border",
 };
 
-const STATUS_OPTS = ["Ativo","Em Recurso","Em Execução","Suspenso","Transitado em Julgado","Encerrado","Arquivado"];
+const STATUS_OPTS = ["Ativo","Pausado","Inativo","Finalizado"];
 const AREAS = ["Cível","Criminal","Trabalhista","Previdenciário","Tributário","Administrativo","Família","Eleitoral"];
-const FASES_PROCESSO = ["Postulatória","Instrutória","Decisória","Recursal","Execução / Cumprimento de Sentença","Arquivamento Provisório"];
 
 // ── Tipo interno rico (estendendo Processo do Supabase) ───────────────────────
 interface ProcessoRico extends Processo {
@@ -233,7 +230,7 @@ export function ProcessosPage() {
         await createProcesso.mutateAsync({
           numero_cnj: form.numero_cnj,
           tribunal: tribunal.nome,
-          status: "ativo",
+          status: form.status.toLowerCase(),
           advogados: form.advogado || null,
           classe: form.classe.trim() || null,
           assunto: form.assunto.trim() || null,
@@ -464,7 +461,7 @@ export function ProcessosPage() {
 
                       {/* Status */}
                       <td className="px-4 py-3">
-                        {statusBadge(p.status === "ativo" ? "Ativo" : p.status === "arquivado" ? "Arquivado" : p.status || "Ativo")}
+                        {statusBadge(p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : "Ativo")}
                       </td>
 
                       {/* Ações */}
@@ -545,7 +542,7 @@ export function ProcessosPage() {
               <FG label="Fase do Processo">
                 <select value={form.fase} onChange={e => setForm(f => ({ ...f, fase: e.target.value }))} className="field">
                   <option value="">— Não informado —</option>
-                  {FASES_PROCESSO.map(f => <option key={f}>{f}</option>)}
+                  {FASE_PROCESSO_OPTIONS.map(f => <option key={f}>{f}</option>)}
                 </select>
               </FG>
               <FG label="Observações Internas (sigilo profissional)">
@@ -690,7 +687,7 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
                 <span className="text-xs font-bold text-muted-foreground shrink-0">{key}</span>
                 <span className="text-xs text-right">
                   {key === "Status"
-                    ? statusBadge(processo.status === "ativo" ? "Ativo" : processo.status || "Ativo")
+                    ? statusBadge(processo.status ? processo.status.charAt(0).toUpperCase() + processo.status.slice(1) : "Ativo")
                     : (val as string) || "—"}
                 </span>
               </div>

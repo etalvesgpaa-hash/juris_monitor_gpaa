@@ -54,12 +54,10 @@ function ultimaAtualizacaoCliente(processos: any[], clienteId: string): string |
 
 function statusBadge(status: string | null | undefined) {
   const map: Record<string, string> = {
-    ativo:     "bg-emerald-100 text-emerald-700",
-    ativa:     "bg-emerald-100 text-emerald-700",
-    encerrado: "bg-gray-100 text-gray-500",
-    pausado:   "bg-yellow-100 text-yellow-700",
-    inativo:   "bg-red-100 text-red-600",
-    arquivado: "bg-gray-100 text-gray-400",
+    ativo:      "bg-emerald-100 text-emerald-700",
+    pausado:    "bg-yellow-100 text-yellow-700",
+    inativo:    "bg-red-100 text-red-600",
+    finalizado: "bg-gray-100 text-gray-500",
   };
   const cls = map[status ?? ""] ?? "bg-gray-100 text-gray-500";
   return (

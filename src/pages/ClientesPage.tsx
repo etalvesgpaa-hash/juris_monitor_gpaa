@@ -39,6 +39,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
 import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
+import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,23 +99,7 @@ function formatPhone(tel: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const STATUS_PROCESSO_OPTIONS = [
-  "Novo Caso",
-  "Documentação Pendente",
-  "Petição Inicial",
-  "Protocolado",
-  "Distribuído",
-  "Citado",
-  "Contestação",
-  "Audiência Designada",
-  "Audiência Realizada",
-  "Produção de Provas",
-  "Sentença",
-  "Recurso",
-  "Trânsito em Julgado",
-  "Cumprimento de Sentença",
-  "Arquivado",
-] as const;
+const STATUS_PROCESSO_OPTIONS = FASE_PROCESSO_OPTIONS;
 
 export function ClientesPage() {
   const { user } = useAuth();

@@ -366,8 +366,9 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
 
   const processosStatusData = [
     { name: "Ativos", value: processos.filter(p => p.status === "ativo").length, color: "#0f766e" },
-    { name: "Arquivados", value: processos.filter(p => p.status === "arquivado").length, color: "#94a3b8" },
-    { name: "Pendentes", value: processos.filter(p => p.status === "pendente").length, color: "#c59a32" },
+    { name: "Pausados", value: processos.filter(p => p.status === "pausado").length, color: "#c59a32" },
+    { name: "Inativos", value: processos.filter(p => p.status === "inativo").length, color: "#dc2626" },
+    { name: "Finalizados", value: processos.filter(p => p.status === "finalizado").length, color: "#94a3b8" },
   ];
   const processosAtivosPercentual = processos.length
     ? Math.round((processosStatusData[0].value / processos.length) * 100)
