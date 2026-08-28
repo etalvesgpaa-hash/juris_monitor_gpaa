@@ -1,6 +1,6 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
-import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
+import { FASE_PROCESSO_OPTIONS, CORES_FASE } from "@/lib/statusProcesso";
 import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
 import { useClientes } from "@/hooks/useClientes";
 import { useFeriados } from "@/hooks/useFeriados";
@@ -68,29 +68,7 @@ function statusTarefaLabel(status: string): string {
 /** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
 // Cores fortes por fase do processo, agrupadas por etapa (early → final),
 // sempre com texto preto em negrito para máximo contraste/leitura rápida.
-const CORES_FASE: Record<string, string> = {
-  // Etapa inicial
-  "Novo Caso":               "bg-sky-400 text-black",
-  "Documentação Pendente":   "bg-amber-400 text-black",
-  "Petição Inicial":         "bg-indigo-400 text-black",
-  // Protocolo/tramitação
-  "Protocolado":             "bg-violet-400 text-black",
-  "Distribuído":             "bg-purple-400 text-black",
-  "Citado":                  "bg-fuchsia-400 text-black",
-  "Contestação":             "bg-pink-400 text-black",
-  // Instrução/audiências
-  "Audiência Designada":     "bg-orange-400 text-black",
-  "Audiência Realizada":     "bg-orange-500 text-black",
-  "Produção de Provas":      "bg-yellow-400 text-black",
-  // Decisão/recursos
-  "Sentença":                "bg-red-400 text-black",
-  "Recurso":                 "bg-rose-500 text-black",
-  "Trânsito em Julgado":     "bg-emerald-400 text-black",
-  // Final
-  "Cumprimento de Sentença": "bg-teal-400 text-black",
-  "Arquivado":               "bg-slate-400 text-black",
-  _default:                  "bg-accent text-black",
-};
+// Cores fortes por fase — importadas de src/lib/statusProcesso.ts (compartilhado com ProcessosPage)
 
 const CORES_PRAZO_CARD = {
   green:  { border: "border-emerald-600/50", bg: "bg-emerald-500",  texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },

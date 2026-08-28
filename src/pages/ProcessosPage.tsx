@@ -11,7 +11,7 @@ import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { X, Plus, ClipboardList } from "lucide-react";
 import type { Processo } from "@/hooks/useProcessos";
 import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
-import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
+import { FASE_PROCESSO_OPTIONS, CORES_FASE } from "@/lib/statusProcesso";
 
 // ── Status badges ──────────────────────────────────────────────────────────────
 const STATUS_BADGE: Record<string, string> = {
@@ -458,7 +458,7 @@ export function ProcessosPage({ filtroFaseInicial, onFiltroFaseConsumido }: Proc
                       {/* Fase do Processo */}
                       <td className="px-4 py-3 text-xs">
                         {p.fase ? (
-                          <span className="inline-block text-[0.65rem] font-semibold bg-purple-500/10 text-purple-600 border border-purple-400/25 rounded px-2 py-1">{p.fase}</span>
+                          <span className={`inline-block text-[0.65rem] font-extrabold rounded px-2 py-1 ${CORES_FASE[p.fase] || CORES_FASE._default}`}>{p.fase}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
@@ -707,7 +707,6 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
               ["Tribunal",        processo.tribunalNome || processo.tribunal],
               ["Classe",          processo.classe],
               ["Assunto",         processo.assunto],
-              ["Fase",            processo.fase],
               ["Vara / Órgão Julgador", processo.orgaoJulgador || processo.vara],
               ["Comarca",         processo.comarca],
               ["Valor da Causa",  processo.valor_causa != null ? `R$ ${Number(processo.valor_causa).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : null],
@@ -715,6 +714,7 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
               ["Polo Ativo",      autor],
               ["Polo Passivo",    reu],
               ["Advogado",        processo.advogados],
+              ["Fase",            null],
               ["Status",          null],
             ].map(([key, val]) => (
               <div key={key as string} className="flex justify-between items-start py-2 border-b border-border/40 gap-4">
@@ -722,6 +722,8 @@ function DetailPanel({ processo, onClose, onDelete, onCriarTarefa, statusBadge }
                 <span className="text-xs text-right">
                   {key === "Status"
                     ? statusBadge(processo.status ? processo.status.charAt(0).toUpperCase() + processo.status.slice(1) : "Ativo")
+                    : key === "Fase"
+                    ? (processo.fase ? <span className={`inline-block text-[0.65rem] font-extrabold rounded px-2 py-1 ${CORES_FASE[processo.fase] || CORES_FASE._default}`}>{processo.fase}</span> : "—")
                     : (val as string) || "—"}
                 </span>
               </div>
