@@ -1,5 +1,6 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
+import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
 import { useClientes } from "@/hooks/useClientes";
 import { useFeriados } from "@/hooks/useFeriados";
@@ -122,7 +123,7 @@ function TarefaPrazoCard({ titulo, icon, cor, tarefas, onNavigate }: {
   );
 }
 
-interface DashboardPageProps { onNavigate?: (page: PageId) => void; onOpenTv?: () => void; }
+interface DashboardPageProps { onNavigate?: (page: PageId, params?: { fase?: string }) => void; onOpenTv?: () => void; }
 
 type DashboardCardId = "intimacoes" | "processos" | "clientes" | "tarefas" | "a-vencer" | "vencidas";
 const DASHBOARD_ORDER_KEY = "jm_dashboard_card_order";
@@ -549,6 +550,48 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Processos por Fase — clicável, filtra a tela de Processos ── */}
+      {processos.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">📋 Processos por Fase</span>
+            <span className="text-[0.65rem] text-muted-foreground">Clique numa fase para ver os processos</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {FASE_PROCESSO_OPTIONS
+              .map(fase => ({ fase, count: processos.filter(p => p.fase === fase).length }))
+              .filter(f => f.count > 0)
+              .sort((a, b) => b.count - a.count)
+              .map(({ fase, count }) => (
+                <button
+                  key={fase}
+                  onClick={() => onNavigate?.("processos", { fase })}
+                  className="flex items-center gap-1.5 bg-accent/8 hover:bg-accent/15 border border-accent/20 hover:border-accent/40 rounded-full pl-3 pr-2 py-1.5 text-xs font-semibold text-foreground transition-colors"
+                >
+                  {fase}
+                  <span className="bg-accent/20 text-accent font-black rounded-full min-w-[20px] h-5 flex items-center justify-center text-[0.68rem] px-1">
+                    {count}
+                  </span>
+                </button>
+              ))}
+            {(() => {
+              const semFase = processos.filter(p => !p.fase).length;
+              return semFase > 0 ? (
+                <button
+                  onClick={() => onNavigate?.("processos")}
+                  className="flex items-center gap-1.5 bg-muted hover:bg-muted/70 border border-border rounded-full pl-3 pr-2 py-1.5 text-xs font-semibold text-muted-foreground transition-colors"
+                >
+                  Sem fase informada
+                  <span className="bg-black/10 font-black rounded-full min-w-[20px] h-5 flex items-center justify-center text-[0.68rem] px-1">
+                    {semFase}
+                  </span>
+                </button>
+              ) : null;
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ── Prazos: Amanhã / Hoje / Vencidas — cards grandes com a lista sempre visível ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5 mb-6">

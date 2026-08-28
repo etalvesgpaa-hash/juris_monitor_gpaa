@@ -392,6 +392,7 @@ export function ClientesPage() {
           partes: form.processoPartes.trim() || null,
           assunto: form.processoAssunto.trim() || null,
           vara: form.processoVara.trim() || null,
+          fase: form.status_processo || null,
         });
       }
 

@@ -137,11 +137,12 @@ export function useCriarOuVincularProcesso() {
       partes?: string | null;
       assunto?: string | null;
       vara?: string | null;
+      fase?: string | null;
     }) => {
       // Já existe um processo com esse número? Só vincula ao cliente.
       const { data: existente } = await supabase
         .from("processos")
-        .select("id, cliente_id, partes, assunto, vara")
+        .select("id, cliente_id, partes, assunto, vara, fase")
         .eq("numero_cnj", input.numero_cnj)
         .eq("user_id", user!.id)
         .maybeSingle();
@@ -155,6 +156,7 @@ export function useCriarOuVincularProcesso() {
             partes:  existente.partes  || input.partes  || null,
             assunto: existente.assunto || input.assunto || null,
             vara:    existente.vara    || input.vara    || null,
+            fase:    existente.fase    || input.fase    || null,
           })
           .eq("id", existente.id);
         if (error) throw error;
@@ -171,6 +173,7 @@ export function useCriarOuVincularProcesso() {
           partes: input.partes || null,
           assunto: input.assunto || null,
           vara: input.vara || null,
+          fase: input.fase || null,
           user_id: user!.id,
         })
         .select("id")

@@ -6,6 +6,7 @@ import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
 import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
 import { detectarTribunalCNJ } from "@/lib/cnj";
+import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 import { useCrearTarefaDelegada, useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
@@ -1498,6 +1499,7 @@ export function IntimacoesPage() {
                   partes: novoClienteIntimacao._partes || null,
                   assunto: novoClienteIntimacao._titulo || null,
                   vara: novoClienteIntimacao._orgaoJulgador || null,
+                  fase: dados.status_processo || null,
                 });
               } catch (err: any) {
                 toast.error(`Cliente criado, mas houve erro ao vincular o processo: ${err.message}`);
@@ -1793,12 +1795,7 @@ function NovoClienteModal({
   const partesRaw = intim._partes || (intim.Partes || intim.partes || "") as string;
   const primeiroNome = partesRaw.split(/[·×,]/)[0]?.trim() || "";
 
-  const STATUS_PROCESSO_OPTIONS = [
-    "Novo Caso", "Documentação Pendente", "Petição Inicial", "Protocolado",
-    "Distribuído", "Citado", "Contestação", "Audiência Designada",
-    "Audiência Realizada", "Produção de Provas", "Sentença", "Recurso",
-    "Trânsito em Julgado", "Cumprimento de Sentença", "Arquivado",
-  ];
+  const STATUS_PROCESSO_OPTIONS = FASE_PROCESSO_OPTIONS;
 
   const [form, setForm] = React.useState({
     nome: primeiroNome,

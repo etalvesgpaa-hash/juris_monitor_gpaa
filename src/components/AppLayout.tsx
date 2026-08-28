@@ -24,6 +24,7 @@ export function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jm_sidebar_collapsed") === "true");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tvOpen, setTvOpen] = useState(false);
+  const [processosFiltroFase, setProcessosFiltroFase] = useState<string | null>(null);
   const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
@@ -33,10 +34,15 @@ export function AppLayout() {
     localStorage.setItem("jm_sidebar_collapsed", String(collapsed));
   };
 
+  const navegarPara = (page: PageId, params?: { fase?: string }) => {
+    if (page === "processos" && params?.fase) setProcessosFiltroFase(params.fase);
+    setActivePage(page);
+  };
+
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard":    return <DashboardPage onNavigate={setActivePage} onOpenTv={() => setTvOpen(true)} />;
-      case "processos":    return <ProcessosPage />;
+      case "dashboard":    return <DashboardPage onNavigate={navegarPara} onOpenTv={() => setTvOpen(true)} />;
+      case "processos":    return <ProcessosPage filtroFaseInicial={processosFiltroFase} onFiltroFaseConsumido={() => setProcessosFiltroFase(null)} />;
       case "intimacoes":   return <IntimacoesPage />;
       case "notificacoes": return <NotificacoesPage />;
       case "honorarios":   return <HonorariosPage />;

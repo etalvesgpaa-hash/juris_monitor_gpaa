@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useProcessos, useCreateProcesso, useDeleteProcesso, useUpdateProcesso, useMovimentacoes, useCreateMovimentacao, useDeleteMovimentacao } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
@@ -37,7 +37,14 @@ interface ProcessoRico extends Processo {
 }
 
 // ── Componente Principal ──────────────────────────────────────────────────────
-export function ProcessosPage() {
+interface ProcessosPageProps {
+  /** Fase pré-selecionada ao navegar a partir do card "Processos por Fase" do Dashboard. */
+  filtroFaseInicial?: string | null;
+  /** Chamado assim que o filtro inicial é aplicado, pra o AppLayout limpar o estado. */
+  onFiltroFaseConsumido?: () => void;
+}
+
+export function ProcessosPage({ filtroFaseInicial, onFiltroFaseConsumido }: ProcessosPageProps = {}) {
   const { data: rawProcessos = [], isLoading, refetch } = useProcessos();
   const { user, isAdmin } = useAuth();
   const { data: clientes = [] } = useClientes();
@@ -111,6 +118,16 @@ export function ProcessosPage() {
   );
   const [search, setSearch]       = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterFase, setFilterFase] = useState("");
+
+  // Chegou um filtro de fase vindo do Dashboard (card "Processos por Fase")?
+  useEffect(() => {
+    if (filtroFaseInicial) {
+      setFilterFase(filtroFaseInicial);
+      onFiltroFaseConsumido?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroFaseInicial]);
   const [panelProcesso, setPanelProcesso] = useState<ProcessoRico | null>(null);
   const [showForm, setShowForm]   = useState(false);
   const [editId, setEditId]       = useState<string | null>(null);
@@ -282,7 +299,8 @@ export function ProcessosPage() {
 
   const filtered = processos.filter(p =>
     (!search || p.numero_cnj.includes(search) || (p.advogados || "").toLowerCase().includes(search.toLowerCase()) || (p.partes || "").toLowerCase().includes(search.toLowerCase())) &&
-    (!filterStatus || p.status === filterStatus.toLowerCase() || p.status === filterStatus)
+    (!filterStatus || p.status === filterStatus.toLowerCase() || p.status === filterStatus) &&
+    (!filterFase || p.fase === filterFase)
   );
 
   const statusBadge = (status: string) => {
@@ -330,6 +348,22 @@ export function ProcessosPage() {
             <option value="">Todos os status</option>
             {STATUS_OPTS.map(s => <option key={s}>{s}</option>)}
           </select>
+          <select
+            value={filterFase}
+            onChange={e => setFilterFase(e.target.value)}
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-background outline-none focus:border-accent"
+          >
+            <option value="">Todas as fases</option>
+            {FASE_PROCESSO_OPTIONS.map(f => <option key={f}>{f}</option>)}
+          </select>
+          {filterFase && (
+            <button
+              onClick={() => setFilterFase("")}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              limpar filtro de fase
+            </button>
+          )}
         </div>
 
         {/* Tabela */}
