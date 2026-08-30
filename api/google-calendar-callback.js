@@ -47,8 +47,8 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        client_id: (process.env.GOOGLE_CLIENT_ID || '').trim(),
+        client_secret: (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
@@ -57,7 +57,13 @@ export default async function handler(req, res) {
     if (!tokenResp.ok || !tokenData.access_token) {
       console.error('[google-calendar-callback] Erro ao trocar code por token:', tokenData);
       const detalhe = tokenData.error_description || tokenData.error || 'motivo desconhecido';
-      res.writeHead(302, { Location: paginaDeRetorno(appOrigin, 'erro', `Falha ao conectar com o Google: ${detalhe}`) });
+      // Diagnóstico temporário (não expõe o secret): mostra só o client_id
+      // usado e o tamanho do secret, pra confirmar se a Vercel está enviando
+      // o valor certo sem revelar o valor em si.
+      const cidUsado = (process.env.GOOGLE_CLIENT_ID || '(vazio)').trim();
+      const secretLen = (process.env.GOOGLE_CLIENT_SECRET || '').trim().length;
+      const diag = `client_id_usado=${cidUsado} | tamanho_do_secret=${secretLen}`;
+      res.writeHead(302, { Location: paginaDeRetorno(appOrigin, 'erro', `Falha ao conectar com o Google: ${detalhe} [${diag}]`) });
       return res.end();
     }
 
