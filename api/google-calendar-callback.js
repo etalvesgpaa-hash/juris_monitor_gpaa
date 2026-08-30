@@ -56,7 +56,8 @@ export default async function handler(req, res) {
     const tokenData = await tokenResp.json();
     if (!tokenResp.ok || !tokenData.access_token) {
       console.error('[google-calendar-callback] Erro ao trocar code por token:', tokenData);
-      res.writeHead(302, { Location: paginaDeRetorno(appOrigin, 'erro', 'Falha ao conectar com o Google.') });
+      const detalhe = tokenData.error_description || tokenData.error || 'motivo desconhecido';
+      res.writeHead(302, { Location: paginaDeRetorno(appOrigin, 'erro', `Falha ao conectar com o Google: ${detalhe}`) });
       return res.end();
     }
 
