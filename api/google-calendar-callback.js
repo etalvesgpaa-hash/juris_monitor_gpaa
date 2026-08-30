@@ -14,7 +14,11 @@ function paginaDeRetorno(origin, status, mensagem) {
 export default async function handler(req, res) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-  const appOrigin = process.env.APP_ORIGIN || `https://${req.headers.host}`;
+  // Importante: usa o host real da requisição, não a variável APP_ORIGIN.
+  // O Google exige que o redirect_uri usado aqui seja IDÊNTICO ao usado na
+  // tela de autorização (que o frontend monta com window.location.origin) —
+  // se APP_ORIGIN estiver desatualizada/errada, a troca do code por token falha.
+  const appOrigin = `https://${req.headers.host}`;
 
   const { code, state, error: googleError } = req.query || {};
 
