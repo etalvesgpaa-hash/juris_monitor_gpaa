@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      google_calendar_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          access_token: string
+          refresh_token: string
+          expires_at: string
+          google_email: string | null
+          calendar_id: string
+          last_sync_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          access_token: string
+          refresh_token: string
+          expires_at: string
+          google_email?: string | null
+          calendar_id?: string
+          last_sync_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          access_token?: string
+          refresh_token?: string
+          expires_at?: string
+          google_email?: string | null
+          calendar_id?: string
+          last_sync_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
           id: string
@@ -332,6 +371,7 @@ export type Database = {
           created_at: string
           data_vencimento: string | null
           descricao: string | null
+          google_event_id: string | null
           id: string
           numero_processo: string | null
           prioridade: string
@@ -346,6 +386,7 @@ export type Database = {
           created_at?: string
           data_vencimento?: string | null
           descricao?: string | null
+          google_event_id?: string | null
           id?: string
           numero_processo?: string | null
           prioridade?: string
@@ -360,6 +401,7 @@ export type Database = {
           created_at?: string
           data_vencimento?: string | null
           descricao?: string | null
+          google_event_id?: string | null
           id?: string
           numero_processo?: string | null
           prioridade?: string

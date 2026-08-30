@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getGroqModelPreferido, setGroqModelPreferido, MODEL_FALLBACK_CHAIN } from "@/lib/groqClient";
 import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
+import { GoogleAgendaTab } from "@/components/GoogleAgendaTab";
 
 export function ConfigPage() {
   const { user } = useAuth();
@@ -699,6 +700,7 @@ export function ConfigPage() {
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
           <TabsTrigger value="email">E-mail</TabsTrigger>
+          <TabsTrigger value="google-agenda">Google Agenda</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
           <TabsTrigger value="diagnostico">Diagnóstico AASP</TabsTrigger>
           <TabsTrigger value="sincronizacao">Sincronização</TabsTrigger>
@@ -1223,6 +1225,10 @@ export function ConfigPage() {
               </form>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="google-agenda" className="space-y-4">
+          <GoogleAgendaTab />
         </TabsContent>
 
         <TabsContent value="integracoes" className="space-y-4">

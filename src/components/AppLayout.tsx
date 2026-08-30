@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
+import { useGoogleCalendarPull } from "@/hooks/useGoogleCalendarSync";
 import { TopNav } from "./TopNav";
 import { AppSidebar } from "./AppSidebar";
 import { TarefasVencendoModal } from "./TarefasVencendoModal";
@@ -28,6 +29,7 @@ export function AppLayout() {
   const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
+  useGoogleCalendarPull();
 
   const handleSidebarCollapsed = (collapsed: boolean) => {
     setSidebarCollapsed(collapsed);
