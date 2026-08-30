@@ -856,21 +856,23 @@ export function IntimacoesPage() {
           titulo: data.titulo,
           descricao: data.descricao || undefined,
           data_vencimento: data.data_vencimento || undefined,
+          hora_vencimento: data.hora_vencimento || undefined,
           prioridade: data.prioridade,
           status: data.status || "triagem",
           processo_id: data.processo_id || undefined,
           numero_processo: data.numero_processo || undefined,
           delegado_para: data.delegado_para,
-        });
+        } as any);
       } else {
         await createTarefa.mutateAsync({
           titulo: data.titulo,
           descricao: data.descricao || null,
           data_vencimento: data.data_vencimento || null,
+          hora_vencimento: data.hora_vencimento || null,
           prioridade: data.prioridade,
           status: data.status || "triagem",
           processo_id: data.processo_id || null,
-        });
+        } as any);
         toast.success("Tarefa criada com sucesso!");
       }
       setShowTaskModal(false);

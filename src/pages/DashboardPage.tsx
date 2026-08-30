@@ -398,9 +398,10 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
     try {
       await createTarefa.mutateAsync({
         titulo: data.titulo, descricao: data.descricao || null,
-        data_vencimento: data.data_vencimento || null, prioridade: data.prioridade,
+        data_vencimento: data.data_vencimento || null, hora_vencimento: data.hora_vencimento || null,
+        prioridade: data.prioridade,
         processo_id: data.processo_id || null, status: data.status || "pendente",
-      });
+      } as any);
       toast({ title: "✅ Tarefa criada!" });
       setShowCreateTaskModal(false);
       setTaskModalInitialData(null);

@@ -78,6 +78,7 @@ export function ProcessosPage({ filtroFaseInicial, onFiltroFaseConsumido }: Proc
         titulo: data.titulo,
         descricao: data.descricao || null,
         data_vencimento: data.data_vencimento || null,
+        hora_vencimento: data.hora_vencimento || null,
         prioridade: data.prioridade,
         status: data.status || "triagem",
         processo_id: processoParaTarefa?.id || null,

@@ -43,6 +43,7 @@ export interface DelegacaoInput {
   status: string;
   prioridade: string;
   data_vencimento?: string;
+  hora_vencimento?: string;
   processo_id?: string;
   delegado_para: string;   // userId do destinatário
 }
@@ -205,12 +206,13 @@ export function useCrearTarefaDelegada() {
           status:                  input.status,
           prioridade:              input.prioridade,
           data_vencimento:         input.data_vencimento || null,
+          hora_vencimento:         input.hora_vencimento || null,
           processo_id:             input.processo_id || null,
           user_id:                 input.delegado_para,
           criado_por:              user!.id,
           delegado_para:           input.delegado_para,
           lida_pelo_destinatario:  false,
-        })
+        } as any)
         .select("*")
         .single();
 
