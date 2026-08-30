@@ -60,17 +60,50 @@ async function getValidAccessToken(supabase, userId) {
 }
 
 function tarefaParaEventoGoogle(tarefa) {
-  const dataVenc = tarefa.data_vencimento ? tarefa.data_vencimento.slice(0, 10) : null;
-  return {
+  const desc = [
+    tarefa.descricao || '',
+    tarefa.numero_processo ? `Processo: ${tarefa.numero_processo}` : '',
+    '\n(Sincronizado automaticamente pelo JurisMonitor)',
+  ].filter(Boolean).join('\n');
+
+  const base = {
     summary: tarefa.titulo,
-    description: [
-      tarefa.descricao || '',
-      tarefa.numero_processo ? `Processo: ${tarefa.numero_processo}` : '',
-      '\n(Sincronizado automaticamente pelo JurisMonitor)',
-    ].filter(Boolean).join('\n'),
-    start: dataVenc ? { date: dataVenc } : undefined,
-    end: dataVenc ? { date: dataVenc } : undefined,
+    description: desc,
     extendedProperties: { private: { jurismonitor_tarefa_id: tarefa.id } },
+  };
+
+  if (!tarefa.data_vencimento) return { ...base, start: undefined, end: undefined };
+
+  const dataVenc = tarefa.data_vencimento.slice(0, 10); // "YYYY-MM-DD"
+
+  // Tem horário definido? Cria um evento COM horário específico.
+  if (tarefa.hora_vencimento) {
+    const dateTimeInicio = `${dataVenc}T${tarefa.hora_vencimento}:00`;
+    // Duração padrão de 30 min pro compromisso não ficar "zerado" na agenda
+    const [h, m] = tarefa.hora_vencimento.split(':').map(Number);
+    const fimData = new Date(`${dataVenc}T00:00:00`);
+    fimData.setHours(h, (m || 0) + 30);
+    const dateTimeFim = `${dataVenc}T${String(fimData.getHours()).padStart(2, '0')}:${String(fimData.getMinutes()).padStart(2, '0')}:00`;
+
+    return {
+      ...base,
+      start: { dateTime: dateTimeInicio, timeZone: 'America/Sao_Paulo' },
+      end: { dateTime: dateTimeFim, timeZone: 'America/Sao_Paulo' },
+    };
+  }
+
+  // Sem horário: evento de dia inteiro. A API do Google trata o "end.date"
+  // como EXCLUSIVO — por isso precisa ser o dia SEGUINTE, senão alguns
+  // calendários renderizam o evento incorretamente "vazando" pro dia anterior.
+  const inicio = new Date(`${dataVenc}T00:00:00`);
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 1);
+  const paraISODate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  return {
+    ...base,
+    start: { date: paraISODate(inicio) },
+    end: { date: paraISODate(fim) },
   };
 }
 
@@ -177,14 +210,27 @@ export default async function handler(req, res) {
         .update({ last_sync_at: new Date().toISOString() })
         .eq('user_id', user.id);
 
-      const eventos = (data.items || []).map(ev => ({
-        google_event_id: ev.id,
-        status: ev.status, // 'cancelled' quando apagado no Google
-        titulo: ev.summary || '(sem título)',
-        descricao: ev.description || null,
-        data: ev.start?.date || ev.start?.dateTime?.slice(0, 10) || null,
-        tarefa_id_vinculada: ev.extendedProperties?.private?.jurismonitor_tarefa_id || null,
-      }));
+      const eventos = (data.items || []).map(ev => {
+        // Se o evento tem horário (dateTime), extrai no fuso de São Paulo pra
+        // não voltar com horas erradas quando importado de volta pra tarefa.
+        let hora = null;
+        if (ev.start?.dateTime) {
+          try {
+            hora = new Date(ev.start.dateTime).toLocaleTimeString('pt-BR', {
+              hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo',
+            });
+          } catch (_) { /* mantém null se der erro de parse */ }
+        }
+        return {
+          google_event_id: ev.id,
+          status: ev.status, // 'cancelled' quando apagado no Google
+          titulo: ev.summary || '(sem título)',
+          descricao: ev.description || null,
+          data: ev.start?.date || ev.start?.dateTime?.slice(0, 10) || null,
+          hora,
+          tarefa_id_vinculada: ev.extendedProperties?.private?.jurismonitor_tarefa_id || null,
+        };
+      });
 
       return res.status(200).json({ success: true, eventos });
     }

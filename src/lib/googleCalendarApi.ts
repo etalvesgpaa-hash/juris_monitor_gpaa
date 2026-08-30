@@ -33,6 +33,7 @@ export async function pushTarefaParaGoogle(tarefa: {
   titulo: string;
   descricao?: string | null;
   data_vencimento?: string | null;
+  hora_vencimento?: string | null;
   numero_processo?: string | null;
   google_event_id?: string | null;
 }) {
@@ -48,7 +49,7 @@ export async function removerEventoDoGoogle(googleEventId: string | null | undef
 
 /** Busca mudanças feitas direto no Google Agenda (chamado só com o app aberto). */
 export async function puxarMudancasDoGoogle(): Promise<
-  { google_event_id: string; status: string; titulo: string; descricao: string | null; data: string | null; tarefa_id_vinculada: string | null }[]
+  { google_event_id: string; status: string; titulo: string; descricao: string | null; data: string | null; hora: string | null; tarefa_id_vinculada: string | null }[]
 > {
   const data = await chamarSync({ action: "pull" });
   return data?.eventos || [];

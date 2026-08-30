@@ -72,7 +72,8 @@ export function useGoogleCalendarPull() {
               titulo: ev.titulo,
               data_vencimento: ev.data,
               descricao: ev.descricao,
-            })
+              ...(ev.hora ? { hora_vencimento: ev.hora } : {}),
+            } as any)
             .eq("id", tarefaVinculada.id);
           houveMudanca = true;
         } else if (ev.tarefa_id_vinculada) {
@@ -87,10 +88,11 @@ export function useGoogleCalendarPull() {
             titulo: ev.titulo,
             descricao: ev.descricao,
             data_vencimento: ev.data,
+            ...(ev.hora ? { hora_vencimento: ev.hora } : {}),
             status: "triagem",
             prioridade: "media",
             google_event_id: ev.google_event_id,
-          });
+          } as any);
           houveMudanca = true;
         }
       }
