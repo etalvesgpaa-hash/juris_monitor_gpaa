@@ -37,7 +37,7 @@ import { supabase } from "@/lib/supabase";
 import { INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { useAuth } from "@/hooks/useAuth";
 import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
-import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
+import { useCriarOuVincularProcesso, useProcessos } from "@/hooks/useProcessos";
 import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
 import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 
@@ -105,6 +105,7 @@ export function ClientesPage() {
   const { user } = useAuth();
   const nomeAdvogado = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Dr.(a)";
   const { data: clientes = [], isLoading, refetch } = useClientes();
+  const { data: processosExistentes = [] } = useProcessos();
   const createCliente = useCreateCliente();
   const updateCliente = useUpdateCliente();
   const deleteCliente = useDeleteCliente();
@@ -351,6 +352,16 @@ export function ClientesPage() {
       if (!tribunalDetectado) {
         toast({ title: "Número CNJ inválido", description: "Verifique o número do processo — tribunal não reconhecido.", variant: "destructive" });
         return;
+      }
+      // Avisa se esse número já está vinculado a OUTRO cliente
+      const processoExistente = processosExistentes.find(p => p.numero_cnj === form.processoNumero.trim());
+      if (processoExistente?.cliente_id) {
+        const clienteAtual = clientes.find(c => c.id === processoExistente.cliente_id);
+        const confirmar = window.confirm(
+          `⚠️ O processo ${form.processoNumero} já está vinculado ao cliente "${clienteAtual?.nome || "outro cliente"}".\n\n` +
+          `Se continuar, esse processo passa a ficar vinculado ao NOVO cliente também. Tem certeza?`
+        );
+        if (!confirmar) return;
       }
     }
 
@@ -928,6 +939,16 @@ export function ClientesPage() {
                     placeholder="Ex: 3ª Vara Cível"
                   />
                 </div>
+                {form.processoNumero && (() => {
+                  const existente = processosExistentes.find(p => p.numero_cnj === form.processoNumero.trim());
+                  if (!existente) return null;
+                  const clienteDoProcesso = existente.cliente_id ? clientes.find(c => c.id === existente.cliente_id) : null;
+                  return (
+                    <div className="text-xs text-red-alert font-semibold mt-2">
+                      ⚠️ Esse número já existe{clienteDoProcesso ? ` — vinculado ao cliente "${clienteDoProcesso.nome}"` : " na tela de Processos"}.
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div className="border border-border rounded-xl p-4 bg-muted/30">

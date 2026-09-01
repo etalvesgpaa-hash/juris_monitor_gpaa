@@ -23,13 +23,11 @@ export function ConfigPage() {
     escritorio: "" 
   });
   const [apiKeys, setApiKeys] = useState({
-    datajud_token: "",
     aasp_chave: "",
     groq_api_key: "",
     whatsapp_token: "",
   });
   const [showKeys, setShowKeys] = useState({
-    datajud_token: false,
     aasp_chave: false,
     groq_api_key: false,
     whatsapp_token: false,
@@ -60,7 +58,6 @@ export function ConfigPage() {
 
   const [loading, setLoading] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
-  const [testingDatajud, setTestingDatajud] = useState(false);
   const [testingAasp, setTestingAasp] = useState(false);
   const [testingGroq, setTestingGroq] = useState(false);
   const [groqModel, setGroqModelState] = useState(getGroqModelPreferido());
@@ -106,7 +103,6 @@ export function ConfigPage() {
       .then(({ data }) => {
         if (data) {
           setApiKeys({
-            datajud_token: data.datajud_token || "",
             aasp_chave: data.aasp_chave || "",
             groq_api_key: data.groq_api_key || "",
             whatsapp_token: data.whatsapp_token || "",
@@ -285,7 +281,6 @@ export function ConfigPage() {
         const { error: updateError } = await supabase
           .from("api_keys")
           .update({
-            datajud_token: apiKeys.datajud_token || null,
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
@@ -301,7 +296,6 @@ export function ConfigPage() {
           .insert({
             id: generateId(),
             user_id: user.id,
-            datajud_token: apiKeys.datajud_token || null,
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
@@ -312,15 +306,13 @@ export function ConfigPage() {
         if (insertError) {
           console.error("Erro ao inserir:", insertError);
           if (insertError.message.includes("api_keys")) {
-            throw new Error("Tabela 'api_keys' não existe. Crie a tabela no Supabase com as colunas: id, user_id, datajud_token, aasp_chave, groq_api_key, whatsapp_token");
+            throw new Error("Tabela 'api_keys' não existe. Crie a tabela no Supabase com as colunas: id, user_id, aasp_chave, groq_api_key, whatsapp_token");
           }
           throw insertError;
         }
       }
 
       // Persiste no localStorage para que as páginas leiam mesmo sem nova query ao Supabase
-      if (apiKeys.datajud_token) localStorage.setItem("jurismonitor_datajud_token", apiKeys.datajud_token);
-      else localStorage.removeItem("jurismonitor_datajud_token");
       if (apiKeys.aasp_chave) localStorage.setItem("jurismonitor_aasp_key", apiKeys.aasp_chave);
       else localStorage.removeItem("jurismonitor_aasp_key");
       if (apiKeys.groq_api_key) localStorage.setItem("jurismonitor_groq_key", apiKeys.groq_api_key);
@@ -341,51 +333,6 @@ export function ConfigPage() {
 
   const toggleShowKey = (key: keyof typeof showKeys) => {
     setShowKeys({ ...showKeys, [key]: !showKeys[key] });
-  };
-
-  const testDatajudConnection = async () => {
-    const token = apiKeys.datajud_token.trim() || localStorage.getItem("jurismonitor_datajud_token")?.trim() || "";
-    if (!token) {
-      toast({ title: "Token não configurado", description: "Informe o token do DataJud e salve.", variant: "destructive" });
-      return;
-    }
-
-    setTestingDatajud(true);
-    try {
-      // Passa pelo proxy (evita CORS) e envia o token como header Authorization
-      // O proxy.js repassa req.headers['authorization'] para a API do Datajud
-      const targetUrl = "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search";
-      const proxyUrl  = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-      const res = await fetch(proxyUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `ApiKey ${token}`,
-        },
-        body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
-        signal: AbortSignal.timeout(20000),
-      });
-
-      // Lê o status real vindo do upstream (proxy devolve como header)
-      const upstreamStatus = Number(res.headers.get("X-Upstream-Status") || res.status);
-
-      if (upstreamStatus === 200 || upstreamStatus === 404) {
-        // 404 = processo não encontrado (esperado), mas a API respondeu = token OK
-        toast({ title: "✅ DataJud CNJ conectado!", description: `Token válido — API respondendo normalmente.` });
-      } else if (upstreamStatus === 401 || upstreamStatus === 403) {
-        toast({ title: `❌ Token inválido (HTTP ${upstreamStatus})`, description: "O token foi recusado pelo DataJud. Verifique se está correto e ativo.", variant: "destructive" });
-      } else {
-        toast({ title: `⚠️ DataJud retornou HTTP ${upstreamStatus}`, description: "Resposta inesperada da API. Tente novamente.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({
-        title: "❌ Não foi possível conectar ao DataJud",
-        description: "Verifique sua conexão. Em desenvolvimento local o proxy pode não estar ativo.",
-        variant: "destructive",
-      });
-    } finally {
-      setTestingDatajud(false);
-    }
   };
 
   const testAaspConnection = async () => {
@@ -677,7 +624,6 @@ export function ConfigPage() {
 
   const getConnectionStatus = () => {
     return {
-      datajud: !!apiKeys.datajud_token,
       aasp: !!apiKeys.aasp_chave,
       groq: !!apiKeys.groq_api_key,
       whatsapp: !!apiKeys.whatsapp_token,
@@ -767,57 +713,6 @@ export function ConfigPage() {
             
             <form onSubmit={(e) => e.preventDefault()} autoComplete="off">
             <div className="space-y-4">
-              {/* DataJud CNJ */}
-              <div className="border border-border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold">DataJud CNJ</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Token de acesso ao DataJud do CNJ
-                    </p>
-                  </div>
-                  {status.datajud ? (
-                    <CheckCircle className="h-5 w-5 text-green-ok" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    type={showKeys.datajud_token ? "text" : "password"}
-                    value={apiKeys.datajud_token}
-                    onChange={(e) => setApiKeys({ ...apiKeys, datajud_token: e.target.value })}
-                    placeholder="Token CNJ DataJud"
-                    className="pr-10 font-mono text-sm"
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey("datajud_token")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showKeys.datajud_token ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <div className="mt-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={testDatajudConnection}
-                    disabled={testingDatajud || !apiKeys.datajud_token}
-                  >
-                    {testingDatajud ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Testando...
-                      </>
-                    ) : (
-                      <>⚡ Testar Conexão</>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
               {/* AASP - Novo Layout */}
               <div className="border-2 border-accent/30 rounded-xl p-5 bg-gradient-to-br from-card to-accent/5">
                 <div className="flex items-start gap-3 mb-4">
@@ -1236,11 +1131,6 @@ export function ConfigPage() {
             <h2 className="font-display text-xl font-bold mb-4">Status das Integrações</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <IntegrationCard
-                title="DataJud CNJ"
-                description="Consulta processual automática"
-                status={status.datajud}
-              />
               <IntegrationCard
                 title="AASP Intimações"
                 description="Importação automática de intimações"

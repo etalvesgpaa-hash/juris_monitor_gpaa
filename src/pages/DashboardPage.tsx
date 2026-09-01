@@ -10,7 +10,8 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, AlertCircle, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ArrowRight, AlertCircle, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, DollarSign, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
@@ -152,6 +153,24 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const { toast } = useToast();
+
+  // ── Financeiro Atrasado ──────────────────────────────────────────────────
+  const [showFinanceiroModal, setShowFinanceiroModal] = useState(false);
+  const { data: lancamentosFinanceiro = [] } = useQuery({
+    queryKey: ["financeiro-dashboard", user?.id],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("financeiro").select("*");
+      if (error) throw error;
+      return data as any[];
+    },
+    enabled: !!user,
+  });
+  const financeiroAtrasado = lancamentosFinanceiro.filter((l: any) => {
+    if (l.status === "recebido") return false;
+    const hoje = new Date().toISOString().slice(0, 10);
+    return l.data_vencimento && l.data_vencimento.slice(0, 10) < hoje;
+  });
+  const valorTotalAtrasado = financeiroAtrasado.reduce((soma: number, l: any) => soma + Number(l.valor || 0), 0);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
   const [organizingCards, setOrganizingCards] = useState(false);
@@ -474,7 +493,7 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
         </div>
       )}
       {/* ── Linha compacta: Intimações / Processos / Clientes / Tarefas (totais) ── */}
-      <div className={`relative z-10 mb-4 grid grid-cols-2 gap-2.5 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-4 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-4 sm:px-7 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
+      <div className={`relative z-10 mb-4 grid grid-cols-2 gap-2.5 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-4 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-5 sm:px-7 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
         {/* Intimações de HOJE */}
         <div
           {...cardContainerProps("intimacoes")}
@@ -554,7 +573,71 @@ export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
             </span>
           </div>
         </div>
+
+        {/* Financeiro Atrasado */}
+        <div
+          onClick={() => financeiroAtrasado.length > 0 && setShowFinanceiroModal(true)}
+          className={`group relative overflow-hidden rounded-xl border px-3.5 py-3 transition-all hover:-translate-y-0.5 ${
+            financeiroAtrasado.length > 0
+              ? "cursor-pointer border-red-500/60 bg-red-500"
+              : "border-white/10 bg-white/[0.04]"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className={`text-[0.62rem] font-extrabold uppercase tracking-[0.1em] ${financeiroAtrasado.length > 0 ? "text-black/70" : "text-white/50"}`}>Financeiro Atrasado</div>
+            <DollarSign className={`h-3.5 w-3.5 shrink-0 ${financeiroAtrasado.length > 0 ? "text-black" : "text-white/40"}`} />
+          </div>
+          <div className={`font-display text-2xl font-black leading-tight mt-1 ${financeiroAtrasado.length > 0 ? "text-black" : "text-white"}`}>
+            {financeiroAtrasado.length}
+            {financeiroAtrasado.length > 0 && (
+              <span className="ml-1.5 align-middle text-[0.62rem] font-black bg-black/15 rounded-full px-1.5 py-0.5">
+                {valorTotalAtrasado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Modal: Lançamentos financeiros atrasados */}
+      {showFinanceiroModal && (
+        <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4" onClick={() => setShowFinanceiroModal(false)}>
+          <div className="bg-card rounded-2xl border border-red-alert/30 shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div>
+                <div className="font-display text-lg font-bold text-red-alert">⚠️ Financeiro Atrasado</div>
+                <div className="text-xs text-muted-foreground">
+                  {financeiroAtrasado.length} lançamento(s) — total {valorTotalAtrasado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </div>
+              </div>
+              <button onClick={() => setShowFinanceiroModal(false)} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-2">
+              {financeiroAtrasado.map((l: any) => (
+                <div
+                  key={l.id}
+                  onClick={() => { setShowFinanceiroModal(false); onNavigate?.("financeiro"); }}
+                  className="rounded-lg bg-red-alert/5 border border-red-alert/20 px-3 py-2.5 cursor-pointer hover:bg-red-alert/10 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-foreground truncate">{l.cliente_nome}</span>
+                    <span className="text-sm font-black text-red-alert whitespace-nowrap">
+                      {Number(l.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <span className="text-xs text-muted-foreground truncate">{l.tipo}{l.processo ? ` · ${l.processo}` : ""}</span>
+                    <span className="text-xs font-mono font-bold text-red-alert whitespace-nowrap">
+                      venceu {l.data_vencimento.slice(0,10).split("-").reverse().join("/")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Processos por Fase — clicável, filtra a tela de Processos ── */}
       {processos.length > 0 && (

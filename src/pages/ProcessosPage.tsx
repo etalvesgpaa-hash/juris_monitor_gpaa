@@ -213,6 +213,18 @@ export function ProcessosPage({ filtroFaseInicial, onFiltroFaseConsumido }: Proc
     const tribunal = detectarTribunalCNJ(form.numero_cnj);
     if (!tribunal) { toast({ title: "Número CNJ inválido ou tribunal não mapeado", variant: "destructive" }); return; }
 
+    // Avisa se já existe outro processo cadastrado com esse mesmo número
+    if (!editId) {
+      const jaExiste = processos.find(p => p.numero_cnj === form.numero_cnj.trim());
+      if (jaExiste) {
+        const confirmar = window.confirm(
+          `⚠️ Já existe um processo cadastrado com o número ${form.numero_cnj}.\n\n` +
+          `Tem certeza que quer cadastrar de novo? Considere editar o processo existente em vez de duplicar.`
+        );
+        if (!confirmar) return;
+      }
+    }
+
     // Monta string "Autor × Réu" a partir dos campos manuais (só entra o que foi preenchido)
     const autorManual = form.autorManual.trim();
     const reuManual    = form.reuManual.trim();
@@ -538,6 +550,11 @@ export function ProcessosPage({ filtroFaseInicial, onFiltroFaseConsumido }: Proc
                 />
                 {tribunalDetect && (
                   <div className="text-xs text-green-ok mt-1">{tribunalDetect}</div>
+                )}
+                {!editId && form.numero_cnj && processos.some(p => p.numero_cnj === form.numero_cnj.trim()) && (
+                  <div className="text-xs text-red-alert font-semibold mt-1">
+                    ⚠️ Já existe um processo cadastrado com esse número.
+                  </div>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
