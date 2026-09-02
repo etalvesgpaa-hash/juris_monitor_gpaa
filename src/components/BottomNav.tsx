@@ -1,14 +1,18 @@
-import type { LucideIcon } from "lucide-react";
-import { Bell, BriefcaseBusiness, CheckSquare2, LayoutDashboard, Users } from "lucide-react";
 import type { PageId } from "@/types/navigation";
 
-const items: { id: PageId; icon: LucideIcon; label: string }[] = [
-  { id: "dashboard", icon: LayoutDashboard, label: "Início" },
-  { id: "clientes", icon: Users, label: "Clientes" },
-  { id: "processos", icon: BriefcaseBusiness, label: "Processos" },
-  { id: "tarefas", icon: CheckSquare2, label: "Tarefas" },
-  { id: "notificacoes", icon: Bell, label: "Alertas" },
+const baseItems: { id: PageId; icon: string; label: string }[] = [
+  { id: "dashboard",    icon: "📊", label: "Dashboard"  },
+  { id: "clientes",     icon: "👤", label: "Clientes"   },
+  { id: "intimacoes",   icon: "⚖️", label: "Intimações" },
+  { id: "processos",    icon: "📁", label: "Processos"  },
+  { id: "tarefas",      icon: "📋", label: "Tarefas"    },
+  { id: "notificacoes", icon: "🔔", label: "Notif."     },
+  { id: "honorarios",   icon: "💰", label: "Honorários" },
+  { id: "financeiro",   icon: "💳", label: "Financeiro" },
+  { id: "config",       icon: "⚙️", label: "Config"     },
 ];
+
+const adminItem = { id: "admin" as PageId, icon: "🛡️", label: "Admin" };
 
 interface BottomNavProps {
   activePage: PageId;
@@ -16,36 +20,25 @@ interface BottomNavProps {
   isAdmin?: boolean;
 }
 
-export function BottomNav({ activePage, onPageChange }: BottomNavProps) {
-  return (
-    <nav
-      aria-label="Navegação principal móvel"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-primary/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl lg:hidden"
-    >
-      <div className="mx-auto grid h-16 max-w-lg grid-cols-5 items-center gap-1">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const isActive = activePage === item.id;
+export function BottomNav({ activePage, onPageChange, isAdmin = false }: BottomNavProps) {
+  const items = isAdmin ? [...baseItems, adminItem] : baseItems;
 
-          return (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => onPageChange(item.id)}
-              aria-current={isActive ? "page" : undefined}
-              className={`relative flex h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[0.68rem] font-semibold transition-all ${
-                isActive
-                  ? "bg-white/10 text-accent"
-                  : "text-primary-foreground/50 hover:bg-white/5 hover:text-primary-foreground/80"
-              }`}
-            >
-              {isActive && <span className="absolute inset-x-4 -top-2 h-0.5 rounded-full bg-accent" />}
-              <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
-              <span className="truncate">{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-primary border-t border-accent/20 flex justify-around items-center h-16 px-1 overflow-x-auto">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          onClick={() => onPageChange(item.id)}
+          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[0.6rem] font-semibold transition-all shrink-0 ${
+            activePage === item.id
+              ? item.id === "admin" ? "text-violet-400" : "text-accent"
+              : "text-primary-foreground/40 hover:text-primary-foreground/70"
+          }`}
+        >
+          <span className="text-base">{item.icon}</span>
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }

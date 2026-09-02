@@ -296,9 +296,9 @@ export function NotificacoesPage() {
   );
 
   return (
-    <div className="page-stack">
+    <div>
       <div className="mb-7">
-        <h1 className="page-title">Notificações</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight">Notificações</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Alertas e lembretes importantes sobre seus processos
         </p>
@@ -306,15 +306,15 @@ export function NotificacoesPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="metric-panel border-red-alert/30">
+        <div className="bg-card rounded-xl p-4 border border-red-alert/30">
           <div className="text-2xl font-bold text-red-alert">{urgentes.length}</div>
           <div className="text-sm text-muted-foreground">Urgentes</div>
         </div>
-        <div className="metric-panel">
+        <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold">{hoje.length}</div>
           <div className="text-sm text-muted-foreground">Hoje</div>
         </div>
-        <div className="metric-panel">
+        <div className="bg-card rounded-xl p-4 border border-border">
           <div className="text-2xl font-bold">{proximos7Dias.length}</div>
           <div className="text-sm text-muted-foreground">Próximos 7 dias</div>
         </div>
@@ -322,7 +322,7 @@ export function NotificacoesPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="todas" className="space-y-5">
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1">
+        <TabsList className="w-full grid grid-cols-4">
           <TabsTrigger value="todas">
             Todas
             {notificacoes.length > 0 && (

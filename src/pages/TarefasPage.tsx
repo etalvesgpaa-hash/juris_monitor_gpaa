@@ -6,13 +6,13 @@ import { useProcessos } from "@/hooks/useProcessos";
 import { useClientes } from "@/hooks/useClientes";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Calendar, CheckCircle2, Edit2, Trash2, Plus, X, LayoutGrid, List, Eye, Clock, User, FileText, Tag } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Calendar, Edit2, Trash2, Plus, X, LayoutGrid, List, Eye, Clock, User, FileText, Tag } from "lucide-react";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 
 import { useIntimacoes } from "@/hooks/useIntimacoes";
 import { DelegarTarefaModal } from "@/components/DelegarTarefaModal";
-import { useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -115,7 +115,30 @@ export function TarefasPage() {
   const { data: processos = [] } = useProcessos();
   const { data: clientes = [] } = useClientes();
   const { data: feriados = [] } = useFeriados();
-  const { data: appUsers = [] } = useAppUsersParaDelegacao();
+  const { data: appUsers = [] } = useQuery({
+    queryKey: ["profiles-para-delegacao"],
+    queryFn: async () => {
+      // 1. Busca todos os profiles
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("id, user_id, full_name, is_admin")
+        .order("full_name");
+
+      if (!allProfiles || allProfiles.length === 0) return [];
+
+      // 2. Busca user_ids dos clientes do portal para excluir da lista
+      const { data: portalUsers } = await supabase
+        .from("clientes_portal")
+        .select("user_id")
+        .not("user_id", "is", null);
+
+      const portalUserIds = new Set((portalUsers || []).map((c: any) => c.user_id));
+
+      // 3. Retorna apenas advogados (profiles que não são clientes do portal)
+      return allProfiles.filter((p: any) => !portalUserIds.has(p.user_id));
+    },
+    enabled: isAdmin,
+  });
 
   const { data: intimacoesResumo = [] } = useIntimacoes();
 
@@ -134,7 +157,7 @@ export function TarefasPage() {
   const [showFeriados, setShowFeriados] = useState(false);
   const [showFormFeriado, setShowFormFeriado] = useState(false);
   const [filter, setFilter] = useState<FilterType>("todas");
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("jm_tasks_view") as ViewMode) || "kanban");
+  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [showConcluidas, setShowConcluidas] = useState(false);
   const [tarefaDetalhe, setTarefaDetalhe] = useState<typeof tarefas[0] | null>(null);
   const [form, setForm] = useState({
@@ -153,11 +176,6 @@ export function TarefasPage() {
     tipo: "feriado" as "feriado" | "suspensao" | "recesso",
     abrangencia: "local" as "nacional" | "estadual" | "municipal" | "local",
   });
-
-  const changeViewMode = (mode: ViewMode) => {
-    setViewMode(mode);
-    localStorage.setItem("jm_tasks_view", mode);
-  };
 
   const resetForm = () => {
     setForm({ titulo: "", descricao: "", numero_processo: "", data_vencimento: "", diasUteis: "", prioridade: "media", status: "pendente" });
@@ -320,16 +338,6 @@ export function TarefasPage() {
     }
   };
 
-  const handleReschedule = async (t: typeof tarefas[0], newDate: string) => {
-    if ((t.data_vencimento || "").slice(0, 10) === newDate) return;
-    try {
-      await updateTarefa.mutateAsync({ id: t.id, data_vencimento: newDate });
-      toast({ title: "Tarefa reagendada", description: `Novo vencimento: ${fmtDataLocal(newDate)}` });
-    } catch (err: any) {
-      toast({ title: "Erro ao reagendar", description: err.message, variant: "destructive" });
-    }
-  };
-
   const filtered = tarefas.filter((t) => {
     if (filter === "triagem")       return t.status === "triagem" || t.status === "pendente";
     if (filter === "ag_documentos") return t.status === "ag_documentos";
@@ -347,10 +355,6 @@ export function TarefasPage() {
   });
 
   const now = new Date();
-  const tarefasAbertas = tarefas.filter(t => t.status !== "concluida" && t.status !== "cancelada");
-  const tarefasVencidas = tarefasAbertas.filter(t => t.data_vencimento && t.data_vencimento.slice(0, 10) < hojeLocal());
-  const tarefasHoje = tarefasAbertas.filter(t => t.data_vencimento?.slice(0, 10) === hojeLocal());
-  const tarefasConcluidas = tarefas.filter(t => t.status === "concluida");
 
   const prioridadeColor = (prio: string) => {
     if (prio === "urgente") return "text-red-700 bg-red-700/10";
@@ -383,21 +387,21 @@ export function TarefasPage() {
   };
 
   return (
-    <div className="page-stack">
+    <div>
       {/* ── Header ── */}
-      <div className="page-header">
+      <div className="flex items-end justify-between flex-wrap gap-4 mb-5">
         <div>
-          <h1 className="page-title">Gerenciar Demandas</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Gerenciar Demandas</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie tarefas com controle de prazo em dias úteis</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant={viewMode === "kanban" ? "default" : "outline"} size="sm" onClick={() => changeViewMode("kanban")}>
+          <Button variant={viewMode === "kanban" ? "default" : "outline"} size="sm" onClick={() => setViewMode("kanban")}>
             <LayoutGrid className="w-4 h-4 mr-1" /> Kanban
           </Button>
-          <Button variant={viewMode === "lista" ? "default" : "outline"} size="sm" onClick={() => changeViewMode("lista")}>
+          <Button variant={viewMode === "lista" ? "default" : "outline"} size="sm" onClick={() => setViewMode("lista")}>
             <List className="w-4 h-4 mr-1" /> Lista
           </Button>
-          <Button variant={viewMode === "agenda" ? "default" : "outline"} size="sm" onClick={() => changeViewMode("agenda")}>
+          <Button variant={viewMode === "agenda" ? "default" : "outline"} size="sm" onClick={() => setViewMode("agenda")}>
             <Calendar className="w-4 h-4 mr-1" /> Agenda
           </Button>
           <Button
@@ -422,25 +426,6 @@ export function TarefasPage() {
           </Button>
         </div>
       </div>
-
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <TaskMetric icon={Clock} label="Demandas abertas" value={tarefasAbertas.length} tone="default" />
-        <TaskMetric icon={AlertTriangle} label="Vencidas" value={tarefasVencidas.length} tone="danger" />
-        <TaskMetric icon={Calendar} label="Vencem hoje" value={tarefasHoje.length} tone="warning" />
-        <TaskMetric icon={CheckCircle2} label="Concluídas" value={tarefasConcluidas.length} tone="success" />
-      </div>
-
-      {viewMode === "kanban" && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-xs text-muted-foreground">
-          Arraste um card para outra coluna para atualizar o status. No celular, use a opção “Mover” disponível no card.
-        </div>
-      )}
-
-      {viewMode === "agenda" && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-xs text-muted-foreground">
-          Arraste uma tarefa para outro dia para alterar a data de vencimento. Clique na tarefa para editar os detalhes.
-        </div>
-      )}
 
       {/* ── Formulário de Feriado ── */}
       {showFormFeriado && (
@@ -615,7 +600,7 @@ export function TarefasPage() {
           onVerDetalhes={(t) => setTarefaDetalhe(t)}
         />
       ) : viewMode === "agenda" ? (
-        <AgendaCalendario tarefas={tarefas} onEditTarefa={handleEdit} onReschedule={handleReschedule} />
+        <AgendaCalendario tarefas={tarefas} onEditTarefa={handleEdit} />
       ) : filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-8 text-center">
           <p className="text-muted-foreground text-sm">Nenhuma tarefa encontrada.</p>
@@ -1056,24 +1041,6 @@ function InputField({ label, value, onChange, placeholder, type = "text" }: {
   );
 }
 
-function TaskMetric({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: number; tone: "default" | "danger" | "warning" | "success" }) {
-  const tones = {
-    default: "bg-primary/7 text-primary",
-    danger: "bg-red-500/10 text-red-600",
-    warning: "bg-amber-500/10 text-amber-600",
-    success: "bg-emerald-500/10 text-emerald-700",
-  };
-  return (
-    <div className="content-panel flex items-center gap-3 p-4">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="h-[18px] w-[18px]" /></span>
-      <div className="min-w-0">
-        <p className="font-display text-2xl font-semibold leading-none text-foreground">{value}</p>
-        <p className="mt-1 truncate text-[0.68rem] font-medium text-muted-foreground">{label}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── KanbanBoard ────────────────────────────────────────────────────────────
 function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLocalidade, showConcluidas, isAdmin, profiles, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
   tarefas: any[]; userName: string; userInitials: string; userAvatarColor: string;
@@ -1083,8 +1050,6 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
   onVerDetalhes: (t: any) => void;
 }) {
   const now = new Date();
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const tarefasPorColuna = (col: typeof KANBAN_COLUMNS[number]) =>
     tarefas.filter(t => (col.statusKeys as readonly string[]).includes(t.status));
@@ -1120,20 +1085,7 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
       {colunas.map((col) => {
         const cards = tarefasPorColuna(col);
         return (
-          <div
-            key={col.key}
-            className={`flex min-w-0 flex-col rounded-xl transition-all ${dropTarget === col.key ? "bg-accent/5 ring-2 ring-accent/35" : ""}`}
-            onDragOver={(event) => { event.preventDefault(); setDropTarget(col.key); }}
-            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTarget(null); }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const taskId = event.dataTransfer.getData("text/task-id") || draggingId;
-              const task = tarefas.find((item) => item.id === taskId);
-              if (task && !(col.statusKeys as readonly string[]).includes(task.status)) onMoveStatus(task, col.key);
-              setDraggingId(null);
-              setDropTarget(null);
-            }}
-          >
+          <div key={col.key} className="flex flex-col min-w-0">
             {/* Cabeçalho da coluna */}
             <div
               className="flex items-center justify-between px-2 py-2 rounded-xl mb-3 gap-1"
@@ -1169,8 +1121,6 @@ function KanbanBoard({ tarefas, userName, userInitials, userAvatarColor, getLoca
                       onDelete={onDelete}
                       onMoveStatus={onMoveStatus}
                       onVerDetalhes={onVerDetalhes}
-                      onDragStart={() => setDraggingId(t.id)}
-                      onDragEnd={() => { setDraggingId(null); setDropTarget(null); }}
                     />
                   );
                 })
@@ -1211,12 +1161,11 @@ function statusKanbanStyle(status: string): { bg: string; text: string } {
 }
 
 // ── KanbanCard ─────────────────────────────────────────────────────────────
-function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus, onVerDetalhes, onDragStart, onDragEnd }: {
+function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, userInitials, userAvatarColor, currentColKey, onEdit, onDelete, onMoveStatus, onVerDetalhes }: {
   tarefa: any; isVencida: boolean; localidade: string; processoNumero: string;
   userName: string; userInitials: string; userAvatarColor: string; currentColKey: string;
   onEdit: (t: any) => void; onDelete: (id: string) => void; onMoveStatus: (t: any, status: string) => void;
   onVerDetalhes: (t: any) => void;
-  onDragStart: () => void; onDragEnd: () => void;
 }) {
   const [showMover, setShowMover] = useState(false);
 
@@ -1241,14 +1190,9 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
   const ps = prioridadeStyle(tarefa.prioridade);
 
   return (
-    <div
-      draggable
-      onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/task-id", tarefa.id); onDragStart(); }}
-      onDragEnd={onDragEnd}
-      className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md w-full min-w-0 cursor-grab active:cursor-grabbing ${
+    <div className={`bg-card border rounded-xl shadow-sm transition-all hover:shadow-md w-full min-w-0 ${
       isVencida ? "border-red-300" : "border-border hover:border-accent/40"
-    } ${tarefa.status === "concluida" ? "opacity-75" : ""}`}
-    >
+    } ${tarefa.status === "concluida" ? "opacity-75" : ""}`}>
       {/* Área clicável — abre o modal de detalhe */}
       <div className="p-2 cursor-pointer" onClick={() => onVerDetalhes(tarefa)}>
         {/* Título + prioridade */}
@@ -1388,12 +1332,11 @@ function KanbanCard({ tarefa, isVencida, localidade, processoNumero, userName, u
 }
 
 // ── AgendaCalendario ───────────────────────────────────────────────────────
-function AgendaCalendario({ tarefas, onEditTarefa, onReschedule }: { tarefas: any[]; onEditTarefa?: (t: any) => void; onReschedule?: (t: any, date: string) => void }) {
+function AgendaCalendario({ tarefas, onEditTarefa }: { tarefas: any[]; onEditTarefa?: (t: any) => void }) {
   const hoje = new Date();
   const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
   const [mes, setMes] = useState(hoje.getMonth());
   const [ano, setAno] = useState(hoje.getFullYear());
-  const [dropDate, setDropDate] = useState<string | null>(null);
 
   const nomesMeses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const diasSemana = ["SEG","TER","QUA","QUI","SEX","SÁB","DOM"];
@@ -1460,16 +1403,7 @@ function AgendaCalendario({ tarefas, onEditTarefa, onReschedule }: { tarefas: an
           return (
             <div
               key={diaStr}
-              onDragOver={(event) => { event.preventDefault(); setDropDate(diaStr); }}
-              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropDate(null); }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const taskId = event.dataTransfer.getData("text/task-id");
-                const task = tarefas.find((item) => item.id === taskId);
-                if (task) onReschedule?.(task, diaStr);
-                setDropDate(null);
-              }}
-              className={`min-h-[100px] border-b border-r border-border p-1.5 last:border-r-0 relative transition-all ${isWeekend ? "bg-muted/30" : "bg-card"} ${isHoje ? "ring-2 ring-inset ring-accent" : ""} ${dropDate === diaStr ? "bg-accent/10 ring-2 ring-inset ring-accent/50" : ""}`}
+              className={`min-h-[100px] border-b border-r border-border p-1.5 last:border-r-0 relative transition-colors ${isWeekend ? "bg-muted/30" : "bg-card"} ${isHoje ? "ring-2 ring-inset ring-accent" : ""}`}
             >
               <div className="flex items-center gap-1 mb-1">
                 <span className={`text-xs font-semibold leading-none ${isHoje ? "bg-accent text-white rounded-full w-5 h-5 flex items-center justify-center text-[0.65rem] font-bold" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>
@@ -1479,10 +1413,8 @@ function AgendaCalendario({ tarefas, onEditTarefa, onReschedule }: { tarefas: an
               </div>
               <div className="space-y-0.5">
                 {tarefasDia.slice(0, 3).map((t: any) => (
-                  <div key={t.id} title={`${t.titulo} — arraste para reagendar`} onClick={() => onEditTarefa?.(t)} draggable
-                    onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/task-id", t.id); }}
-                    onDragEnd={() => setDropDate(null)}
-                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity ${corTarefa(t)}`}>
+                  <div key={t.id} title={t.titulo} onClick={() => onEditTarefa?.(t)}
+                    className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded truncate leading-snug cursor-pointer hover:opacity-80 transition-opacity ${corTarefa(t)}`}>
                     {t.titulo}
                   </div>
                 ))}

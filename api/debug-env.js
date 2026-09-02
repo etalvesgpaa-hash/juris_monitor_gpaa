@@ -1,8 +1,4 @@
-import { requireDebugAccess } from './_security.js';
-
 export default function handler(req, res) {
-  if (!requireDebugAccess(req, res, { methods: 'GET, OPTIONS' })) return;
-
   res.status(200).json({
     USE_GMAIL: process.env.USE_GMAIL ?? 'UNDEFINED',
     GMAIL_USER: process.env.GMAIL_USER ?? 'UNDEFINED',

@@ -4,10 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGroqIA } from "@/hooks/useGroqIA";
 import { useClientes, useCreateCliente } from "@/hooks/useClientes";
 import { useCreateTarefa } from "@/hooks/useTarefas";
-import { useCriarOuVincularProcesso } from "@/hooks/useProcessos";
-import { detectarTribunalCNJ } from "@/lib/cnj";
-import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
-import { useCrearTarefaDelegada, useAppUsersParaDelegacao } from "@/hooks/useDelegacao";
 import { useFeriados } from "@/hooks/useFeriados";
 import { useProcessos } from "@/hooks/useProcessos";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
@@ -20,8 +16,6 @@ import {
   SelectTrigger,
   SelectValue} from "@/components/ui/select";
 import { toast } from "sonner";
-import { chamarGroq } from "@/lib/groqClient";
-import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 import { RefreshCw, RotateCcw, TableIcon, LayoutGrid, Eye, CheckCircle, Pause, PlayCircle, Trash2, AlertCircle, Loader2, X, FileText, Flag, Plus, Sparkles, UserPlus, Mail, UserCheck } from "lucide-react";
 
 // ── Tipos ──────────────────────────────────────────────────────
@@ -271,15 +265,12 @@ function saveStore(items: AaspIntimacao[]) {
 
 // ── Componente ─────────────────────────────────────────────────
 export function IntimacoesPage() {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { data: clientes = [] } = useClientes();
   const createCliente = useCreateCliente();
-  const criarOuVincularProcesso = useCriarOuVincularProcesso();
   const { data: feriados = [] } = useFeriados();
   const { data: processos = [] } = useProcessos();
   const createTarefa = useCreateTarefa();
-  const criarTarefaDelegada = useCrearTarefaDelegada();
-  const { data: profilesParaDelegacao = [] } = useAppUsersParaDelegacao();
 
   // Estado do modal de novo cliente (pré-preenchido da intimação)
   const [novoClienteIntimacao, setNovoClienteIntimacao] = useState<AaspIntimacao | null>(null);
@@ -762,12 +753,35 @@ export function IntimacoesPage() {
     }
 
     try {
-      const resumoBruto = await chamarGroq(
-        groqKey,
-        "Você é um assistente jurídico especializado em análise de intimações. Faça um resumo objetivo e profissional em até 3 frases, destacando: tipo de ato, prazo se houver, e ação necessária.",
-        `Analise esta intimação e faça um resumo:\n\n${texto}`,
-        { maxTokens: 200 }
-      );
+      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content: "Você é um assistente jurídico especializado em análise de intimações. Faça um resumo objetivo e profissional em até 3 frases, destacando: tipo de ato, prazo se houver, e ação necessária."
+            },
+            {
+              role: "user",
+              content: `Analise esta intimação e faça um resumo:\n\n${texto}`
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 200,
+        }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Erro na API Groq: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      const resumoBruto = data.choices?.[0]?.message?.content?.trim() || "";
       const resumo = resumoBruto
         .replace(/^(aqui (está|estão|segue|seguem)[^:\n]*:\s*)/i, "")
         .replace(/^(segue[^:\n]*:\s*)/i, "")
@@ -850,31 +864,15 @@ export function IntimacoesPage() {
 
   const handleSubmitTarefa = async (data: any) => {
     try {
-      if (data.delegado_para) {
-        // Admin escolheu delegar para outro usuário
-        await criarTarefaDelegada.mutateAsync({
-          titulo: data.titulo,
-          descricao: data.descricao || undefined,
-          data_vencimento: data.data_vencimento || undefined,
-          hora_vencimento: data.hora_vencimento || undefined,
-          prioridade: data.prioridade,
-          status: data.status || "triagem",
-          processo_id: data.processo_id || undefined,
-          numero_processo: data.numero_processo || undefined,
-          delegado_para: data.delegado_para,
-        } as any);
-      } else {
-        await createTarefa.mutateAsync({
-          titulo: data.titulo,
-          descricao: data.descricao || null,
-          data_vencimento: data.data_vencimento || null,
-          hora_vencimento: data.hora_vencimento || null,
-          prioridade: data.prioridade,
-          status: data.status || "triagem",
-          processo_id: data.processo_id || null,
-        } as any);
-        toast.success("Tarefa criada com sucesso!");
-      }
+      await createTarefa.mutateAsync({
+        titulo: data.titulo,
+        descricao: data.descricao || null,
+        data_vencimento: data.data_vencimento || null,
+        prioridade: data.prioridade,
+        status: data.status || "triagem",
+        processo_id: data.processo_id || null,
+      });
+      toast.success("Tarefa criada com sucesso!");
       setShowTaskModal(false);
       setTaskModalInitialData(null);
     } catch (err: any) {
@@ -998,16 +996,20 @@ export function IntimacoesPage() {
     let ok = 0;
     for (const cliente of destinatarios) {
       try {
-        const { ok: enviado } = await enviarEmailNotificacao({
-          destinatario:   cliente.email,
-          nomeCliente:    cliente.nome,
-          numeroProcesso: intim._numProc,
-          dataPublicacao: fmtDataBR(intim._data),
-          assunto:        intim._titulo || "Nova Publicação AASP",
-          resumoIA:       intim._resumoIA || null,
-          textoCompleto:  "",
+        const res = await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            destinatario:   cliente.email,
+            nomeCliente:    cliente.nome,
+            numeroProcesso: intim._numProc,
+            dataPublicacao: fmtDataBR(intim._data),
+            assunto:        intim._titulo || "Nova Publicação AASP",
+            resumoIA:       intim._resumoIA || null,
+            textoCompleto:  "",
+          }),
         });
-        const status = enviado ? "enviado" : "falha";
+        const status = res.ok ? "enviado" : "falha";
         await supabase.from("notificacoes_enviadas").insert({
           user_id:         user!.id,
           cliente_id:      cliente.id,
@@ -1018,7 +1020,7 @@ export function IntimacoesPage() {
           email_destino:   cliente.email,
           status,
         });
-        if (enviado) {
+        if (res.ok) {
           ok++;
           await supabase.from("clientes").update({ ultima_notificacao: new Date().toISOString() }).eq("id", cliente.id);
         }
@@ -1325,10 +1327,10 @@ export function IntimacoesPage() {
   };
 
   return (
-    <div className="page-stack">
-      <div className="page-header">
+    <div className="w-full overflow-x-hidden">
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-4 md:mb-6">
         <div>
-          <h1 className="page-title">Intimações AASP</h1>
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Intimações AASP</h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-1">
             {intimacoes.length} intimação(ões) armazenada(s)
           </p>
@@ -1487,26 +1489,7 @@ export function IntimacoesPage() {
           intim={novoClienteIntimacao}
           onClose={() => setNovoClienteIntimacao(null)}
           onCreate={async (dados) => {
-            const clienteCriado = await createCliente.mutateAsync(dados);
-            // Cria (ou vincula) o processo real na tela de Processos, usando os
-            // dados que já vieram prontos da intimação — sem digitar de novo.
-            const numero = novoClienteIntimacao._numProc;
-            if (numero) {
-              const tribunal = detectarTribunalCNJ(numero);
-              try {
-                await criarOuVincularProcesso.mutateAsync({
-                  cliente_id: clienteCriado.id,
-                  numero_cnj: numero,
-                  tribunal: tribunal?.nome || null,
-                  partes: novoClienteIntimacao._partes || null,
-                  assunto: novoClienteIntimacao._titulo || null,
-                  vara: novoClienteIntimacao._orgaoJulgador || null,
-                  fase: dados.status_processo || null,
-                });
-              } catch (err: any) {
-                toast.error(`Cliente criado, mas houve erro ao vincular o processo: ${err.message}`);
-              }
-            }
+            await createCliente.mutateAsync(dados);
             setNovoClienteIntimacao(null);
             toast.success("✅ Cliente cadastrado com sucesso!");
           }}
@@ -1524,8 +1507,6 @@ export function IntimacoesPage() {
         processos={processos}
         clientes={clientes}
         feriados={feriados}
-        isAdmin={isAdmin}
-        delegacaoProfiles={profilesParaDelegacao.map((p: any) => ({ id: p.user_id, full_name: p.full_name || "Usuário" }))}
       />
     </div>
   );
@@ -1797,7 +1778,12 @@ function NovoClienteModal({
   const partesRaw = intim._partes || (intim.Partes || intim.partes || "") as string;
   const primeiroNome = partesRaw.split(/[·×,]/)[0]?.trim() || "";
 
-  const STATUS_PROCESSO_OPTIONS = FASE_PROCESSO_OPTIONS;
+  const STATUS_PROCESSO_OPTIONS = [
+    "Novo Caso", "Documentação Pendente", "Petição Inicial", "Protocolado",
+    "Distribuído", "Citado", "Contestação", "Audiência Designada",
+    "Audiência Realizada", "Produção de Provas", "Sentença", "Recurso",
+    "Trânsito em Julgado", "Cumprimento de Sentença", "Arquivado",
+  ];
 
   const [form, setForm] = React.useState({
     nome: primeiroNome,

@@ -8,7 +8,6 @@ import {
   useDeleteCliente,
 } from "@/hooks/useClientes";
 import { useToast } from "@/hooks/use-toast";
-import { chamarGroq } from "@/lib/groqClient";
 import {
   Edit2,
   Trash2,
@@ -36,10 +35,6 @@ import type { Cliente } from "../hooks/useClientes";
 import { supabase } from "@/lib/supabase";
 import { INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { useAuth } from "@/hooks/useAuth";
-import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
-import { useCriarOuVincularProcesso, useProcessos } from "@/hooks/useProcessos";
-import { detectarTribunalCNJ, maskCNJ } from "@/lib/cnj";
-import { FASE_PROCESSO_OPTIONS } from "@/lib/statusProcesso";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,17 +94,31 @@ function formatPhone(tel: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const STATUS_PROCESSO_OPTIONS = FASE_PROCESSO_OPTIONS;
+const STATUS_PROCESSO_OPTIONS = [
+  "Novo Caso",
+  "Documentação Pendente",
+  "Petição Inicial",
+  "Protocolado",
+  "Distribuído",
+  "Citado",
+  "Contestação",
+  "Audiência Designada",
+  "Audiência Realizada",
+  "Produção de Provas",
+  "Sentença",
+  "Recurso",
+  "Trânsito em Julgado",
+  "Cumprimento de Sentença",
+  "Arquivado",
+] as const;
 
 export function ClientesPage() {
   const { user } = useAuth();
   const nomeAdvogado = (user?.user_metadata?.full_name as string) || user?.email?.split("@")[0] || "Dr.(a)";
   const { data: clientes = [], isLoading, refetch } = useClientes();
-  const { data: processosExistentes = [] } = useProcessos();
   const createCliente = useCreateCliente();
   const updateCliente = useUpdateCliente();
   const deleteCliente = useDeleteCliente();
-  const criarOuVincularProcesso = useCriarOuVincularProcesso();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
@@ -126,12 +135,6 @@ export function ClientesPage() {
     notificacoes_email: true,
     notificacoes_whatsapp: false,
     status_monitoramento: "ativo" as "ativo" | "pausado" | "inativo",
-    status_processo: "Novo Caso",
-    // Processo vinculado (obrigatório) — cria/vincula um registro real em Processos
-    processoNumero: "",
-    processoPartes: "",
-    processoAssunto: "",
-    processoVara: "",
   });
   const [processoInput, setProcessoInput] = useState("");
 
@@ -272,12 +275,7 @@ export function ClientesPage() {
       notificacoes_email: true,
       notificacoes_whatsapp: false,
       status_monitoramento: "ativo",
-      status_processo: "Novo Caso",
-      processoNumero: "",
-      processoPartes: "",
-      processoAssunto: "",
-      processoVara: "",
-    } as any);
+    });
     setProcessoInput("");
     setShowForm(false);
     setEditing(null);
@@ -295,12 +293,7 @@ export function ClientesPage() {
       notificacoes_email: c.notificacoes_email ?? true,
       notificacoes_whatsapp: (c as any).notificacoes_whatsapp ?? false,
       status_monitoramento: c.status_monitoramento || "ativo",
-      status_processo: (c as any).status_processo || "Novo Caso",
-      processoNumero: "",
-      processoPartes: "",
-      processoAssunto: "",
-      processoVara: "",
-    } as any);
+    });
     setEditing(c);
     setShowForm(true);
   };
@@ -341,33 +334,6 @@ export function ClientesPage() {
       });
       return;
     }
-    // Todo cliente precisa ter ao menos um processo vinculado
-    if (!editing && !form.processoNumero.trim()) {
-      toast({ title: "Informe o número do processo (CNJ)", description: "Todo cliente cadastrado precisa ter um processo vinculado.", variant: "destructive" });
-      return;
-    }
-    let tribunalDetectado: { nome: string; alias: string } | null = null;
-    if (!editing && form.processoNumero.trim()) {
-      tribunalDetectado = detectarTribunalCNJ(form.processoNumero);
-      if (!tribunalDetectado) {
-        toast({ title: "Número CNJ inválido", description: "Verifique o número do processo — tribunal não reconhecido.", variant: "destructive" });
-        return;
-      }
-      // Avisa se esse número já está vinculado a OUTRO cliente
-      const processoExistente = processosExistentes.find(p => p.numero_cnj === form.processoNumero.trim());
-      if (processoExistente?.cliente_id) {
-        const clienteAtual = clientes.find(c => c.id === processoExistente.cliente_id);
-        const confirmar = window.confirm(
-          `⚠️ O processo ${form.processoNumero} já está vinculado ao cliente "${clienteAtual?.nome || "outro cliente"}".\n\n` +
-          `Se continuar, esse processo passa a ficar vinculado ao NOVO cliente também. Tem certeza?`
-        );
-        if (!confirmar) return;
-      }
-    }
-
-    const numerosProcesso = form.processoNumero.trim()
-      ? [form.processoNumero.trim(), ...form.numeros_processo.filter(n => n !== form.processoNumero.trim())]
-      : form.numeros_processo;
 
     const payload = {
       nome: form.nome,
@@ -376,7 +342,7 @@ export function ClientesPage() {
       telefone: form.telefone || null,
       endereco: form.endereco || null,
       observacoes: form.observacoes || null,
-      numeros_processo: numerosProcesso.length > 0 ? numerosProcesso : null,
+      numeros_processo: form.numeros_processo.length > 0 ? form.numeros_processo : null,
       notificacoes_email: form.notificacoes_email,
       notificacoes_whatsapp: (form as any).notificacoes_whatsapp,
       status_monitoramento: form.status_monitoramento,
@@ -384,29 +350,13 @@ export function ClientesPage() {
     };
 
     try {
-      let clienteId = editing?.id;
       if (editing) {
         await updateCliente.mutateAsync({ id: editing.id, ...payload });
         toast({ title: "✅ Cliente atualizado com sucesso!" });
       } else {
-        const criado = await createCliente.mutateAsync(payload);
-        clienteId = criado.id;
+        await createCliente.mutateAsync(payload);
         toast({ title: "✅ Cliente cadastrado com sucesso!" });
       }
-
-      // Cria (ou vincula, se já existir) o processo real na tela de Processos
-      if (!editing && clienteId && form.processoNumero.trim()) {
-        await criarOuVincularProcesso.mutateAsync({
-          cliente_id: clienteId,
-          numero_cnj: form.processoNumero.trim(),
-          tribunal: tribunalDetectado?.nome || null,
-          partes: form.processoPartes.trim() || null,
-          assunto: form.processoAssunto.trim() || null,
-          vara: form.processoVara.trim() || null,
-          fase: form.status_processo || null,
-        });
-      }
-
       resetForm();
     } catch (err: any) {
       toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
@@ -522,11 +472,33 @@ export function ClientesPage() {
       const groqKey = apiKeys?.groq_api_key;
       if (!groqKey) return null;
 
-      const resumo = await chamarGroq(
-        groqKey,
-        "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
-        `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`
-      ).catch(() => null);
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+            },
+            {
+              role: "user",
+              content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 300,
+        }),
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      const resumo = data.choices?.[0]?.message?.content || null;
 
       // Salva resumo de volta no localStorage
       if (resumo) {
@@ -578,11 +550,19 @@ export function ClientesPage() {
         nomeAdvogado,
       };
 
-      const { ok, data: respData } = await enviarEmailNotificacao(emailData);
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emailData),
+      });
 
-      if (!ok) {
+      if (!response.ok) {
         // Lê o erro real retornado pelo servidor para mostrar ao usuário
-        const errMsg = respData?.dica || respData?.error || "Falha ao enviar e-mail";
+        let errMsg = "Falha ao enviar e-mail";
+        try {
+          const errData = await response.json();
+          errMsg = errData.dica || errData.error || errMsg;
+        } catch {}
         throw new Error(errMsg);
       }
 
@@ -669,8 +649,12 @@ export function ClientesPage() {
             textoCompleto: "",
             nomeAdvogado,
           };
-          const { ok } = await enviarEmailNotificacao(emailData);
-          if (ok) {
+          const res = await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(emailData),
+          });
+          if (res.ok) {
             await supabase.from("notificacoes_enviadas").insert({
               user_id: user!.id,
               cliente_id: c.id,
@@ -741,15 +725,15 @@ export function ClientesPage() {
 
   return (
     <>
-    <div className="page-stack">
+    <div className="w-full min-w-0 max-w-[1400px] mx-auto px-2 sm:px-4 overflow-x-hidden">
       {/* Header */}
-      <div className="page-header">
+      <div className="flex items-end justify-between flex-wrap gap-4 mb-7">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
               <Users className="h-5 w-5 text-accent" />
             </div>
-            <h1 className="page-title">
+            <h1 className="font-display text-3xl font-bold tracking-tight">
               Clientes — Portal
             </h1>
           </div>
@@ -903,99 +887,51 @@ export function ClientesPage() {
               placeholder="Rua, número, bairro, cidade - UF"
             />
 
-            {/* Processo vinculado (obrigatório na criação) */}
-            {!editing ? (
-              <div className="border border-accent/30 rounded-xl p-4 bg-accent/5">
-                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-1 block">
-                  📋 Processo Vinculado *
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Todo cliente cadastrado precisa ter um processo. Isso cria automaticamente o registro
-                  na tela de Processos, já vinculado a este cliente.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <InputField
-                    label="Número CNJ *"
-                    value={form.processoNumero}
-                    onChange={(v) => setForm({ ...form, processoNumero: maskCNJ(v) } as any)}
-                    placeholder="0000000-00.0000.0.00.0000"
-                  />
-                  <InputField
-                    label="Partes (Autor × Réu)"
-                    value={(form as any).processoPartes}
-                    onChange={(v) => setForm({ ...form, processoPartes: v } as any)}
-                    placeholder="Como consta na AASP — ex: Fulano × Empresa XYZ"
-                  />
-                  <InputField
-                    label="Assunto / Título"
-                    value={(form as any).processoAssunto}
-                    onChange={(v) => setForm({ ...form, processoAssunto: v } as any)}
-                    placeholder="Ex: Indenização por Dano Moral"
-                  />
-                  <InputField
-                    label="Vara / Órgão"
-                    value={(form as any).processoVara}
-                    onChange={(v) => setForm({ ...form, processoVara: v } as any)}
-                    placeholder="Ex: 3ª Vara Cível"
-                  />
-                </div>
-                {form.processoNumero && (() => {
-                  const existente = processosExistentes.find(p => p.numero_cnj === form.processoNumero.trim());
-                  if (!existente) return null;
-                  const clienteDoProcesso = existente.cliente_id ? clientes.find(c => c.id === existente.cliente_id) : null;
-                  return (
-                    <div className="text-xs text-red-alert font-semibold mt-2">
-                      ⚠️ Esse número já existe{clienteDoProcesso ? ` — vinculado ao cliente "${clienteDoProcesso.nome}"` : " na tela de Processos"}.
-                    </div>
-                  );
-                })()}
+            {/* Processos */}
+            <div className="border border-border rounded-xl p-4 bg-muted/30">
+              <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-3 block">
+                Números de Processo (CNJ)
+              </label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Adicione os números de processo CNJ. Quando houver novas intimações, o cliente
+                receberá notificação automática por e-mail e/ou WhatsApp.
+              </p>
+              <div className="flex gap-2 mb-3">
+                <input
+                  value={processoInput}
+                  onChange={(e) => setProcessoInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && adicionarProcesso()}
+                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all font-mono"
+                  placeholder="0000000-00.0000.0.00.0000"
+                />
+                <Button variant="outline" size="sm" onClick={adicionarProcesso}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Adicionar
+                </Button>
               </div>
-            ) : (
-              <div className="border border-border rounded-xl p-4 bg-muted/30">
-                <label className="text-[0.72rem] font-bold uppercase tracking-wider text-foreground mb-3 block">
-                  Números de Processo (CNJ)
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Para adicionar um novo processo detalhado (com partes, assunto e vara), use a tela de Processos
-                  e selecione este cliente. Aqui você só pode anexar números de referência rápida.
-                </p>
-                <div className="flex gap-2 mb-3">
-                  <input
-                    value={processoInput}
-                    onChange={(e) => setProcessoInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && adicionarProcesso()}
-                    className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none transition-all font-mono"
-                    placeholder="0000000-00.0000.0.00.0000"
-                  />
-                  <Button variant="outline" size="sm" onClick={adicionarProcesso}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Adicionar
-                  </Button>
-                </div>
-                {form.numeros_processo.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {form.numeros_processo.map((proc) => (
-                      <div
-                        key={proc}
-                        className="inline-flex items-center gap-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-1.5 text-xs font-mono"
+              {form.numeros_processo.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {form.numeros_processo.map((proc) => (
+                    <div
+                      key={proc}
+                      className="inline-flex items-center gap-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-1.5 text-xs font-mono"
+                    >
+                      {proc}
+                      <button
+                        onClick={() => removerProcesso(proc)}
+                        className="text-red-500 hover:text-red-700 ml-1"
                       >
-                        {proc}
-                        <button
-                          onClick={() => removerProcesso(proc)}
-                          className="text-red-500 hover:text-red-700 ml-1"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic">
-                    Nenhum processo adicionado ainda
-                  </p>
-                )}
-              </div>
-            )}
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">
+                  Nenhum processo adicionado ainda
+                </p>
+              )}
+            </div>
 
             {/* Notificações */}
             <div className="border border-border rounded-xl p-4 bg-muted/30">

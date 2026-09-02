@@ -1503,13 +1503,13 @@ OBSERVAÇÕES
   }
 
   return (
-    <div className="page-stack">
+    <div>
       {propostaTexto && <PropostaModal texto={propostaTexto} onClose={() => setPropostaTexto(null)} />}
 
       {/* Header */}
-      <div className="page-header">
+      <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
         <div>
-          <h1 className="page-title">Calculadora de Honorários</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Calculadora de Honorários</h1>
           <p className="text-sm text-muted-foreground mt-1">Tabela OAB-SP · Judiciais · Extrajudiciais · Êxito · Trabalhista</p>
         </div>
         <div className="flex items-center gap-3">

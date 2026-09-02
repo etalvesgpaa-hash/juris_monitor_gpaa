@@ -1,4 +1,3 @@
-import { requireDebugAccess } from './_security.js';
 /**
  * /api/diag-aasp?chave=SUA_CHAVE
  * Testa a conectividade com a API AASP diretamente do servidor Vercel.
@@ -6,7 +5,7 @@ import { requireDebugAccess } from './_security.js';
  */
 
 export default async function handler(req, res) {
-  if (!requireDebugAccess(req, res, { methods: "GET, OPTIONS" })) return;
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (req.method === 'OPTIONS') return res.status(200).end();

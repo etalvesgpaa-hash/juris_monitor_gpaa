@@ -237,17 +237,17 @@ export function FinanceiroPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="page-stack">
+    <div className="w-full min-w-0 max-w-[1400px] mx-auto px-2 sm:px-4 space-y-6">
 
       {/* Header */}
-      <div className="page-header">
+      <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
               <DollarSign className="h-5 w-5 text-accent" />
             </div>
             <div>
-              <h1 className="page-title">Financeiro</h1>
+              <h1 className="font-display text-2xl font-bold">Financeiro</h1>
               <p className="text-xs text-muted-foreground">Controle de valores a receber</p>
             </div>
           </div>

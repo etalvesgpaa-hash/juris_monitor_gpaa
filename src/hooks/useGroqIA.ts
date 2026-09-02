@@ -14,9 +14,47 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { chamarGroq } from "@/lib/groqClient";
 
-const DELAY_MS = 600; // evita rate limit da Groq
+const GROQ_URL  = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const DELAY_MS   = 600; // evita rate limit da Groq
+
+async function chamarGroq(apiKey: string, systemPrompt: string, userContent: string, tentativa = 1): Promise<string> {
+  const resp = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model:       GROQ_MODEL,
+      temperature: 0.3,
+      max_tokens:  300,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: userContent  },
+      ],
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  // Rate limit — aguarda e tenta novamente (até 3x)
+  if (resp.status === 429 && tentativa <= 3) {
+    const wait = tentativa * 8000; // 8s, 16s, 24s
+    await new Promise(r => setTimeout(r, wait));
+    return chamarGroq(apiKey, systemPrompt, userContent, tentativa + 1);
+  }
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(`Erro na API Groq: ${err?.error?.message || `HTTP ${resp.status}`}`);
+  }
+
+  const data = await resp.json();
+  const texto = data.choices?.[0]?.message?.content?.trim() || "";
+  if (!texto) throw new Error("Resposta vazia da IA");
+  return texto;
+}
 
 export function useGroqIA() {
   const { user } = useAuth();

@@ -19,24 +19,20 @@ interface NovasIntimacoesModalProps {
 export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) {
   const [open, setOpen]             = useState(false);
   const [intimacoes, setIntimacoes] = useState<AaspIntimacao[]>([]);
-  const [quantidadeEncontrada, setQuantidadeEncontrada] = useState(0);
   const [visivel, setVisivel]       = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const ev = e as CustomEvent<{ count: number; hoje: string; intimacoes?: AaspIntimacao[] }>;
+      const ev = e as CustomEvent<{ count: number; hoje: string }>;
       if (ev.detail.count <= 0) return;
 
       const hoje  = ev.detail.hoje;
-      // O payload do evento é a fonte de verdade para esta execução.
-      // O cache pode ser atualizado em paralelo pela sincronização com o Supabase.
-      const todas = ev.detail.intimacoes?.length ? ev.detail.intimacoes : loadStore();
+      const todas = loadStore();
       const deHoje = todas
         .filter(i => (i._data || "").slice(0, 10) === hoje)
         .sort((a, b) => (a._lida === b._lida ? 0 : a._lida ? 1 : -1));
 
       setIntimacoes(deHoje.slice(0, 10));
-      setQuantidadeEncontrada(ev.detail.count);
       setOpen(true);
       // Pequeno delay para a animação de entrada funcionar
       setTimeout(() => setVisivel(true), 20);
@@ -51,7 +47,6 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
     setTimeout(() => {
       setOpen(false);
       setIntimacoes([]);
-      setQuantidadeEncontrada(0);
     }, 250);
   }
 
@@ -63,13 +58,13 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
   if (!open) return null;
 
   const naoLidas = intimacoes.filter(i => !i._lida).length;
-  const total    = quantidadeEncontrada;
+  const total    = intimacoes.length;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm transition-opacity duration-250 ${visivel ? "opacity-100" : "opacity-0"}`}
+        className={`fixed inset-0 z-50 bg-black/55 backdrop-blur-sm transition-opacity duration-250 ${visivel ? "opacity-100" : "opacity-0"}`}
         onClick={fechar}
         aria-hidden
       />
@@ -80,7 +75,7 @@ export function NovasIntimacoesModal({ onVerTodas }: NovasIntimacoesModalProps) 
         aria-modal
         aria-label="Novas intimações encontradas"
         className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50
-          w-full max-w-lg bg-card border border-border rounded-2xl
+                   w-full max-w-lg bg-background border border-border rounded-2xl
                    shadow-2xl flex flex-col overflow-hidden
                    transition-all duration-250
                    ${visivel ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
