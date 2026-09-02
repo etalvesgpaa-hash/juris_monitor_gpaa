@@ -5,10 +5,13 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical, CloudUpload, Database } from "lucide-react";
+import { Eye, EyeOff, Key, CheckCircle, XCircle, Save, Scale, Loader2, AlertCircle, FlaskConical, CloudUpload, Database, Mail, Send } from "lucide-react";
 import { loadStore, INTIMACOES_STORE_KEY } from "@/hooks/useAutoFetchIntimacoes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getGroqModelPreferido, setGroqModelPreferido, MODEL_FALLBACK_CHAIN } from "@/lib/groqClient";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
+import { GoogleAgendaTab } from "@/components/GoogleAgendaTab";
 
 export function ConfigPage() {
   const { user } = useAuth();
@@ -20,22 +23,44 @@ export function ConfigPage() {
     escritorio: "" 
   });
   const [apiKeys, setApiKeys] = useState({
-    datajud_token: "",
     aasp_chave: "",
     groq_api_key: "",
     whatsapp_token: "",
   });
   const [showKeys, setShowKeys] = useState({
-    datajud_token: false,
     aasp_chave: false,
     groq_api_key: false,
     whatsapp_token: false,
   });
+  // Configuração de e-mail (envio automático de notificações) — por usuário,
+  // salva no Supabase em vez de depender de variáveis de ambiente na Vercel.
+  const [emailConfig, setEmailConfig] = useState({
+    email_provider: "gmail" as "gmail" | "resend",
+    email_gmail_user: "",
+    email_gmail_app_password: "",
+    email_resend_api_key: "",
+    email_remetente_nome: "",
+    email_portal_url: "",
+  });
+  // Indica se já existe uma senha/chave salva no banco, sem nunca carregar
+  // o valor real de volta para o navegador depois de salvo.
+  const [emailSecretsSet, setEmailSecretsSet] = useState({
+    gmail_app_password: false,
+    resend_api_key: false,
+  });
+  const [showEmailSecrets, setShowEmailSecrets] = useState({
+    gmail_app_password: false,
+    resend_api_key: false,
+  });
+  const [loadingEmailConfig, setLoadingEmailConfig] = useState(false);
+  const [savingEmailConfig, setSavingEmailConfig] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
-  const [testingDatajud, setTestingDatajud] = useState(false);
   const [testingAasp, setTestingAasp] = useState(false);
   const [testingGroq, setTestingGroq] = useState(false);
+  const [groqModel, setGroqModelState] = useState(getGroqModelPreferido());
 
   // Estado do diagnóstico AASP
   type DiagRow = {
@@ -78,7 +103,6 @@ export function ConfigPage() {
       .then(({ data }) => {
         if (data) {
           setApiKeys({
-            datajud_token: data.datajud_token || "",
             aasp_chave: data.aasp_chave || "",
             groq_api_key: data.groq_api_key || "",
             whatsapp_token: data.whatsapp_token || "",
@@ -88,7 +112,124 @@ export function ConfigPage() {
       .catch(() => {
         // Tabela não existe ainda
       });
+
+    // Carregar configuração de e-mail.
+    // Os campos de senha/chave são pedidos no select apenas para sabermos
+    // se já existe algo salvo (booleano) — nunca ficam no state visível.
+    setLoadingEmailConfig(true);
+    supabase
+      .from("api_keys")
+      .select("email_provider, email_gmail_user, email_gmail_app_password, email_resend_api_key, email_remetente_nome, email_portal_url")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          // Se o usuário nunca escolheu um provedor explicitamente (coluna NULL),
+          // infere pela credencial que já existe, pra não mostrar "Gmail"
+          // selecionado quando na verdade só existe uma chave Resend salva.
+          const providerInferido = data.email_provider
+            || (data.email_resend_api_key && !data.email_gmail_app_password ? "resend" : "gmail");
+          setEmailConfig({
+            email_provider: providerInferido as "gmail" | "resend",
+            email_gmail_user: data.email_gmail_user || "",
+            email_gmail_app_password: "", // nunca preenchido a partir do banco
+            email_resend_api_key: "", // nunca preenchido a partir do banco
+            email_remetente_nome: data.email_remetente_nome || "",
+            email_portal_url: data.email_portal_url || "",
+          });
+          setEmailSecretsSet({
+            gmail_app_password: Boolean(data.email_gmail_app_password),
+            resend_api_key: Boolean(data.email_resend_api_key),
+          });
+        }
+      })
+      .catch(() => {
+        // Colunas ainda não existem (migration não aplicada)
+      })
+      .finally(() => setLoadingEmailConfig(false));
   }, [user]);
+
+  const handleSaveEmailConfig = async () => {
+    if (!user) return;
+    setSavingEmailConfig(true);
+    try {
+      const payload: Record<string, unknown> = {
+        email_provider: emailConfig.email_provider,
+        email_gmail_user: emailConfig.email_gmail_user || null,
+        email_remetente_nome: emailConfig.email_remetente_nome || null,
+        email_portal_url: emailConfig.email_portal_url || null,
+        updated_at: new Date().toISOString(),
+      };
+      // Só sobrescreve a senha/chave se o usuário digitou algo novo.
+      // Campo vazio = mantém o que já está salvo (não apaga sem querer).
+      if (emailConfig.email_gmail_app_password) {
+        payload.email_gmail_app_password = emailConfig.email_gmail_app_password;
+      }
+      if (emailConfig.email_resend_api_key) {
+        payload.email_resend_api_key = emailConfig.email_resend_api_key;
+      }
+
+      const { data: existing } = await supabase
+        .from("api_keys")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase.from("api_keys").update(payload).eq("user_id", user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("api_keys").insert({ user_id: user.id, ...payload });
+        if (error) throw error;
+      }
+
+      setEmailSecretsSet({
+        gmail_app_password: emailConfig.email_gmail_app_password ? true : emailSecretsSet.gmail_app_password,
+        resend_api_key: emailConfig.email_resend_api_key ? true : emailSecretsSet.resend_api_key,
+      });
+      // Limpa os campos de senha da tela após salvar (nunca ficam expostos)
+      setEmailConfig((prev) => ({ ...prev, email_gmail_app_password: "", email_resend_api_key: "" }));
+
+      toast({ title: "✅ Configuração de e-mail salva!" });
+    } catch (err: any) {
+      toast({
+        title: "Erro ao salvar configuração de e-mail",
+        description: err.message || "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingEmailConfig(false);
+    }
+  };
+
+  const handleTestEmailConfig = async () => {
+    if (!user) return;
+    setTestingEmail(true);
+    try {
+      const { ok, data } = await enviarEmailNotificacao({
+        to_email: user.email,
+        titulo: "Teste de envio - JurisMonitor",
+        resumo: "Este é um e-mail de teste para confirmar que sua configuração de envio está funcionando corretamente.",
+      });
+      if (!ok) throw new Error(data?.dica || data?.error || "Falha ao enviar e-mail de teste");
+
+      const origemTexto: Record<string, string> = {
+        app: "usando a configuração salva aqui no app ✅",
+        vercel: "usando variáveis de ambiente da Vercel (não a configuração desta página)",
+        mista: "usando parte da configuração deste app e parte de variáveis da Vercel — revise os campos abaixo",
+      };
+      const descricaoOrigem = origemTexto[data?.origem] || "";
+
+      toast({
+        title: "✅ E-mail de teste enviado!",
+        description: `Verifique a caixa de entrada de ${user.email}. ${descricaoOrigem}`,
+      });
+    } catch (err: any) {
+      toast({ title: "Erro no teste de e-mail", description: err.message, variant: "destructive" });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -140,7 +281,6 @@ export function ConfigPage() {
         const { error: updateError } = await supabase
           .from("api_keys")
           .update({
-            datajud_token: apiKeys.datajud_token || null,
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
@@ -156,7 +296,6 @@ export function ConfigPage() {
           .insert({
             id: generateId(),
             user_id: user.id,
-            datajud_token: apiKeys.datajud_token || null,
             aasp_chave: apiKeys.aasp_chave || null,
             groq_api_key: apiKeys.groq_api_key || null,
             whatsapp_token: apiKeys.whatsapp_token || null,
@@ -167,15 +306,13 @@ export function ConfigPage() {
         if (insertError) {
           console.error("Erro ao inserir:", insertError);
           if (insertError.message.includes("api_keys")) {
-            throw new Error("Tabela 'api_keys' não existe. Crie a tabela no Supabase com as colunas: id, user_id, datajud_token, aasp_chave, groq_api_key, whatsapp_token");
+            throw new Error("Tabela 'api_keys' não existe. Crie a tabela no Supabase com as colunas: id, user_id, aasp_chave, groq_api_key, whatsapp_token");
           }
           throw insertError;
         }
       }
 
       // Persiste no localStorage para que as páginas leiam mesmo sem nova query ao Supabase
-      if (apiKeys.datajud_token) localStorage.setItem("jurismonitor_datajud_token", apiKeys.datajud_token);
-      else localStorage.removeItem("jurismonitor_datajud_token");
       if (apiKeys.aasp_chave) localStorage.setItem("jurismonitor_aasp_key", apiKeys.aasp_chave);
       else localStorage.removeItem("jurismonitor_aasp_key");
       if (apiKeys.groq_api_key) localStorage.setItem("jurismonitor_groq_key", apiKeys.groq_api_key);
@@ -196,51 +333,6 @@ export function ConfigPage() {
 
   const toggleShowKey = (key: keyof typeof showKeys) => {
     setShowKeys({ ...showKeys, [key]: !showKeys[key] });
-  };
-
-  const testDatajudConnection = async () => {
-    const token = apiKeys.datajud_token.trim() || localStorage.getItem("jurismonitor_datajud_token")?.trim() || "";
-    if (!token) {
-      toast({ title: "Token não configurado", description: "Informe o token do DataJud e salve.", variant: "destructive" });
-      return;
-    }
-
-    setTestingDatajud(true);
-    try {
-      // Passa pelo proxy (evita CORS) e envia o token como header Authorization
-      // O proxy.js repassa req.headers['authorization'] para a API do Datajud
-      const targetUrl = "https://api-publica.datajud.cnj.jus.br/api_publica_tjsp/_search";
-      const proxyUrl  = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-      const res = await fetch(proxyUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `ApiKey ${token}`,
-        },
-        body: JSON.stringify({ query: { match: { numeroProcesso: "00000000000000000000" } }, size: 1 }),
-        signal: AbortSignal.timeout(20000),
-      });
-
-      // Lê o status real vindo do upstream (proxy devolve como header)
-      const upstreamStatus = Number(res.headers.get("X-Upstream-Status") || res.status);
-
-      if (upstreamStatus === 200 || upstreamStatus === 404) {
-        // 404 = processo não encontrado (esperado), mas a API respondeu = token OK
-        toast({ title: "✅ DataJud CNJ conectado!", description: `Token válido — API respondendo normalmente.` });
-      } else if (upstreamStatus === 401 || upstreamStatus === 403) {
-        toast({ title: `❌ Token inválido (HTTP ${upstreamStatus})`, description: "O token foi recusado pelo DataJud. Verifique se está correto e ativo.", variant: "destructive" });
-      } else {
-        toast({ title: `⚠️ DataJud retornou HTTP ${upstreamStatus}`, description: "Resposta inesperada da API. Tente novamente.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({
-        title: "❌ Não foi possível conectar ao DataJud",
-        description: "Verifique sua conexão. Em desenvolvimento local o proxy pode não estar ativo.",
-        variant: "destructive",
-      });
-    } finally {
-      setTestingDatajud(false);
-    }
   };
 
   const testAaspConnection = async () => {
@@ -355,10 +447,21 @@ export function ConfigPage() {
       }
 
       const data = await response.json();
-      toast({ 
-        title: "✅ Groq AI conectada!", 
-        description: `${data.data?.length || 0} modelos disponíveis` 
-      });
+      const modelosDisponiveis: string[] = (data.data || []).map((m: any) => m.id);
+      const modeloAtual = groqModel || MODEL_FALLBACK_CHAIN[0];
+
+      if (modelosDisponiveis.length && !modelosDisponiveis.includes(modeloAtual)) {
+        toast({
+          title: "⚠️ Chave OK, mas o modelo configurado não existe mais",
+          description: `"${modeloAtual}" não está na lista de modelos ativos da Groq. Atualize o campo "Modelo de IA" acima (ex: ${modelosDisponiveis[0]}).`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "✅ Groq AI conectada!",
+          description: `${modelosDisponiveis.length} modelos disponíveis · modelo atual OK`
+        });
+      }
     } catch (err: any) {
       toast({ 
         title: "❌ Erro ao conectar com Groq", 
@@ -521,7 +624,6 @@ export function ConfigPage() {
 
   const getConnectionStatus = () => {
     return {
-      datajud: !!apiKeys.datajud_token,
       aasp: !!apiKeys.aasp_chave,
       groq: !!apiKeys.groq_api_key,
       whatsapp: !!apiKeys.whatsapp_token,
@@ -531,18 +633,20 @@ export function ConfigPage() {
   const status = getConnectionStatus();
 
   return (
-    <div>
-      <div className="mb-7">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Configurações</h1>
+    <div className="page-stack">
+      <div className="mb-6">
+        <h1 className="page-title">Configurações</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Gerencie seu perfil e integrações com APIs externas
         </p>
       </div>
 
       <Tabs defaultValue="perfil" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[900px]">
+        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto p-1 lg:w-fit">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="apis">API Keys</TabsTrigger>
+          <TabsTrigger value="email">E-mail</TabsTrigger>
+          <TabsTrigger value="google-agenda">Google Agenda</TabsTrigger>
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
           <TabsTrigger value="diagnostico">Diagnóstico AASP</TabsTrigger>
           <TabsTrigger value="sincronizacao">Sincronização</TabsTrigger>
@@ -609,57 +713,6 @@ export function ConfigPage() {
             
             <form onSubmit={(e) => e.preventDefault()} autoComplete="off">
             <div className="space-y-4">
-              {/* DataJud CNJ */}
-              <div className="border border-border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold">DataJud CNJ</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Token de acesso ao DataJud do CNJ
-                    </p>
-                  </div>
-                  {status.datajud ? (
-                    <CheckCircle className="h-5 w-5 text-green-ok" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="relative">
-                  <Input
-                    type={showKeys.datajud_token ? "text" : "password"}
-                    value={apiKeys.datajud_token}
-                    onChange={(e) => setApiKeys({ ...apiKeys, datajud_token: e.target.value })}
-                    placeholder="Token CNJ DataJud"
-                    className="pr-10 font-mono text-sm"
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey("datajud_token")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showKeys.datajud_token ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <div className="mt-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={testDatajudConnection}
-                    disabled={testingDatajud || !apiKeys.datajud_token}
-                  >
-                    {testingDatajud ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Testando...
-                      </>
-                    ) : (
-                      <>⚡ Testar Conexão</>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
               {/* AASP - Novo Layout */}
               <div className="border-2 border-accent/30 rounded-xl p-5 bg-gradient-to-br from-card to-accent/5">
                 <div className="flex items-start gap-3 mb-4">
@@ -826,6 +879,38 @@ export function ConfigPage() {
                     )}
                   </Button>
                 </div>
+
+                {/* Modelo de IA — editável sem precisar de deploy caso a Groq descontinue o modelo padrão */}
+                <div className="mt-4 pt-4 border-t border-border">
+                  <Label htmlFor="groq_model" className="text-xs text-muted-foreground">
+                    Modelo de IA
+                  </Label>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Input
+                      id="groq_model"
+                      type="text"
+                      value={groqModel}
+                      onChange={(e) => setGroqModelState(e.target.value)}
+                      placeholder={MODEL_FALLBACK_CHAIN[0]}
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setGroqModelPreferido(groqModel);
+                        toast({ title: "✅ Modelo de IA salvo", description: groqModel || MODEL_FALLBACK_CHAIN[0] });
+                      }}
+                    >
+                      Salvar
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Se a Groq descontinuar este modelo, o sistema tenta automaticamente um dos
+                    modelos de reserva ({MODEL_FALLBACK_CHAIN.join(", ")}). Se isso acontecer,
+                    atualize o modelo aqui — não precisa esperar uma nova versão do sistema.
+                  </p>
+                </div>
               </div>
 
               {/* WhatsApp */}
@@ -878,16 +963,174 @@ export function ConfigPage() {
         </TabsContent>
 
         {/* ABA INTEGRAÇÕES */}
+        <TabsContent value="email" className="space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+            <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
+              <Mail className="h-6 w-6" />
+              Envio automático de e-mails
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Configure aqui as credenciais usadas para notificar clientes automaticamente
+              quando chega uma nova publicação. Não é necessário mexer em nada na Vercel —
+              tudo fica salvo com a sua conta.
+            </p>
+
+            {loadingEmailConfig ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+              </div>
+            ) : (
+              <form onSubmit={(e) => e.preventDefault()} autoComplete="off" className="space-y-5">
+                <div>
+                  <Label className="text-sm font-bold uppercase tracking-wider">Provedor de envio</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant={emailConfig.email_provider === "gmail" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEmailConfig({ ...emailConfig, email_provider: "gmail" })}
+                    >
+                      Gmail
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={emailConfig.email_provider === "resend" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setEmailConfig({ ...emailConfig, email_provider: "resend" })}
+                    >
+                      Resend
+                    </Button>
+                  </div>
+                </div>
+
+                {emailConfig.email_provider === "gmail" ? (
+                  <div className="border border-border rounded-lg p-4 space-y-3">
+                    <div>
+                      <Label className="text-xs">E-mail do Gmail</Label>
+                      <Input
+                        type="email"
+                        value={emailConfig.email_gmail_user}
+                        onChange={(e) => setEmailConfig({ ...emailConfig, email_gmail_user: e.target.value })}
+                        placeholder="seu-email@gmail.com"
+                        autoComplete="new-password"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs flex items-center gap-2">
+                        Senha de app do Gmail (16 caracteres)
+                        {emailSecretsSet.gmail_app_password && (
+                          <span className="text-green-ok flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> configurada
+                          </span>
+                        )}
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type={showEmailSecrets.gmail_app_password ? "text" : "password"}
+                          value={emailConfig.email_gmail_app_password}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_gmail_app_password: e.target.value })}
+                          placeholder={emailSecretsSet.gmail_app_password ? "•••••••••••••••• (deixe em branco para manter)" : "abcdefghijklmnop"}
+                          className="pr-10 font-mono text-sm"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEmailSecrets({ ...showEmailSecrets, gmail_app_password: !showEmailSecrets.gmail_app_password })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showEmailSecrets.gmail_app_password ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Gere em{" "}
+                        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="underline">
+                          myaccount.google.com/apppasswords
+                        </a>{" "}
+                        (exige verificação em 2 etapas ativada).
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg p-4 space-y-3">
+                    <div>
+                      <Label className="text-xs flex items-center gap-2">
+                        Resend API Key
+                        {emailSecretsSet.resend_api_key && (
+                          <span className="text-green-ok flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> configurada
+                          </span>
+                        )}
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          type={showEmailSecrets.resend_api_key ? "text" : "password"}
+                          value={emailConfig.email_resend_api_key}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, email_resend_api_key: e.target.value })}
+                          placeholder={emailSecretsSet.resend_api_key ? "•••••••••••••••• (deixe em branco para manter)" : "re_sua_chave_aqui"}
+                          className="pr-10 font-mono text-sm"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEmailSecrets({ ...showEmailSecrets, resend_api_key: !showEmailSecrets.resend_api_key })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showEmailSecrets.resend_api_key ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Nome do remetente</Label>
+                    <Input
+                      value={emailConfig.email_remetente_nome}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, email_remetente_nome: e.target.value })}
+                      placeholder="Ex: Fulano de Tal Advocacia"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">URL do portal do cliente (opcional)</Label>
+                    <Input
+                      value={emailConfig.email_portal_url}
+                      onChange={(e) => setEmailConfig({ ...emailConfig, email_portal_url: e.target.value })}
+                      placeholder="https://seu-site.vercel.app"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button onClick={handleSaveEmailConfig} disabled={savingEmailConfig}>
+                    {savingEmailConfig ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Salvando...</>
+                    ) : (
+                      <><Save className="h-4 w-4 mr-2" /> Salvar configuração</>
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={handleTestEmailConfig} disabled={testingEmail}>
+                    {testingEmail ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enviando...</>
+                    ) : (
+                      <><Send className="h-4 w-4 mr-2" /> Enviar e-mail de teste</>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="google-agenda" className="space-y-4">
+          <GoogleAgendaTab />
+        </TabsContent>
+
         <TabsContent value="integracoes" className="space-y-4">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
             <h2 className="font-display text-xl font-bold mb-4">Status das Integrações</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <IntegrationCard
-                title="DataJud CNJ"
-                description="Consulta processual automática"
-                status={status.datajud}
-              />
               <IntegrationCard
                 title="AASP Intimações"
                 description="Importação automática de intimações"

@@ -1,5 +1,6 @@
 import { StatCard } from "@/components/StatCard";
 import { useProcessos } from "@/hooks/useProcessos";
+import { FASE_PROCESSO_OPTIONS, CORES_FASE } from "@/lib/statusProcesso";
 import { useTarefas, useCreateTarefa } from "@/hooks/useTarefas";
 import { useClientes } from "@/hooks/useClientes";
 import { useFeriados } from "@/hooks/useFeriados";
@@ -9,6 +10,9 @@ import { useState, useEffect } from "react";
 import type { PageId } from "@/types/navigation";
 import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ArrowRight, AlertCircle, BriefcaseBusiness, CalendarDays, CheckCircle2, CheckSquare2, ChevronRight, Clock3, DollarSign, FileText, GripVertical, LayoutGrid, MonitorUp, Plus, RotateCcw, Sparkles, TriangleAlert, Users, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 /** Parseia YYYY-MM-DD como data local (evita deslocamento UTC no Brasil) */
 function parseDateLocal(iso: string): Date {
@@ -17,8 +21,8 @@ function parseDateLocal(iso: string): Date {
 }
 
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
-  ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
+  BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Line,
+  ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 
 const STORE_KEY = "jm_aasp_intimacoes";
@@ -34,9 +38,114 @@ function dataLocalHoje(): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-interface DashboardPageProps { onNavigate?: (page: PageId) => void; }
+function statusTarefaColor(status: string): string {
+  if (status === "concluida")     return "text-green-ok bg-green-ok/10";
+  if (status === "cancelada")     return "text-muted-foreground bg-muted";
+  if (status === "triagem")       return "text-gray-600 bg-gray-100";
+  if (status === "pendente")      return "text-gray-600 bg-gray-100";
+  if (status === "ag_documentos") return "text-amber-600 bg-amber-100";
+  if (status === "ag_cliente")    return "text-sky-600 bg-sky-100";
+  if (status === "elaboracao")    return "text-violet-600 bg-violet-100";
+  if (status === "andamento")     return "text-blue-600 bg-blue-100";
+  if (status === "audiencia")     return "text-red-600 bg-red-100";
+  if (status === "ag_tribunal")   return "text-purple-600 bg-purple-100";
+  return "text-muted-foreground bg-muted/50";
+}
 
-export function DashboardPage({ onNavigate }: DashboardPageProps) {
+function statusTarefaLabel(status: string): string {
+  if (status === "concluida")     return "Concluída";
+  if (status === "cancelada")     return "Cancelada";
+  if (status === "triagem")       return "Triagem";
+  if (status === "pendente")      return "Triagem";
+  if (status === "ag_documentos") return "Ag. Documentos";
+  if (status === "ag_cliente")    return "Ag. Cliente";
+  if (status === "elaboracao")    return "Em Elaboração";
+  if (status === "andamento")     return "Em Andamento";
+  if (status === "audiencia")     return "Audiência/Diligência";
+  if (status === "ag_tribunal")   return "Ag. Tribunal";
+  return status || "—";
+}
+
+/** Popover que aparece ao passar o mouse num card, listando as tarefas do grupo. */
+// Cores fortes por fase do processo, agrupadas por etapa (early → final),
+// sempre com texto preto em negrito para máximo contraste/leitura rápida.
+// Cores fortes por fase — importadas de src/lib/statusProcesso.ts (compartilhado com ProcessosPage)
+
+const CORES_PRAZO_CARD = {
+  green:  { border: "border-emerald-600/50", bg: "bg-emerald-500",  texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
+  orange: { border: "border-orange-600/50",  bg: "bg-orange-400",   texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
+  red:    { border: "border-red-600/50",     bg: "bg-red-500",      texto: "text-black", titulo: "text-black/70", chipBg: "bg-black/10", chipTexto: "text-black", icone: "bg-black/10 text-black" },
+} as const;
+
+/** Card grande do Dashboard: mostra a contagem + a lista completa de tarefas daquele grupo (sempre visível, sem hover). */
+function TarefaPrazoCard({ titulo, icon, cor, tarefas, onNavigate }: {
+  titulo: string;
+  icon: React.ReactNode;
+  cor: keyof typeof CORES_PRAZO_CARD;
+  tarefas: any[];
+  onNavigate?: (page: PageId) => void;
+}) {
+  const c = CORES_PRAZO_CARD[cor];
+  return (
+    <div className={`rounded-2xl border ${c.border} ${c.bg} p-5 flex flex-col`}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <div className={`rounded-lg p-1.5 ${c.icone}`}>{icon}</div>
+          <span className={`text-xs font-extrabold uppercase tracking-wider ${c.titulo}`}>{titulo}</span>
+        </div>
+        <span className={`font-display text-2xl font-black ${c.texto}`}>{tarefas.length}</span>
+      </div>
+
+      <div className="mt-3 flex-1 max-h-[320px] overflow-y-auto space-y-1.5 pr-0.5">
+        {tarefas.length === 0 ? (
+          <div className="p-6 text-xs text-black/50 text-center font-semibold">Nenhuma tarefa neste grupo. 🎉</div>
+        ) : (
+          tarefas.map(t => (
+            <div
+              key={t.id}
+              onClick={() => onNavigate?.("tarefas")}
+              className="rounded-lg bg-white/85 border border-black/10 px-3 py-2 cursor-pointer hover:bg-white transition-colors"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-black truncate">{t.titulo}</span>
+                <span className={`text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0 ${c.chipBg} ${c.chipTexto}`}>
+                  {statusTarefaLabel(t.status)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span className="text-[0.68rem] font-mono text-black/60 font-semibold truncate">
+                  {t.processo?.numero_cnj || t.numero_processo || "Sem processo vinculado"}
+                </span>
+                <span className={`text-[0.68rem] font-mono font-black whitespace-nowrap shrink-0 ${c.texto}`}>
+                  {t.data_vencimento ? t.data_vencimento.slice(0,10).split("-").reverse().join("/") : "—"}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface DashboardPageProps { onNavigate?: (page: PageId, params?: { fase?: string }) => void; onOpenTv?: () => void; }
+
+type DashboardCardId = "intimacoes" | "processos" | "clientes" | "tarefas" | "a-vencer" | "vencidas";
+const DASHBOARD_ORDER_KEY = "jm_dashboard_card_order";
+const DEFAULT_CARD_ORDER: DashboardCardId[] = ["intimacoes", "processos", "clientes", "tarefas", "a-vencer", "vencidas"];
+
+function loadDashboardCardOrder(): DashboardCardId[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_ORDER_KEY) || "[]") as DashboardCardId[];
+    return saved.length === DEFAULT_CARD_ORDER.length && DEFAULT_CARD_ORDER.every((id) => saved.includes(id))
+      ? saved
+      : DEFAULT_CARD_ORDER;
+  } catch {
+    return DEFAULT_CARD_ORDER;
+  }
+}
+
+export function DashboardPage({ onNavigate, onOpenTv }: DashboardPageProps) {
   const { user } = useAuth();
   const { data: processos = [] } = useProcessos();
   const { data: tarefas = [] } = useTarefas();
@@ -44,8 +153,68 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { data: feriados = [] } = useFeriados();
   const createTarefa = useCreateTarefa();
   const { toast } = useToast();
+
+  // ── Financeiro Atrasado ──────────────────────────────────────────────────
+  const [showFinanceiroModal, setShowFinanceiroModal] = useState(false);
+  const { data: lancamentosFinanceiro = [] } = useQuery({
+    queryKey: ["financeiro-dashboard", user?.id],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("financeiro").select("*");
+      if (error) throw error;
+      return data as any[];
+    },
+    enabled: !!user,
+  });
+  const financeiroAtrasado = lancamentosFinanceiro.filter((l: any) => {
+    if (l.status === "recebido") return false;
+    // considera apenas receitas (valores a receber); despesas em atraso
+    // (contas a pagar) são tratadas na própria tela Financeiro
+    if (l.tipo_lancamento && l.tipo_lancamento !== "receita") return false;
+    const hoje = new Date().toISOString().slice(0, 10);
+    return l.data_vencimento && l.data_vencimento.slice(0, 10) < hoje;
+  });
+  const valorTotalAtrasado = financeiroAtrasado.reduce((soma: number, l: any) => soma + Number(l.valor || 0), 0);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [taskModalInitialData, setTaskModalInitialData] = useState<any>(null);
+  const [organizingCards, setOrganizingCards] = useState(false);
+  const [draggedCard, setDraggedCard] = useState<DashboardCardId | null>(null);
+  const [cardOrder, setCardOrder] = useState<DashboardCardId[]>(loadDashboardCardOrder);
+
+  const saveCardOrder = (nextOrder: DashboardCardId[]) => {
+    setCardOrder(nextOrder);
+    localStorage.setItem(DASHBOARD_ORDER_KEY, JSON.stringify(nextOrder));
+  };
+
+  const moveCard = (id: DashboardCardId, direction: -1 | 1) => {
+    const currentIndex = cardOrder.indexOf(id);
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= cardOrder.length) return;
+    const nextOrder = [...cardOrder];
+    [nextOrder[currentIndex], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[currentIndex]];
+    saveCardOrder(nextOrder);
+  };
+
+  const dropCard = (targetId: DashboardCardId) => {
+    if (!draggedCard || draggedCard === targetId) return setDraggedCard(null);
+    const nextOrder = cardOrder.filter((id) => id !== draggedCard);
+    nextOrder.splice(nextOrder.indexOf(targetId), 0, draggedCard);
+    saveCardOrder(nextOrder);
+    setDraggedCard(null);
+  };
+
+  const cardContainerProps = (id: DashboardCardId) => ({
+    style: { order: cardOrder.indexOf(id) },
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => organizingCards && event.preventDefault(),
+    onDrop: () => dropCard(id),
+  });
+
+  const CardOrganizer = ({ id }: { id: DashboardCardId }) => organizingCards ? (
+    <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between rounded-lg border border-border bg-background/95 p-1 shadow-sm backdrop-blur" onClick={(event) => event.stopPropagation()}>
+      <button type="button" onClick={() => moveCard(id, -1)} disabled={cardOrder.indexOf(id) === 0} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-25" aria-label="Mover card para trás"><ArrowLeft className="h-3.5 w-3.5" /></button>
+      <button type="button" draggable onDragStart={() => setDraggedCard(id)} onDragEnd={() => setDraggedCard(null)} className="flex cursor-grab items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-semibold text-muted-foreground hover:bg-muted active:cursor-grabbing" aria-label="Arrastar card"><GripVertical className="h-3.5 w-3.5" /> Arraste</button>
+      <button type="button" onClick={() => moveCard(id, 1)} disabled={cardOrder.indexOf(id) === cardOrder.length - 1} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-25" aria-label="Mover card para frente"><ArrowRight className="h-3.5 w-3.5" /></button>
+    </div>
+  ) : null;
 
   // ── Intimações: inicia com localStorage (imediato) e sincroniza com Supabase ─
   const [intimacoes, setIntimacoes] = useState<any[]>(() => loadIntimacoesCached());
@@ -148,15 +317,23 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   })();
 
   const now = new Date();
+  const amanha = (() => {
+    const d = parseDateLocal(hoje);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  })();
   const tarefasPendentes  = tarefas.filter(t => t.status !== "concluida");
   const tarefasVencidas   = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    return parseDateLocal(t.data_vencimento) < now;
+    return t.data_vencimento.slice(0, 10) < hoje;
+  });
+  const tarefasVenceHoje = tarefas.filter(t => {
+    if (!t.data_vencimento || t.status === "concluida") return false;
+    return t.data_vencimento.slice(0, 10) === hoje;
   });
   const tarefasAVencer = tarefas.filter(t => {
     if (!t.data_vencimento || t.status === "concluida") return false;
-    const diff = parseDateLocal(t.data_vencimento).getTime() - now.getTime();
-    return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+    return t.data_vencimento.slice(0, 10) === amanha;
   });
 
   // Gráficos
@@ -214,6 +391,22 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
     });
   })();
 
+  const processosStatusData = [
+    { name: "Ativos", value: processos.filter(p => p.status === "ativo").length, color: "#0f766e" },
+    { name: "Pausados", value: processos.filter(p => p.status === "pausado").length, color: "#c59a32" },
+    { name: "Inativos", value: processos.filter(p => p.status === "inativo").length, color: "#dc2626" },
+    { name: "Finalizados", value: processos.filter(p => p.status === "finalizado").length, color: "#94a3b8" },
+  ];
+  const processosAtivosPercentual = processos.length
+    ? Math.round((processosStatusData[0].value / processos.length) * 100)
+    : 0;
+  const mediaIntimacoes = intimacoesUltimos7Dias.length
+    ? intimacoesUltimos7Dias.reduce((total, item) => total + item.total, 0) / intimacoesUltimos7Dias.length
+    : 0;
+  const intimacoesComMedia = intimacoesUltimos7Dias.map((item) => ({ ...item, media: Number(mediaIntimacoes.toFixed(1)) }));
+  const tarefasConcluidasTotal = tarefas.filter(t => t.status === "concluida").length;
+  const taxaConclusao = tarefas.length ? Math.round((tarefasConcluidasTotal / tarefas.length) * 100) : 0;
+
   const handleOpenTaskModal = (intimacao: any) => {
     setTaskModalInitialData({
       titulo: `Análise: ${intimacao._titulo || "Intimação AASP"}`,
@@ -227,9 +420,10 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
     try {
       await createTarefa.mutateAsync({
         titulo: data.titulo, descricao: data.descricao || null,
-        data_vencimento: data.data_vencimento || null, prioridade: data.prioridade,
+        data_vencimento: data.data_vencimento || null, hora_vencimento: data.hora_vencimento || null,
+        prioridade: data.prioridade,
         processo_id: data.processo_id || null, status: data.status || "pendente",
-      });
+      } as any);
       toast({ title: "✅ Tarefa criada!" });
       setShowCreateTaskModal(false);
       setTaskModalInitialData(null);
@@ -239,9 +433,60 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   };
 
   const aaspConectada = intimacoes.length > 0;
+  const firstName = user?.user_metadata?.full_name?.trim().split(/\s+/)[0] || "Doutor(a)";
+  const todayLabel = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  }).format(new Date());
 
   return (
-    <div>
+    <div className="page-stack">
+      <header className="relative overflow-hidden rounded-t-[1.5rem] bg-primary px-5 pb-5 pt-6 text-primary-foreground shadow-xl shadow-primary/10 sm:px-7 sm:pt-7">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-white/5 blur-3xl" />
+        <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+        <div>
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-semibold text-primary-foreground/70">
+            <Sparkles className="h-3.5 w-3.5 text-accent" /> Centro de comando do escritório
+          </div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground/50 first-letter:uppercase">
+            {todayLabel}
+          </p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+            Olá, {firstName}.
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-primary-foreground/60">
+            Veja primeiro o que exige atenção e acompanhe a operação sem perder prazos.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onOpenTv} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
+            <MonitorUp className="h-4 w-4" /> Painel TV
+          </button>
+          <button type="button" onClick={() => setOrganizingCards((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-white/10">
+            {organizingCards ? <X className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+            {organizingCards ? "Concluir organização" : "Organizar painel"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateTaskModal(true)}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-lg shadow-black/10 transition-all hover:-translate-y-0.5 hover:bg-accent/90"
+          >
+            <Plus className="h-4 w-4" /> Nova tarefa
+          </button>
+        </div>
+        </div>
+      </header>
+
+      {organizingCards && (
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-sm text-foreground sm:flex-row sm:items-center">
+          <GripVertical className="h-4 w-4 shrink-0 text-accent" />
+          <span className="flex-1">Arraste os cards pelo indicador ou use as setas. A ordem fica salva somente neste navegador.</span>
+          <button type="button" onClick={() => saveCardOrder(DEFAULT_CARD_ORDER)} className="inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-background hover:text-foreground sm:self-auto"><RotateCcw className="h-3.5 w-3.5" /> Restaurar ordem</button>
+        </div>
+      )}
+
       {/* Banner de erro de sincronização — visível no mobile */}
       {erroSync && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-400/40 rounded-xl text-sm text-red-600 flex items-start gap-2">
@@ -250,104 +495,221 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           <button onClick={() => setErroSync(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600 font-bold">✕</button>
         </div>
       )}
-      {/* ── Cards de estatísticas — linha 1 ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+      {/* ── Linha compacta: Intimações / Processos / Clientes / Tarefas (totais) ── */}
+      <div className={`relative z-10 mb-4 grid grid-cols-2 gap-2.5 rounded-b-[1.5rem] border-t border-white/10 bg-primary px-5 pb-4 pt-4 text-primary-foreground shadow-xl shadow-primary/10 sm:grid-cols-5 sm:px-7 ${organizingCards ? "mt-0" : "!-mt-6"}`}>
         {/* Intimações de HOJE */}
         <div
+          {...cardContainerProps("intimacoes")}
           onClick={() => onNavigate?.("intimacoes")}
-          className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-2 border-amber-500/40 rounded-xl p-4 cursor-pointer hover:border-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transition-all group"
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-amber-300/20 bg-amber-300/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-amber-300/45 hover:bg-amber-300/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-amber-600 mb-1">Intimações Hoje</div>
-          <div className="font-display text-3xl font-black text-amber-600 group-hover:scale-105 transition-transform">
-            {intimacoesHoje.length}
+          <CardOrganizer id="intimacoes" />
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-amber-200/80">Intimações hoje</div>
+            <FileText className="h-3.5 w-3.5 text-amber-300/70 shrink-0" />
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">publicações do dia</div>
-          {intimacoesNaoLidas.length > 0 && (
-            <div className="mt-1.5 text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
-              {intimacoesNaoLidas.length} não lida(s)
-            </div>
-          )}
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {intimacoesHoje.length}
+            {intimacoesNaoLidas.length > 0 && (
+              <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-amber-200 bg-amber-300/15 rounded-full px-1.5 py-0.5">
+                {intimacoesNaoLidas.length} não lida(s)
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Processos */}
         <div
+          {...cardContainerProps("processos")}
           onClick={() => onNavigate?.("processos")}
-          className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-2 border-blue-500/40 rounded-xl p-4 cursor-pointer hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 transition-all"
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-blue-300/20 bg-blue-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-blue-300/45 hover:bg-blue-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-blue-600 mb-1">Processos</div>
-          <div className="font-display text-3xl font-black text-blue-600">{processos.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
-          <div className="mt-1.5 text-[0.6rem] bg-blue-500/20 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
-            {processos.filter(p => p.status === "ativo").length} ativos
+          <CardOrganizer id="processos" />
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-blue-200/80">Processos</div>
+            <BriefcaseBusiness className="h-3.5 w-3.5 text-blue-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {processos.length}
+            <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-blue-200 bg-blue-300/15 rounded-full px-1.5 py-0.5">
+              {processos.filter(p => p.status === "ativo").length} ativos
+            </span>
           </div>
         </div>
 
         {/* Clientes */}
         <div
+          {...cardContainerProps("clientes")}
           onClick={() => onNavigate?.("clientes")}
-          className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-2 border-purple-500/40 rounded-xl p-4 cursor-pointer hover:border-purple-500 hover:shadow-lg hover:shadow-purple-500/20 transition-all"
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-emerald-300/20 bg-emerald-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-emerald-300/45 hover:bg-emerald-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-purple-600 mb-1">Clientes</div>
-          <div className="font-display text-3xl font-black text-purple-600">{clientes.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">cadastrados</div>
-          <div className="flex flex-wrap gap-1 mt-1.5">
+          <CardOrganizer id="clientes" />
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-emerald-200/80">Clientes</div>
+            <Users className="h-3.5 w-3.5 text-emerald-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {clientes.length}
             {clientesComPublicacoes > 0 && (
-              <div className="text-[0.6rem] bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                {clientesComPublicacoes} com publicações
-              </div>
-            )}
-            {clientesNotificadosHoje > 0 && (
-              <div className="text-[0.6rem] bg-green-500/20 text-green-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                {clientesNotificadosHoje} notificado(s) hoje
-              </div>
+              <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-amber-200 bg-amber-300/15 rounded-full px-1.5 py-0.5">
+                {clientesComPublicacoes} c/ public.
+              </span>
             )}
           </div>
         </div>
 
-        {/* Tarefas pendentes */}
+        {/* Tarefas (total pendentes) */}
         <div
+          {...cardContainerProps("tarefas")}
           onClick={() => onNavigate?.("tarefas")}
-          className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-2 border-cyan-500/40 rounded-xl p-4 cursor-pointer hover:border-cyan-500 hover:shadow-lg hover:shadow-cyan-500/20 transition-all"
+          className={`group relative cursor-pointer overflow-hidden rounded-xl border border-cyan-300/20 bg-cyan-400/[0.08] px-3.5 py-3 transition-all hover:-translate-y-0.5 hover:border-cyan-300/45 hover:bg-cyan-400/[0.12] ${organizingCards ? "pt-14 ring-1 ring-accent/40" : ""}`}
         >
-          <div className="text-[0.65rem] font-bold uppercase tracking-widest text-cyan-600 mb-1">Tarefas</div>
-          <div className="font-display text-3xl font-black text-cyan-600">{tarefasPendentes.length}</div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">pendentes</div>
-          <div className="mt-1.5 text-[0.6rem] bg-cyan-500/20 text-cyan-700 px-1.5 py-0.5 rounded font-bold inline-block">
-            {tarefas.filter(t => t.status === "concluida").length} concluídas
+          <CardOrganizer id="tarefas" />
+          <div className="flex items-center justify-between">
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-cyan-200/80">Tarefas</div>
+            <CheckSquare2 className="h-3.5 w-3.5 text-cyan-300/70 shrink-0" />
+          </div>
+          <div className="font-display text-2xl font-bold text-white leading-tight mt-1">
+            {tarefasPendentes.length}
+            <span className="ml-1.5 align-middle text-[0.6rem] font-bold text-cyan-200 bg-cyan-300/15 rounded-full px-1.5 py-0.5">
+              {tarefas.filter(t => t.status === "concluida").length} concluídas
+            </span>
           </div>
         </div>
 
-        {/* A vencer (3 dias) */}
+        {/* Financeiro Atrasado */}
         <div
-          onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
-            tarefasAVencer.length > 0
-              ? "bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/40 hover:border-orange-500 hover:shadow-lg hover:shadow-orange-500/20"
-              : "bg-card border-border hover:border-accent/40"
+          onClick={() => financeiroAtrasado.length > 0 && setShowFinanceiroModal(true)}
+          className={`group relative overflow-hidden rounded-xl border px-3.5 py-3 transition-all hover:-translate-y-0.5 ${
+            financeiroAtrasado.length > 0
+              ? "cursor-pointer border-red-500/60 bg-red-500"
+              : "border-white/10 bg-white/[0.04]"
           }`}
         >
-          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasAVencer.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>A Vencer</div>
-          <div className={`font-display text-3xl font-black ${tarefasAVencer.length > 0 ? "text-orange-600" : ""}`}>
-            {tarefasAVencer.length}
+          <div className="flex items-center justify-between">
+            <div className={`text-[0.62rem] font-extrabold uppercase tracking-[0.1em] ${financeiroAtrasado.length > 0 ? "text-black/70" : "text-white/50"}`}>Financeiro Atrasado</div>
+            <DollarSign className={`h-3.5 w-3.5 shrink-0 ${financeiroAtrasado.length > 0 ? "text-black" : "text-white/40"}`} />
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">próximos 3 dias</div>
+          <div className={`font-display text-2xl font-black leading-tight mt-1 ${financeiroAtrasado.length > 0 ? "text-black" : "text-white"}`}>
+            {financeiroAtrasado.length}
+            {financeiroAtrasado.length > 0 && (
+              <span className="ml-1.5 align-middle text-[0.62rem] font-black bg-black/15 rounded-full px-1.5 py-0.5">
+                {valorTotalAtrasado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+            )}
+          </div>
         </div>
+      </div>
 
-        {/* Vencidas */}
-        <div
-          onClick={() => onNavigate?.("tarefas")}
-          className={`rounded-xl p-4 border-2 cursor-pointer transition-all ${
-            tarefasVencidas.length > 0
-              ? "bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/40 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20"
-              : "bg-card border-border hover:border-accent/40"
-          }`}
-        >
-          <div className={`text-[0.65rem] font-bold uppercase tracking-widest mb-1 ${tarefasVencidas.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Vencidas</div>
-          <div className={`font-display text-3xl font-black ${tarefasVencidas.length > 0 ? "text-red-600" : ""}`}>
-            {tarefasVencidas.length}
+      {/* Modal: Lançamentos financeiros atrasados */}
+      {showFinanceiroModal && (
+        <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4" onClick={() => setShowFinanceiroModal(false)}>
+          <div className="bg-card rounded-2xl border border-red-alert/30 shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div>
+                <div className="font-display text-lg font-bold text-red-alert">⚠️ Financeiro Atrasado</div>
+                <div className="text-xs text-muted-foreground">
+                  {financeiroAtrasado.length} lançamento(s) — total {valorTotalAtrasado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </div>
+              </div>
+              <button onClick={() => setShowFinanceiroModal(false)} className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-2">
+              {financeiroAtrasado.map((l: any) => (
+                <div
+                  key={l.id}
+                  onClick={() => { setShowFinanceiroModal(false); onNavigate?.("financeiro"); }}
+                  className="rounded-lg bg-red-alert/5 border border-red-alert/20 px-3 py-2.5 cursor-pointer hover:bg-red-alert/10 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-foreground truncate">{l.cliente_nome}</span>
+                    <span className="text-sm font-black text-red-alert whitespace-nowrap">
+                      {Number(l.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <span className="text-xs text-muted-foreground truncate">{l.tipo}{l.processo ? ` · ${l.processo}` : ""}</span>
+                    <span className="text-xs font-mono font-bold text-red-alert whitespace-nowrap">
+                      venceu {l.data_vencimento.slice(0,10).split("-").reverse().join("/")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="text-[0.65rem] text-muted-foreground mt-0.5">prazo expirado</div>
         </div>
+      )}
+
+      {/* ── Processos por Fase — clicável, filtra a tela de Processos ── */}
+      {processos.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">📋 Processos por Fase</span>
+            <span className="text-[0.65rem] text-muted-foreground">Clique numa fase para ver os processos</span>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            {FASE_PROCESSO_OPTIONS
+              .map(fase => ({ fase, count: processos.filter(p => p.fase === fase).length }))
+              .filter(f => f.count > 0)
+              .sort((a, b) => b.count - a.count)
+              .map(({ fase, count }) => {
+                const cor = CORES_FASE[fase] || CORES_FASE._default;
+                return (
+                  <button
+                    key={fase}
+                    onClick={() => onNavigate?.("processos", { fase })}
+                    className={`flex items-center gap-2 ${cor} rounded-xl pl-3.5 pr-2.5 py-2 text-sm font-extrabold shadow-sm hover:brightness-95 hover:-translate-y-0.5 transition-all`}
+                  >
+                    {fase}
+                    <span className="bg-black/15 rounded-full min-w-[24px] h-6 flex items-center justify-center text-sm font-black px-1.5">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            {(() => {
+              const semFase = processos.filter(p => !p.fase).length;
+              return semFase > 0 ? (
+                <button
+                  onClick={() => onNavigate?.("processos")}
+                  className="flex items-center gap-2 bg-muted hover:bg-muted/70 border border-border rounded-xl pl-3.5 pr-2.5 py-2 text-sm font-extrabold text-muted-foreground transition-colors"
+                >
+                  Sem fase informada
+                  <span className="bg-black/10 rounded-full min-w-[24px] h-6 flex items-center justify-center text-sm font-black px-1.5">
+                    {semFase}
+                  </span>
+                </button>
+              ) : null;
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Prazos: Amanhã / Hoje / Vencidas — cards grandes com a lista sempre visível ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5 mb-6">
+        <TarefaPrazoCard
+          titulo="Vencem Amanhã"
+          icon={<Clock3 className="h-4 w-4" />}
+          cor="green"
+          tarefas={tarefasAVencer}
+          onNavigate={onNavigate}
+        />
+        <TarefaPrazoCard
+          titulo="Vencem Hoje"
+          icon={<AlertCircle className="h-4 w-4" />}
+          cor="orange"
+          tarefas={tarefasVenceHoje}
+          onNavigate={onNavigate}
+        />
+        <TarefaPrazoCard
+          titulo="Vencidas"
+          icon={<TriangleAlert className="h-4 w-4" />}
+          cor="red"
+          tarefas={tarefasVencidas}
+          onNavigate={onNavigate}
+        />
       </div>
 
       {/* ── Card extra: Clientes notificados hoje (se houver) ── */}
@@ -364,55 +726,88 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </div>
       )}
 
-      {/* ── Gráficos ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
-        <ChartCard title="Processos por Status">
-          <ResponsiveContainer width="100%" height={150}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: "Ativo",     value: processos.filter(p => p.status === "ativo").length,     color: "#10b981" },
-                  { name: "Arquivado", value: processos.filter(p => p.status === "arquivado").length, color: "#6b7280" },
-                  { name: "Pendente",  value: processos.filter(p => p.status === "pendente").length,  color: "#f59e0b" },
-                ]}
-                cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2} dataKey="value"
-              >
-                {["#10b981","#6b7280","#f59e0b"].map((color, i) => <Cell key={i} fill={color} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
+      {/* ── Inteligência visual ── */}
+      <section className="mb-6">
+        <div className="mb-3">
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-accent">Análise visual</p>
+          <h2 className="mt-0.5 font-display text-lg font-semibold">Desempenho em um olhar</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <InsightChartCard eyebrow="Carteira" title="Distribuição dos processos" metric={`${processosAtivosPercentual}%`} caption="dos processos estão ativos">
+            <div className="grid min-h-[235px] grid-cols-[1fr_0.8fr] items-center gap-2">
+              <div className="relative h-[210px] min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={processosStatusData} cx="50%" cy="50%" innerRadius="66%" outerRadius="88%" paddingAngle={4} cornerRadius={7} dataKey="value" stroke="none">
+                      {processosStatusData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    </Pie>
+                    <Tooltip content={<ModernTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="font-display text-3xl font-semibold text-foreground">{processos.length}</span>
+                  <span className="text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">processos</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {processosStatusData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.68rem] text-muted-foreground">{item.name}</p>
+                      <p className="text-sm font-bold text-foreground">{item.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </InsightChartCard>
 
-        <ChartCard title="Intimações — Últimos 7 Dias Úteis">
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={intimacoesUltimos7Dias.length ? intimacoesUltimos7Dias : [{ day: "—", total: 0 }]}>
-              <XAxis dataKey="day" tick={{ fontSize: 10 }} angle={-15} textAnchor="end" height={60} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="total" fill="#d97706" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+          <InsightChartCard eyebrow="Publicações" title="Fluxo de intimações" metric={mediaIntimacoes.toFixed(1)} caption="média por dia útil">
+            <div className="h-[235px] pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={intimacoesComMedia.length ? intimacoesComMedia : [{ day: "—", total: 0, media: 0 }]} margin={{ top: 10, right: 4, left: -22, bottom: 12 }}>
+                  <defs>
+                    <linearGradient id="intimacoesBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#c59a32" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#c59a32" stopOpacity={0.35} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.65} />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip content={<ModernTooltip />} />
+                  <Bar dataKey="total" name="Intimações" fill="url(#intimacoesBar)" radius={[6, 6, 2, 2]} maxBarSize={28} />
+                  <Line type="monotone" dataKey="media" name="Média" stroke="#0f766e" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </InsightChartCard>
 
-        <ChartCard title="Tarefas — Concluídas x Abertas">
-          <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={tarefasPorMes.length ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line type="monotone" dataKey="Concluídas" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 4 }} />
-              <Line type="monotone" dataKey="Abertas"    stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
+          <InsightChartCard eyebrow="Produtividade" title="Evolução das tarefas" metric={`${taxaConclusao}%`} caption="de conclusão geral">
+            <div className="h-[235px] pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={tarefasPorMes.length ? tarefasPorMes : [{ month: "—", Concluídas: 0, Abertas: 0 }]} margin={{ top: 10, right: 4, left: -22, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.65} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip content={<ModernTooltip />} />
+                  <Bar dataKey="Concluídas" name="Concluídas" stackId="tarefas" fill="#0f766e" radius={[0, 0, 3, 3]} maxBarSize={32} />
+                  <Bar dataKey="Abertas" name="Abertas" stackId="tarefas" fill="#c59a32" radius={[6, 6, 0, 0]} maxBarSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-1 flex items-center gap-4 text-[0.65rem] font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#0f766e]" /> Concluídas</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#c59a32]" /> Abertas</span>
+            </div>
+          </InsightChartCard>
+        </div>
+      </section>
 
       {/* ── Últimas Intimações + Agenda ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-3.5 mb-5">
-        <div className="bg-card rounded-xl p-5 border border-border">
+        <div className="content-panel p-5">
           <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <div className="w-[18px] h-0.5 bg-accent" />
@@ -468,56 +863,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </div>
       </div>
 
-      {/* ── Prazos críticos ── */}
-      {tarefasAVencer.length > 0 && (
-        <div className="bg-card rounded-xl p-5 border border-accent/30 mb-5">
-          <div className="text-[0.72rem] font-bold text-accent uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-accent" />
-            ⚠️ Prazos Próximos — Próximos 3 dias
-          </div>
-          <div className="space-y-2">
-            {tarefasAVencer.map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-accent/5 rounded-lg px-4 py-3 border border-accent/10">
-                <div>
-                  <div className="font-semibold text-sm">{t.titulo}</div>
-                  <div className="text-xs text-muted-foreground">{t.descricao || "Sem descrição"}</div>
-                </div>
-                <div className="text-xs font-mono text-accent font-bold whitespace-nowrap">
-                  {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tarefasVencidas.length > 0 && (
-        <div className="bg-card rounded-xl p-5 border border-red-alert/30 mb-5">
-          <div className="text-[0.72rem] font-bold text-red-alert uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            <div className="w-[18px] h-0.5 bg-red-alert" />
-            🔴 Tarefas Vencidas — Atenção Imediata
-          </div>
-          <div className="space-y-2">
-            {tarefasVencidas.slice(0, 5).map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-red-alert/5 rounded-lg px-4 py-3 border border-red-alert/10">
-                <div>
-                  <div className="font-semibold text-sm">{t.titulo}</div>
-                  <div className="text-xs text-muted-foreground">{t.descricao || "Sem descrição"}</div>
-                </div>
-                <div className="text-xs font-mono text-red-alert font-bold whitespace-nowrap">
-                  {t.data_vencimento?.slice(0,10).split("-").reverse().join("/") || "—"}
-                </div>
-              </div>
-            ))}
-            {tarefasVencidas.length > 5 && (
-              <button onClick={() => onNavigate?.("tarefas")} className="text-xs text-red-alert underline font-semibold">
-                + {tarefasVencidas.length - 5} vencida(s) a mais → ver todas
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       <CreateTaskModal
         open={showCreateTaskModal}
         onClose={() => { setShowCreateTaskModal(false); setTaskModalInitialData(null); }}
@@ -531,6 +876,52 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 }
 
 // ── Helpers de UI ──────────────────────────────────────────────────────────────
+function PriorityRow({ icon: Icon, tone, active, badge, title, description, action, onNavigate }: {
+  icon: LucideIcon;
+  tone: "danger" | "warning" | "accent";
+  active: boolean;
+  badge: string;
+  title: string;
+  description: string;
+  action: PageId;
+  onNavigate?: (page: PageId) => void;
+}) {
+  const styles = {
+    danger: { icon: "bg-red-500/12 text-red-600", row: "bg-red-500/[0.055] hover:bg-red-500/[0.085]", badge: "bg-red-500/10 text-red-700" },
+    warning: { icon: "bg-amber-500/12 text-amber-600", row: "bg-amber-500/[0.055] hover:bg-amber-500/[0.085]", badge: "bg-amber-500/12 text-amber-700" },
+    accent: { icon: "bg-accent/12 text-accent", row: "bg-accent/[0.055] hover:bg-accent/[0.085]", badge: "bg-accent/12 text-accent" },
+  };
+  const visual = styles[tone];
+
+  return (
+    <button type="button" onClick={() => onNavigate?.(action)} className={`group relative flex w-full items-center gap-3 px-5 py-4 text-left transition-colors ${active ? visual.row : "hover:bg-muted/45"}`}>
+      {active && <span className={`absolute inset-y-0 left-0 w-1 ${tone === "danger" ? "bg-red-500" : tone === "warning" ? "bg-amber-500" : "bg-accent"}`} />}
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? visual.icon : "bg-muted text-muted-foreground"}`}><Icon className="h-[18px] w-[18px]" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">{title}{active && <span className={`rounded-full px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-wider ${visual.badge}`}>{badge}</span>}</span>
+        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+    </button>
+  );
+}
+
+function OperationalMetric({ icon: Icon, value, label, tone }: { icon: LucideIcon; value: number; label: string; tone: "navy" | "success" | "accent" | "warning" }) {
+  const tones = {
+    navy: "border-primary/10 bg-primary/[0.035] text-primary",
+    success: "border-emerald-500/15 bg-emerald-500/[0.055] text-emerald-700",
+    accent: "border-accent/15 bg-accent/[0.055] text-accent",
+    warning: "border-amber-500/15 bg-amber-500/[0.055] text-amber-700",
+  };
+  return (
+    <div className={`rounded-xl border p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-sm ${tones[tone]}`}>
+      <Icon className="mb-3 h-4 w-4" />
+      <p className="font-display text-2xl font-semibold leading-none text-foreground">{value}</p>
+      <p className="mt-1.5 text-[0.68rem] font-medium leading-tight text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
@@ -543,14 +934,44 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function InsightChartCard({ eyebrow, title, metric, caption, children }: {
+  eyebrow: string;
+  title: string;
+  metric: string;
+  caption: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="bg-card rounded-xl p-5 border border-border">
-      <div className="text-[0.72rem] font-bold text-foreground uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-        <div className="w-[18px] h-0.5 bg-accent" />
-        {title}
+    <article className="content-panel relative overflow-hidden p-5 transition-all hover:-translate-y-0.5 hover:shadow-panel-hover">
+      <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-accent/5 blur-2xl" />
+      <div className="relative flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-accent">{eyebrow}</p>
+          <h3 className="mt-1 text-sm font-semibold text-foreground">{title}</h3>
+        </div>
+        <div className="text-right">
+          <p className="font-display text-2xl font-semibold leading-none text-foreground">{metric}</p>
+          <p className="mt-1 text-[0.62rem] text-muted-foreground">{caption}</p>
+        </div>
       </div>
-      {children}
+      <div className="relative">{children}</div>
+    </article>
+  );
+}
+
+function ModernTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="min-w-[130px] rounded-xl border border-border bg-popover/95 p-3 text-xs shadow-xl backdrop-blur">
+      {label && <p className="mb-2 font-semibold text-foreground">{label}</p>}
+      <div className="space-y-1.5">
+        {payload.map((item: any) => (
+          <div key={item.dataKey || item.name} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color || item.fill }} />{item.name}</span>
+            <span className="font-bold text-foreground">{item.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

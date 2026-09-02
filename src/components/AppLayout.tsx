@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAutoFetchIntimacoes } from "@/hooks/useAutoFetchIntimacoes";
+import { useGoogleCalendarPull } from "@/hooks/useGoogleCalendarSync";
 import { TopNav } from "./TopNav";
-import { BottomNav } from "./BottomNav";
+import { AppSidebar } from "./AppSidebar";
 import { TarefasVencendoModal } from "./TarefasVencendoModal";
 import { NovasIntimacoesModal } from "./NovasIntimacoesModal";
 import { TarefasDelegadasToast } from "@/components/TarefasDelegadasBadge";
@@ -16,21 +17,34 @@ import { HonorariosPage }   from "@/pages/HonorariosPage";
 import { NotificacoesPage } from "@/pages/NotificacoesPage";
 import { AdminPage }        from "@/pages/AdminPage";
 import { FinanceiroPage }   from "@/pages/FinanceiroPage";
-
-export type PageId =
-  | "dashboard" | "processos" | "intimacoes" | "notificacoes"
-  | "honorarios" | "financeiro" | "tarefas" | "clientes" | "config" | "admin";
+import { TvDashboard } from "@/components/TvDashboard";
+import type { PageId } from "@/types/navigation";
 
 export function AppLayout() {
   const [activePage, setActivePage] = useState<PageId>("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jm_sidebar_collapsed") === "true");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [tvOpen, setTvOpen] = useState(false);
+  const [processosFiltroFase, setProcessosFiltroFase] = useState<string | null>(null);
   const { user, signOut, isAdmin } = useAuth();
 
   useAutoFetchIntimacoes();
+  useGoogleCalendarPull();
+
+  const handleSidebarCollapsed = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    localStorage.setItem("jm_sidebar_collapsed", String(collapsed));
+  };
+
+  const navegarPara = (page: PageId, params?: { fase?: string }) => {
+    if (page === "processos" && params?.fase) setProcessosFiltroFase(params.fase);
+    setActivePage(page);
+  };
 
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard":    return <DashboardPage onNavigate={setActivePage} />;
-      case "processos":    return <ProcessosPage />;
+      case "dashboard":    return <DashboardPage onNavigate={navegarPara} onOpenTv={() => setTvOpen(true)} />;
+      case "processos":    return <ProcessosPage filtroFaseInicial={processosFiltroFase} onFiltroFaseConsumido={() => setProcessosFiltroFase(null)} />;
       case "intimacoes":   return <IntimacoesPage />;
       case "notificacoes": return <NotificacoesPage />;
       case "honorarios":   return <HonorariosPage />;
@@ -55,22 +69,33 @@ export function AppLayout() {
   };
 
   return (
-    <div className="relative z-[1] flex flex-col min-h-screen overflow-x-auto">
-      <TopNav
+    <div className="relative z-[1] flex min-h-screen overflow-x-hidden bg-background">
+      <AppSidebar
         activePage={activePage}
         onPageChange={setActivePage}
-        user={user}
-        onSignOut={signOut}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={handleSidebarCollapsed}
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
         isAdmin={isAdmin}
       />
 
-      <main className="flex-1 w-full max-w-screen-2xl mx-auto px-2 sm:px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-10 overflow-x-hidden">
-        <div className="animate-fade-in w-full">
-          {renderPage()}
-        </div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopNav
+          activePage={activePage}
+          onPageChange={setActivePage}
+          user={user}
+          onSignOut={signOut}
+          onMenuToggle={() => setMobileMenuOpen(true)}
+          isAdmin={isAdmin}
+        />
 
-      <BottomNav activePage={activePage} onPageChange={setActivePage} isAdmin={isAdmin} />
+        <main className="mx-auto w-full max-w-[1560px] flex-1 overflow-x-hidden px-3 pb-10 pt-5 sm:px-5 md:px-7 md:pt-7 xl:px-9">
+          <div key={activePage} className="w-full animate-fade-in">
+            {renderPage()}
+          </div>
+        </main>
+      </div>
 
       {/* Modal de tarefas vencendo — aparece automaticamente ao carregar */}
       <TarefasVencendoModal onNavigate={setActivePage} />
@@ -80,6 +105,7 @@ export function AppLayout() {
 
       {/* Toast de tarefas delegadas pelo admin */}
       <TarefasDelegadasToast onVerTarefas={() => setActivePage("tarefas")} />
+      {tvOpen && <TvDashboard onClose={() => setTvOpen(false)} />}
     </div>
   );
 }

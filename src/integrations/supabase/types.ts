@@ -14,6 +14,96 @@ export type Database = {
   }
   public: {
     Tables: {
+      google_calendar_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          access_token: string
+          refresh_token: string
+          expires_at: string
+          google_email: string | null
+          calendar_id: string
+          last_sync_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          access_token: string
+          refresh_token: string
+          expires_at: string
+          google_email?: string | null
+          calendar_id?: string
+          last_sync_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          access_token?: string
+          refresh_token?: string
+          expires_at?: string
+          google_email?: string | null
+          calendar_id?: string
+          last_sync_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      api_keys: {
+        Row: {
+          id: string
+          user_id: string
+          datajud_token: string | null
+          aasp_chave: string | null
+          groq_api_key: string | null
+          whatsapp_token: string | null
+          email_provider: string | null
+          email_gmail_user: string | null
+          email_gmail_app_password: string | null
+          email_resend_api_key: string | null
+          email_remetente_nome: string | null
+          email_portal_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          datajud_token?: string | null
+          aasp_chave?: string | null
+          groq_api_key?: string | null
+          whatsapp_token?: string | null
+          email_provider?: string | null
+          email_gmail_user?: string | null
+          email_gmail_app_password?: string | null
+          email_resend_api_key?: string | null
+          email_remetente_nome?: string | null
+          email_portal_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          datajud_token?: string | null
+          aasp_chave?: string | null
+          groq_api_key?: string | null
+          whatsapp_token?: string | null
+          email_provider?: string | null
+          email_gmail_user?: string | null
+          email_gmail_app_password?: string | null
+          email_resend_api_key?: string | null
+          email_remetente_nome?: string | null
+          email_portal_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           cpf_cnpj: string | null
@@ -52,6 +142,93 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      financeiro: {
+        Row: {
+          categoria: string | null
+          cliente_id: string | null
+          cliente_nome: string
+          created_at: string
+          data_recebimento: string | null
+          data_vencimento: string
+          descricao: string | null
+          forma_pagamento: string | null
+          grupo_parcelamento: string | null
+          id: string
+          observacoes: string | null
+          parcela_numero: number | null
+          parcela_total: number | null
+          processo: string | null
+          processo_id: string | null
+          status: string
+          tipo: string
+          tipo_lancamento: string
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          categoria?: string | null
+          cliente_id?: string | null
+          cliente_nome?: string
+          created_at?: string
+          data_recebimento?: string | null
+          data_vencimento?: string
+          descricao?: string | null
+          forma_pagamento?: string | null
+          grupo_parcelamento?: string | null
+          id?: string
+          observacoes?: string | null
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          processo?: string | null
+          processo_id?: string | null
+          status?: string
+          tipo?: string
+          tipo_lancamento?: string
+          updated_at?: string
+          user_id: string
+          valor?: number
+        }
+        Update: {
+          categoria?: string | null
+          cliente_id?: string | null
+          cliente_nome?: string
+          created_at?: string
+          data_recebimento?: string | null
+          data_vencimento?: string
+          descricao?: string | null
+          forma_pagamento?: string | null
+          grupo_parcelamento?: string | null
+          id?: string
+          observacoes?: string | null
+          parcela_numero?: number | null
+          parcela_total?: number | null
+          processo?: string | null
+          processo_id?: string | null
+          status?: string
+          tipo?: string
+          tipo_lancamento?: string
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financeiro_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financeiro_processo_id_fkey"
+            columns: ["processo_id"]
+            isOneToOne: false
+            referencedRelation: "processos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       intimacoes: {
         Row: {
@@ -168,6 +345,7 @@ export type Database = {
           comarca: string | null
           created_at: string
           dados_datajud: Json | null
+          fase: string | null
           id: string
           numero_cnj: string
           partes: string | null
@@ -175,6 +353,8 @@ export type Database = {
           status: string
           tribunal: string | null
           ultima_movimentacao: string | null
+          ultima_movimentacao_titulo: string | null
+          ultima_movimentacao_descricao: string | null
           updated_at: string
           user_id: string
           valor_causa: number | null
@@ -188,6 +368,7 @@ export type Database = {
           comarca?: string | null
           created_at?: string
           dados_datajud?: Json | null
+          fase?: string | null
           id?: string
           numero_cnj: string
           partes?: string | null
@@ -195,6 +376,8 @@ export type Database = {
           status?: string
           tribunal?: string | null
           ultima_movimentacao?: string | null
+          ultima_movimentacao_titulo?: string | null
+          ultima_movimentacao_descricao?: string | null
           updated_at?: string
           user_id: string
           valor_causa?: number | null
@@ -208,6 +391,7 @@ export type Database = {
           comarca?: string | null
           created_at?: string
           dados_datajud?: Json | null
+          fase?: string | null
           id?: string
           numero_cnj?: string
           partes?: string | null
@@ -215,6 +399,8 @@ export type Database = {
           status?: string
           tribunal?: string | null
           ultima_movimentacao?: string | null
+          ultima_movimentacao_titulo?: string | null
+          ultima_movimentacao_descricao?: string | null
           updated_at?: string
           user_id?: string
           valor_causa?: number | null
@@ -272,6 +458,7 @@ export type Database = {
           created_at: string
           data_vencimento: string | null
           descricao: string | null
+          google_event_id: string | null
           id: string
           numero_processo: string | null
           prioridade: string
@@ -286,6 +473,7 @@ export type Database = {
           created_at?: string
           data_vencimento?: string | null
           descricao?: string | null
+          google_event_id?: string | null
           id?: string
           numero_processo?: string | null
           prioridade?: string
@@ -300,6 +488,7 @@ export type Database = {
           created_at?: string
           data_vencimento?: string | null
           descricao?: string | null
+          google_event_id?: string | null
           id?: string
           numero_processo?: string | null
           prioridade?: string

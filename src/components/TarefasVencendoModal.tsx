@@ -116,11 +116,11 @@ export function TarefasVencendoModal({ onNavigate }: Props) {
   return (
     <>
       {/* Overlay */}
-      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" onClick={fechar} />
+      <div className="fixed inset-0 z-[100] bg-slate-950/55 backdrop-blur-sm" onClick={fechar} />
 
       {/* Modal */}
       <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
-        <div className="w-full max-w-lg bg-card rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-200">
 
           {/* Cabeçalho */}
           <div className={`px-5 py-4 flex items-start gap-3 ${corHeader}`}>

@@ -13,6 +13,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { chamarGroq } from "@/lib/groqClient";
+import { enviarEmailNotificacao } from "@/lib/sendEmailApi";
 
 // ── Chave ÚNICA de localStorage — exportada para todos os arquivos ──
 export const INTIMACOES_STORE_KEY = "jm_aasp_intimacoes";
@@ -325,21 +327,17 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
         if (enviadosPorProcData.has(chaveProcData)) continue;
 
         try {
-          const res = await fetch("/api/send-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              destinatario:  cliente.email,
-              nomeCliente:   cliente.nome,
-              numeroProcesso: intim._numProc,
-              dataPublicacao: fmtDataBR(intim._data),
-              assunto:       intim._titulo || "Nova Publicação AASP",
-              resumoIA:      intim._resumoIA || null,
-              textoCompleto: "",
-            }),
+          const { ok: enviado } = await enviarEmailNotificacao({
+            destinatario:  cliente.email,
+            nomeCliente:   cliente.nome,
+            numeroProcesso: intim._numProc,
+            dataPublicacao: fmtDataBR(intim._data),
+            assunto:       intim._titulo || "Nova Publicação AASP",
+            resumoIA:      intim._resumoIA || null,
+            textoCompleto: "",
           });
 
-          const status = res.ok ? "enviado" : "falha";
+          const status = enviado ? "enviado" : "falha";
           await supabase.from("notificacoes_enviadas").insert({
             user_id:        userId,
             cliente_id:     cliente.id,
@@ -351,7 +349,7 @@ async function dispararNotificacoesAutomaticas(novas: AaspIntimacao[], userId: s
             status,
           });
 
-          if (res.ok) {
+          if (enviado) {
             enviados.add(chave);
             totalEnviados++;
             await supabase.from("clientes")
@@ -530,12 +528,46 @@ export function useAutoFetchIntimacoes() {
         }
 
         // 4. Merge + dedup
+        // IMPORTANTE: dois registros podem gerar o MESMO _id (hash de conteúdo)
+        // mesmo sendo intimações diferentes, quando numProc+data+titulo+
+        // primeiros 400 chars do texto coincidem (ex.: mesma publicação
+        // associada a partes diferentes). Para não perder intimações reais,
+        // só tratamos como duplicata de fato se o conteúdo bruto também bater;
+        // caso contrário, desambiguamos o _id com um sufixo sequencial.
         const storeComHistorico = loadStore(); // relê após carregarDoSupabase
         const merged = [...novas, ...storeComHistorico];
         const uniq: AaspIntimacao[] = [];
-        const seen = new Set<string>();
+        const seenConteudo = new Map<string, unknown>(); // _id -> conteúdo já visto
+        const contadorColisao = new Map<string, number>(); // _id base -> quantas vezes já visto
         for (const it of merged) {
-          if (!seen.has(it._id)) { seen.add(it._id); uniq.push(it); }
+          const idBase = it._id;
+          const assinaturaConteudo = JSON.stringify({
+            n: it._numProc, d: it._data, t: it._titulo,
+            tx: String((it as any).textoPublicacao || (it as any).Texto || (it as any).texto || "").slice(0, 400),
+          });
+
+          if (!seenConteudo.has(idBase)) {
+            seenConteudo.set(idBase, assinaturaConteudo);
+            uniq.push(it);
+            continue;
+          }
+
+          if (seenConteudo.get(idBase) === assinaturaConteudo) {
+            // Duplicata real (mesmo conteúdo) — descarta como antes.
+            continue;
+          }
+
+          // Mesmo _id, conteúdo diferente => colisão de hash. Desambigua.
+          // Muta o objeto em vez de clonar: 'it' é a MESMA referência usada
+          // no array 'novas', então a correção se propaga automaticamente
+          // para o cálculo de novasDeHoje e para tudo que vem depois
+          // (verificação no Supabase, geração de resumo IA, disparo de e-mail).
+          const n = (contadorColisao.get(idBase) || 1) + 1;
+          contadorColisao.set(idBase, n);
+          const idNovo = `${idBase}_c${n}`;
+          console.warn("[AutoFetch] Colisão de _id detectada, desambiguando:", idBase, "->", idNovo);
+          it._id = idNovo;
+          uniq.push(it);
         }
         saveStore(uniq);
 
@@ -634,22 +666,11 @@ export function useAutoFetchIntimacoes() {
           ].filter(Boolean).join("\n");
           if (!texto || texto.length < 20) return null;
 
-            const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-              body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: [
-                  { role: "system", content: "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português." },
-                  { role: "user", content: `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}` },
-                ],
-                temperature: 0.3,
-                max_tokens: 300,
-              }),
-            });
-            if (!resp.ok) return null;
-            const aiData = await resp.json();
-            const resumo: string | null = aiData.choices?.[0]?.message?.content || null;
+            const resumo: string | null = await chamarGroq(
+              groqKey,
+              "Você é um assistente jurídico especializado em analisar publicações do Diário Oficial. Faça resumos claros, objetivos e em português.",
+              `Analise esta publicação jurídica e faça um resumo em até 3 parágrafos curtos, destacando: 1) O que está sendo determinado/intimado, 2) Prazos ou ações necessárias, 3) Possíveis consequências. Seja direto e objetivo.\n\nPublicação:\n${texto.slice(0, 2000)}`
+            ).catch(() => null);
             if (!resumo) return null;
 
             // Persiste no Supabase
@@ -721,7 +742,11 @@ export function useAutoFetchIntimacoes() {
         // Abre o modal de novas intimações se houver novidades no dia
         if (paraExibirNoToast.length > 0) {
           window.dispatchEvent(new CustomEvent("intimacoes-novas-encontradas", {
-            detail: { count: paraExibirNoToast.length, hoje: dias[0] },
+            detail: {
+              count: paraExibirNoToast.length,
+              hoje: dias[0],
+              intimacoes: paraExibirNoToast,
+            },
           }));
         }
 
